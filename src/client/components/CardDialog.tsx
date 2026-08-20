@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react"
-import { Trash2 } from "lucide-react"
+import { MessageSquare, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -21,6 +24,9 @@ export interface CardFormValues {
   priority: Priority | ""
 }
 
+/** 「与 agent 聊一聊」的目标：当前对话或新建对话。 */
+export type ChatTarget = "current" | "new"
+
 interface CardDialogProps {
   open: boolean
   card: Card | null
@@ -28,9 +34,10 @@ interface CardDialogProps {
   onOpenChange: (open: boolean) => void
   onSave: (values: CardFormValues) => void
   onDelete?: (card: Card) => void
+  onChatWithAgent: (values: CardFormValues, target: ChatTarget) => void
 }
 
-export function CardDialog({ open, card, labels, onOpenChange, onSave, onDelete }: CardDialogProps) {
+export function CardDialog({ open, card, labels, onOpenChange, onSave, onDelete, onChatWithAgent }: CardDialogProps) {
   const t = useT()
   const [values, setValues] = useState<CardFormValues>({
     title: "", note: "", label: "", priority: "",
@@ -51,14 +58,25 @@ export function CardDialog({ open, card, labels, onOpenChange, onSave, onDelete 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-xl"
+        aria-describedby={undefined}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {/* 标题仅保留给屏幕阅读器；可见区域不显示「编辑卡片」等装饰性文案 */}
         <DialogHeader>
-          <DialogTitle>{card ? t("editCard") : t("addCard")}</DialogTitle>
-          <DialogDescription>{card ? t("editCardDesc") : t("newCardDesc")}</DialogDescription>
+          <DialogTitle className="sr-only">{card ? t("editCard") : t("addCard")}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
-            <Label htmlFor="card-title">{t("fieldTitle")}</Label>
+            <Label htmlFor="card-title" className="flex items-center justify-between">
+              <span>{t("fieldTitle")}</span>
+              {card && (
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  {t("fieldId")}: {card.id}
+                </span>
+              )}
+            </Label>
             <Input
               id="card-title"
               value={values.title}
@@ -108,7 +126,7 @@ export function CardDialog({ open, card, labels, onOpenChange, onSave, onDelete 
               id="card-note"
               value={values.note}
               placeholder={t("notePlaceholder")}
-              rows={3}
+              rows={5}
               onChange={(e) => set({ note: e.target.value })}
             />
           </div>
@@ -127,7 +145,35 @@ export function CardDialog({ open, card, labels, onOpenChange, onSave, onDelete 
               {t("delete")}
             </Button>
           )}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={!values.title.trim() && !values.note.trim()}
+              >
+                <MessageSquare className="h-4 w-4" />
+                {t("chatWithAgent")}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  onChatWithAgent(values, "current")
+                  onOpenChange(false)
+                }}
+              >
+                {t("chatCurrentSession")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  onChatWithAgent(values, "new")
+                  onOpenChange(false)
+                }}
+              >
+                {t("chatNewSession")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             disabled={!values.title.trim()}
             onClick={() => {

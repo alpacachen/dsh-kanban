@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCorners,
   getFirstCollision, pointerWithin, rectIntersection,
@@ -6,7 +6,7 @@ import {
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
 import { Check, Filter, List, RefreshCw, Settings2, Tag } from "lucide-react"
-import { CardDialog, type CardFormValues } from "./components/CardDialog"
+import { CardDialog, type CardFormValues, type ChatTarget } from "./components/CardDialog"
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
 import { LabelDialog } from "./components/LabelDialog"
@@ -16,6 +16,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { callKanban } from "@/lib/api"
+import { cardToChatText, queueDraft } from "@/lib/chat-bridge"
 import { PRIORITY_META, PRIORITY_OPTIONS } from "@/lib/constants"
 import { useT } from "./lib/i18n"
 import type { Board, Card as CardType, Priority } from "@/lib/types"
@@ -25,11 +26,17 @@ type AnySelectorHook = (selector: (state: any) => any) => any
 interface KanbanViewProps {
   sessionId?: string
   useWorkspaces?: AnySelectorHook
+  inputActions?: { setDraft: (text: string) => void }
+  workspaces?: { connectWorkspace: (workspaceId: string) => Promise<string> }
+  sessions?: { open: (id: string) => void }
 }
 
 export function KanbanView(props: KanbanViewProps) {
   const { sessionId } = props
   const useWorkspaces = props.useWorkspaces
+  const inputActions = props.inputActions
+  const workspaces = props.workspaces
+  const sessions = props.sessions
   const items = useWorkspaces ? useWorkspaces((s: any) => s.items) : []
   const recentId = useWorkspaces ? useWorkspaces((s: any) => s.recentWorkspaceId) : undefined
   const workspace = Array.isArray(items)
@@ -46,6 +53,9 @@ export function KanbanView(props: KanbanViewProps) {
   const [labelDialogOpen, setLabelDialogOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [priorityFilter, setPriorityFilter] = useState<Priority | "">("")
+
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [viewHeight, setViewHeight] = useState<number | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -89,6 +99,53 @@ export function KanbanView(props: KanbanViewProps) {
       alive = false
     }
   }, [workspaceId, applyBoard])
+
+  // 让看板固定在会话滚动容器的可视高度内。DSH 的 conversation.view 槽位在 active
+  // 阶段会让父容器随内容增高（min-height:auto），根节点 h-full(100%) 因此拿不到
+  // 有界高度，长列会把整页撑高。这里实测可用高度并显式设置，让列内滚动生效。
+  useLayoutEffect(() => {
+    const findScrollport = (node: HTMLElement | null): HTMLElement | null => {
+      let cursor: HTMLElement | null = node
+      while (cursor) {
+        const overflowY = getComputedStyle(cursor).overflowY
+        if (overflowY === "auto" || overflowY === "scroll") return cursor
+        cursor = cursor.parentElement
+      }
+      return null
+    }
+
+    const measure = () => {
+      const el = rootRef.current
+      if (!el) return
+      const top = el.getBoundingClientRect().top
+      const scrollport = findScrollport(el.parentElement)
+      let bottom = window.innerHeight
+      if (scrollport) {
+        // DSH 底部输入框（sticky 在滚动容器底部）占据一段高度，把看板限制在它上方。
+        const composer = scrollport.querySelector<HTMLElement>("[data-composer-seat]")
+        const composerTop = composer ? composer.getBoundingClientRect().top : 0
+        if (composer && composer.offsetHeight > 0 && composerTop > top) {
+          bottom = composerTop
+        } else {
+          bottom = scrollport.getBoundingClientRect().bottom
+        }
+      }
+      setViewHeight(Math.max(0, Math.floor(bottom - top)))
+    }
+
+    measure()
+
+    const scrollport = findScrollport(rootRef.current?.parentElement ?? null)
+    const observer = new ResizeObserver(measure)
+    observer.observe(document.documentElement)
+    if (scrollport) observer.observe(scrollport)
+    window.addEventListener("resize", measure)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", measure)
+    }
+  }, [board !== null])
 
   // 碰撞检测：卡片可自由拖到任意列（含空列）。pointerWithin 优先识别空列，再回落 closestCorners 处理卡片排序。
   const collisionDetection: CollisionDetection = useCallback(
@@ -164,6 +221,29 @@ export function KanbanView(props: KanbanViewProps) {
     }
   }
 
+  // 把卡片内容填入对话输入框，但不自动发送。
+  const handleChatWithAgent = useCallback(
+    (values: CardFormValues, target: ChatTarget) => {
+      const text = cardToChatText(values)
+      if (!text) return
+      if (target === "current") {
+        inputActions?.setDraft(text)
+        return
+      }
+      // 新建对话：先拿到新会话 id 再切换，并把草稿排队给 ChatDraftInjector 写入。
+      if (!workspaces?.connectWorkspace || !sessions?.open) return
+      workspaces
+        .connectWorkspace(workspaceId)
+        .then((nextId) => {
+          if (!nextId) return
+          queueDraft(nextId, text)
+          sessions.open(nextId)
+        })
+        .catch((e) => setError(t("actionFailed") + String((e && e.message) || e)))
+    },
+    [inputActions, workspaces, sessions, workspaceId, t],
+  )
+
   if (!board) {
     return (
       <div className="flex h-full min-h-[420px] items-center justify-center p-5">
@@ -177,7 +257,11 @@ export function KanbanView(props: KanbanViewProps) {
   }
 
   return (
-    <div className="flex h-full min-h-[420px] flex-col gap-3 p-5">
+    <div
+      ref={rootRef}
+      className="flex h-full flex-col gap-3 p-5"
+      style={viewHeight != null ? { height: viewHeight } : undefined}
+    >
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <DndContext
@@ -252,7 +336,7 @@ export function KanbanView(props: KanbanViewProps) {
           </div>
 
           {/* 看板列（可横向滚动） */}
-          <div className="kan-scroll flex flex-1 gap-3 overflow-x-auto pb-2">
+          <div className="kan-scroll flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden pb-2">
             {board.columns.map((col) => {
               const cards = board.cards.filter(
                 (c) => c.columnId === col.id && (!priorityFilter || c.priority === priorityFilter),
@@ -291,6 +375,7 @@ export function KanbanView(props: KanbanViewProps) {
         }}
         onSave={saveCard}
         onDelete={(card) => act("deleteCard", { id: card.id })}
+        onChatWithAgent={handleChatWithAgent}
       />
 
       <ColumnDialog
