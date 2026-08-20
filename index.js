@@ -10,14 +10,222 @@
  *  - 模型工具：经 ctx.tools.register 注册 14 个 kanban_* 工具
  *  - 浏览器数据层：经 ctx.get('webServer') 注册 /api/kanban 前缀路由
  *
- * 数据模型（每工作区）：
+ * 数据模型（每工作区，磁盘文件带 schemaVersion）：
+ *   schemaVersion: 1
  *   columns: [{ id, title }]
  *   labels:  [{ name, color }]          —— 标签与颜色绑定，name 为唯一键
  *   cards:   [{ id, columnId, title, note, label, priority }]
+ *
+ * 数据安全：
+ *   - 无 schemaVersion 的历史文件按 v0 处理，首次打开自动升级（见 MIGRATIONS）
+ *   - 升级/损坏/版本超前均先备份原文件（.bak-vN / .corrupt-<ts> / .unsupported-vN）
+ *   - 启动时全量体检所有看板文件，损坏文件备份后不影响看板可用性
  */
 export const name = 'dsh-kanban'
 
 export const inject = ['tools']
+
+// ---------------------------------------------------------------------------
+// 持久化格式版本与迁移
+//
+// 磁盘文件结构：
+//   { schemaVersion, columns, labels, cards }
+//
+// 版本约定：
+//   v1 —— 首个带版本声明的格式，等价于 1.0.x ~ 1.2.x 时代无版本声明的三数组格式
+//         （columns/labels/cards），并补齐了卡片的规范字段（note/label/priority）。
+//   LEGACY_VERSION(0) —— 历史文件没有 schemaVersion 字段，一律归入 v0 处理。
+//
+// 新增/删除字段的流程：
+//   1) SCHEMA_VERSION 自增
+//   2) 在 MIGRATIONS 里以"旧版本号为键"注册 v(n)→v(n+1) 迁移函数
+//   3) 迁移函数是纯函数，输出必须带 schemaVersion: n+1（migrateBoard 会校验）
+// 旧文件在首次打开时自动沿迁移链升级，升级前原文件先备份。
+// ---------------------------------------------------------------------------
+
+export const SCHEMA_VERSION = 1
+export const LEGACY_VERSION = 0
+
+const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+const strField = (v, fb) => (typeof v === 'string' && v ? v : fb)
+const normColor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : '#94a3b8')
+
+// v1 的规范实体形状（仅补缺省值，不改动合法数据）
+const normColumn = (c) =>
+  isObj(c) ? { id: strField(c.id, ''), title: strField(c.title, 'Untitled') } : null
+const normLabel = (l) =>
+  isObj(l) ? { name: strField(l.name, ''), color: normColor(l.color) } : null
+const normCard = (c) =>
+  isObj(c)
+    ? {
+        id: strField(c.id, ''),
+        columnId: strField(c.columnId, ''),
+        title: strField(c.title, 'Untitled'),
+        note: typeof c.note === 'string' ? c.note : '',
+        label: typeof c.label === 'string' && c.label ? c.label : null,
+        priority: typeof c.priority === 'string' ? c.priority : null,
+      }
+    : null
+
+/**
+ * 逐版本迁移注册表：key = 旧版本号，value = (旧数据) => 新数据。
+ * 输出必须设置 schemaVersion = key + 1，migrateBoard 会逐级校验。
+ */
+export const MIGRATIONS = {
+  0: (data) => {
+    // v0 → v1：历史无版本文件 —— 声明版本 + 规范化实体字段
+    const src = isObj(data) ? data : {}
+    const pick = (arr) => (Array.isArray(arr) ? arr : [])
+    return {
+      schemaVersion: 1,
+      columns: pick(src.columns).map(normColumn).filter(Boolean),
+      labels: pick(src.labels).map(normLabel).filter(Boolean),
+      cards: pick(src.cards).map(normCard).filter(Boolean),
+    }
+  },
+}
+
+/**
+ * 沿迁移链把数据从 fromVersion 逐级升级到 SCHEMA_VERSION。
+ * 任一步缺失或产出无效都会抛错（由调用方备份并降级处理）。
+ */
+export function migrateBoard(data, fromVersion) {
+  let out = data
+  let v = fromVersion
+  while (v < SCHEMA_VERSION) {
+    const step = MIGRATIONS[v]
+    if (typeof step !== 'function') {
+      throw new Error('missing migration v' + v + ' -> v' + (v + 1))
+    }
+    out = step(out)
+    v += 1
+    if (!isObj(out) || out.schemaVersion !== v) {
+      throw new Error('migration v' + (v - 1) + ' -> v' + v + ' produced invalid data')
+    }
+  }
+  return out
+}
+
+/**
+ * 结构校验（迁移后的最终形态）。
+ * 返回 { ok, errors }；errors 非空时文件应视为损坏处理。
+ */
+export function validateBoard(data) {
+  const errors = []
+  if (!isObj(data)) {
+    errors.push('board is not an object')
+    return { ok: false, errors }
+  }
+  if (data.schemaVersion !== SCHEMA_VERSION) {
+    errors.push('expected schemaVersion ' + SCHEMA_VERSION + ', got ' + String(data.schemaVersion))
+  }
+  if (!Array.isArray(data.columns)) errors.push('columns must be an array')
+  if (!Array.isArray(data.labels)) errors.push('labels must be an array')
+  if (!Array.isArray(data.cards)) errors.push('cards must be an array')
+  if (Array.isArray(data.cards)) {
+    const seen = new Set()
+    for (const c of data.cards) {
+      if (!isObj(c) || typeof c.id !== 'string' || !c.id) {
+        errors.push('cards contain an entry without a valid id')
+        break
+      }
+      if (seen.has(c.id)) {
+        errors.push('duplicate card id: ' + c.id)
+        break
+      }
+      seen.add(c.id)
+    }
+  }
+  return { ok: errors.length === 0, errors }
+}
+
+/**
+ * 解析并升级一段看板文件文本（纯函数，不触磁盘）。
+ *
+ * 返回：
+ *   { ok: true, kind: 'ok', data, migrated, fromVersion, warnings } —— data 为可用的最新版
+ *   { ok: false, kind: 'corrupt'|'invalid'|'unsupported', warnings } —— 需要调用方备份原文件
+ *
+ * kind 语义：
+ *   corrupt     —— JSON 无法解析
+ *   invalid     —— 结构校验失败 / 迁移失败
+ *   unsupported —— schemaVersion 高于当前插件支持（文件来自更新版本插件）
+ */
+export function parseBoardText(text) {
+  const warnings = []
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return {
+      ok: false,
+      kind: 'corrupt',
+      warnings: [
+        'Board data file could not be parsed as JSON; the original file has been backed up and the board opened empty.',
+      ],
+    }
+  }
+
+  const version =
+    isObj(data) && typeof data.schemaVersion === 'number' ? data.schemaVersion : LEGACY_VERSION
+
+  if (version > SCHEMA_VERSION) {
+    return {
+      ok: false,
+      kind: 'unsupported',
+      version,
+      warnings: [
+        'Board data file was written by a newer plugin version (schemaVersion ' +
+          version +
+          '); this plugin supports up to ' +
+          SCHEMA_VERSION +
+          '. The original file has been backed up and the board opened empty — please upgrade the plugin to read the original data.',
+      ],
+    }
+  }
+
+  let migrated = false
+  if (version < SCHEMA_VERSION) {
+    try {
+      data = migrateBoard(data, version)
+      migrated = true
+      warnings.push(
+        'Board data was automatically upgraded from schemaVersion ' +
+          version +
+          ' to ' +
+          SCHEMA_VERSION +
+          '; the pre-upgrade file has been backed up.',
+      )
+    } catch (err) {
+      return {
+        ok: false,
+        kind: 'invalid',
+        version,
+        warnings: [
+          'Board data upgrade failed (' +
+            ((err && err.message) || err) +
+            '); the original file has been backed up and the board opened empty.',
+        ],
+      }
+    }
+  }
+
+  const check = validateBoard(data)
+  if (!check.ok) {
+    return {
+      ok: false,
+      kind: 'invalid',
+      version: isObj(data) ? data.schemaVersion : undefined,
+      warnings: [
+        'Board data file structure is invalid (' +
+          check.errors.join('; ') +
+          '); the original file has been backed up and the board opened empty.',
+      ],
+    }
+  }
+
+  return { ok: true, kind: 'ok', data, migrated, fromVersion: version, warnings }
+}
 
 export function apply(ctx) {
   const getFs = () => ctx.get('fs')
@@ -67,23 +275,67 @@ export function apply(ctx) {
   const persistedFlag = (wsid) => fileTargets.has(wsid) && fileTargets.get(wsid) !== null
 
   // ---- 看板读写 ----
+
+  // 备份原文件为 <文件名>.<suffix>（复制而非移动，保证原文件在写回前始终存在）
+  const backupFile = async (wsid, suffix) => {
+    const fs = getFs()
+    const target = await targetOf(wsid)
+    if (!fs || !target) return null
+    try {
+      const text = await fs.readText(target)
+      const backupTarget = await fs.resolve(fileName(wsid) + '.' + suffix, root() ? { cwd: root() } : {})
+      await fs.writeText(backupTarget, text)
+      return backupTarget
+    } catch (err) {
+      console.log('dsh-kanban: 备份失败 ' + wsid + ' (' + suffix + ')：' + ((err && err.message) || err))
+      return null
+    }
+  }
+
+  // 记录一次性警告：进入看板 warnings 队列 + 写宿主日志
+  const warn = (board, message) => {
+    if (Array.isArray(board.warnings)) board.warnings.push(message)
+    console.log('dsh-kanban: ' + message)
+  }
+  const takeWarnings = (board) => {
+    const w = Array.isArray(board.warnings) ? board.warnings : []
+    board.warnings = []
+    return w
+  }
+  const timestamp = () => new Date().toISOString().replace(/[:.]/g, '-')
+
+  // 首次访问某工作区时从磁盘加载；异常数据一律不阻塞看板可用性
   const boardOf = async (wsid) => {
     let board = boards.get(wsid)
     if (board) return board
-    board = { columns: [], labels: [], cards: [] }
+    board = { schemaVersion: SCHEMA_VERSION, columns: [], labels: [], cards: [], warnings: [] }
     boards.set(wsid, board)
     const fs = getFs()
     const target = await targetOf(wsid)
+    let migrated = false
     if (fs && target) {
       try {
-        const data = JSON.parse(await fs.readText(target))
-        if (data && Array.isArray(data.columns) && Array.isArray(data.cards)) {
-          board.columns = data.columns
-          board.cards = data.cards
-          board.labels = Array.isArray(data.labels) ? data.labels : []
+        const text = await fs.readText(target)
+        const parsed = parseBoardText(text)
+        for (const w of parsed.warnings) warn(board, w)
+        if (parsed.ok) {
+          board.columns = parsed.data.columns
+          board.labels = parsed.data.labels
+          board.cards = parsed.data.cards
+          migrated = parsed.migrated
+          // 迁移场景：写回前先把迁移前的原文件备份下来，保证可回滚
+          if (parsed.migrated) {
+            await backupFile(wsid, 'bak-v' + parsed.fromVersion)
+          }
+        } else {
+          // 损坏 / 结构无效 / 版本超前：原文件已无法安全读取，先备份再以空板继续
+          const suffix =
+            parsed.kind === 'unsupported' ? 'unsupported-v' + parsed.version : 'corrupt-' + timestamp()
+          await backupFile(wsid, suffix)
         }
       } catch (err) {
-        // 尚无看板文件（首次使用），保留默认空板
+        // 尚无看板文件（首次使用）或 fs 读取异常，保留默认空板
+        console.log('dsh-kanban: 读取看板失败 ' + wsid + '：' + ((err && err.message) || err))
       }
     }
     for (const col of board.columns) bumpSeq(col.id)
@@ -94,6 +346,8 @@ export function apply(ctx) {
     if (board.labels.length === 0) {
       board.labels = DEFAULT_LABELS.map((l) => ({ ...l }))
     }
+    // 升级写回：迁移成功即落盘新版本，保证每个文件只迁移一次
+    if (migrated && fs && target) await save(wsid)
     return board
   }
   const save = async (wsid) => {
@@ -102,7 +356,15 @@ export function apply(ctx) {
     const board = boards.get(wsid)
     if (!fs || !target || !board) return
     try {
-      await fs.writeText(target, JSON.stringify({ columns: board.columns, labels: board.labels, cards: board.cards }))
+      await fs.writeText(
+        target,
+        JSON.stringify({
+          schemaVersion: SCHEMA_VERSION,
+          columns: board.columns,
+          labels: board.labels,
+          cards: board.cards,
+        }),
+      )
     } catch (err) {
       console.log('dsh-kanban: 保存失败 ' + wsid + '：' + ((err && err.message) || err))
     }
@@ -150,16 +412,16 @@ export function apply(ctx) {
     const board = await boardOf(wsid)
     const a = args || {}
     const persisted = () => persistedFlag(wsid)
-    const result = (extra) => ({ board: cloneBoard(board), persisted: persisted(), ...extra })
+    const result = (extra) => ({ board: cloneBoard(board), persisted: persisted(), warnings: takeWarnings(board), ...extra })
 
     switch (method) {
       case 'get':
-        return { board: cloneBoard(board), persisted: persisted(), message: 'Board loaded' }
+        return { board: cloneBoard(board), persisted: persisted(), warnings: takeWarnings(board), message: 'Board loaded' }
 
       case 'getCard': {
         const card = cloneBoard(board).cards.find((c) => c.id === str(a.id, ''))
-        if (!card) return { error: 'Card not found: ' + str(a.id, '') }
-        return { card }
+        if (!card) return { warnings: takeWarnings(board), error: 'Card not found: ' + str(a.id, '') }
+        return { card, warnings: takeWarnings(board) }
       }
 
       case 'addCard': {
@@ -322,7 +584,12 @@ export function apply(ctx) {
   const runTool = async (method, args, exec) => {
     const wsid = await wsidOfExec(exec)
     const r = await dispatch(wsid, method, args)
-    return { ok: !r.error, message: r.error || r.message || 'Done', board: summaryOfClone(r.board) }
+    return {
+      ok: !r.error,
+      message: r.error || r.message || 'Done',
+      board: summaryOfClone(r.board),
+      warnings: Array.isArray(r.warnings) ? r.warnings : [],
+    }
   }
 
   // ---- 浏览器数据层：经官方 webServer 扩展点注册 /api/kanban ----
@@ -364,12 +631,83 @@ export function apply(ctx) {
       routeState.timer = timer.interval(() => {
         routeState.attempts++
         registerRoute()
+        maybeStartupCheck()
         if (routeState.registered || routeState.attempts >= 40) {
           if (routeState.timer) routeState.timer()
         }
       }, 500)
     }
   }
+
+  // ---- 启动校验：全量体检看板文件（只读 + 备份损坏文件，不迁移、不加载内存）----
+  const startupState = { done: false }
+  const maybeStartupCheck = () => {
+    if (startupState.done) return
+    if (!getFs()) return
+    startupState.done = true
+    runStartupCheck()
+  }
+  const runStartupCheck = async () => {
+    const fs = getFs()
+    const wsRoot = root()
+    if (!fs || !wsRoot) return
+    try {
+      const dir = await fs.resolve('.', { cwd: wsRoot })
+      const entries = await fs.listDir(dir)
+      const boardFiles = entries.filter(
+        (e) => typeof e.name === 'string' && /^kanban-board-.+\.json$/.test(e.name),
+      )
+      if (boardFiles.length === 0) {
+        console.log('dsh-kanban: 启动校验完成，未发现看板数据文件')
+        return
+      }
+      let corrupt = 0
+      let pendingUpgrade = 0
+      let unsupported = 0
+      let ok = 0
+      for (const entry of boardFiles) {
+        const wsid = entry.name.slice('kanban-board-'.length, -'.json'.length)
+        try {
+          const text = await fs.readText(entry.target)
+          const parsed = parseBoardText(text)
+          if (parsed.ok) {
+            if (parsed.migrated) {
+              pendingUpgrade++
+              console.log('dsh-kanban: 启动校验 ' + wsid + '：schemaVersion ' + parsed.fromVersion + '，首次打开时将自动升级')
+            } else {
+              ok++
+            }
+          } else if (parsed.kind === 'unsupported') {
+            unsupported++
+            console.log('dsh-kanban: 启动校验 ' + wsid + '：文件由更新版本插件写入（schemaVersion ' + parsed.version + '）')
+          } else {
+            corrupt++
+            const suffix = 'corrupt-' + timestamp()
+            const backupTarget = await fs.resolve(entry.name + '.' + suffix, { cwd: wsRoot })
+            await fs.writeText(backupTarget, text)
+            console.log('dsh-kanban: 启动校验 ' + wsid + '：数据文件损坏（' + parsed.kind + '），已备份为 ' + entry.name + '.' + suffix)
+          }
+        } catch (err) {
+          console.log('dsh-kanban: 启动校验 ' + wsid + '：检查失败 ' + ((err && err.message) || err))
+        }
+      }
+      console.log(
+        'dsh-kanban: 启动校验完成：共 ' +
+          boardFiles.length +
+          ' 个看板文件，正常 ' +
+          ok +
+          '，损坏并已备份 ' +
+          corrupt +
+          '，待自动升级 ' +
+          pendingUpgrade +
+          '，版本超前 ' +
+          unsupported,
+      )
+    } catch (err) {
+      console.log('dsh-kanban: 启动校验失败：' + ((err && err.message) || err))
+    }
+  }
+  maybeStartupCheck()
 
   // ---- 工具注册 ----
   const resultSchema = {
@@ -378,13 +716,18 @@ export function apply(ctx) {
       ok: { type: 'boolean' },
       message: { type: 'string' },
       board: { type: 'object' },
+      warnings: { type: 'array', items: { type: 'string' } },
     },
     required: ['ok', 'message'],
     additionalProperties: false,
   }
   const renderBoard = (value) => {
     const b = value && value.board
-    const lines = [String((value && value.message) || '')]
+    const lines = []
+    if (Array.isArray(value && value.warnings)) {
+      for (const w of value.warnings) lines.push('⚠ ' + w)
+    }
+    lines.push(String((value && value.message) || ''))
     if (b && Array.isArray(b.columns)) {
       lines.push('Board state:')
       for (const col of b.columns) {
@@ -435,13 +778,18 @@ export function apply(ctx) {
             ok: { type: 'boolean' },
             message: { type: 'string' },
             card: { type: 'object' },
+            warnings: { type: 'array', items: { type: 'string' } },
           },
           required: ['ok', 'message'],
           additionalProperties: false,
         },
         render: (args, value) => {
           const c = value && value.card
-          const lines = [String((value && value.message) || '')]
+          const lines = []
+          if (Array.isArray(value && value.warnings)) {
+            for (const w of value.warnings) lines.push('⚠ ' + w)
+          }
+          lines.push(String((value && value.message) || ''))
           if (c) {
             lines.push('[' + c.id + '] ' + c.title)
             if (c.priority) lines.push('Priority: ' + c.priority)
@@ -454,8 +802,8 @@ export function apply(ctx) {
       async execute(args, exec) {
         const wsid = await wsidOfExec(exec)
         const r = await dispatch(wsid, 'getCard', args)
-        if (r.error) return { ok: false, message: r.error }
-        return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card }
+        if (r.error) return { ok: false, message: r.error, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
+        return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
       },
     },
     {
@@ -641,13 +989,18 @@ export function apply(ctx) {
             ok: { type: 'boolean' },
             message: { type: 'string' },
             labels: { type: 'array', items: { type: 'object' } },
+            warnings: { type: 'array', items: { type: 'string' } },
           },
           required: ['ok', 'message'],
           additionalProperties: false,
         },
         render: (args, value) => {
           const labels = value && value.labels
-          const lines = [String((value && value.message) || '')]
+          const lines = []
+          if (Array.isArray(value && value.warnings)) {
+            for (const w of value.warnings) lines.push('⚠ ' + w)
+          }
+          lines.push(String((value && value.message) || ''))
           if (Array.isArray(labels)) {
             for (const l of labels) lines.push('- ' + l.name + ' (' + l.color + ')')
           }
@@ -658,7 +1011,12 @@ export function apply(ctx) {
         const wsid = await wsidOfExec(exec)
         const r = await dispatch(wsid, 'get', args)
         const labels = (r.board && r.board.labels) || []
-        return { ok: true, message: 'Labels (workspace ' + wsid + ')', labels }
+        return {
+          ok: true,
+          message: 'Labels (workspace ' + wsid + ')',
+          labels,
+          warnings: Array.isArray(r.warnings) ? r.warnings : [],
+        }
       },
     },
   ]

@@ -88,6 +88,38 @@ Agent 会直接更新当前看板。之后你可以在界面中继续调整，�
 
 看板按工作区隔离，并通过 DSH 文件系统服务保存为 `kanban-board-<workspaceId>.json`。刷新页面或重启 DSH 都不会丢失数据；卸载插件时，已有的看板数据也会保留。
 
+### 版本化与安全迁移
+
+持久化文件带 `schemaVersion` 字段（当前为 `1`）。旧版本插件写入的文件（无版本字段）按 `v0` 处理，在**该工作区看板首次打开时自动升级**——先复制出 `kanban-board-<workspaceId>.json.bak-v0` 备份，再写回升级后的文件。后续格式演进只需递增 `SCHEMA_VERSION` 并在 `MIGRATIONS`（`index.js`）里注册逐版本迁移函数。
+
+#### 新增一个格式版本（以 v2 为例）
+
+迁移函数写在 `index.js` 的 `MIGRATIONS` 注册表里，必须是**纯函数**——只做数据变换，不触碰文件系统或运行时状态。每步只升级一个版本，`migrateBoard` 会自动串联，v0 文件会依次走 `v0 → v1 → v2`；备份与写回由加载管线处理，无需手写脚本。
+
+```js
+export const SCHEMA_VERSION = 2 // 1) 递增版本号
+
+export const MIGRATIONS = {
+  0: (data) => ({ /* 现有 v0 → v1，保持不变 */ }),
+  1: (data) => ({
+    schemaVersion: 2, // 2) 输出必须声明新版本号
+    columns: data.columns,
+    labels: data.labels,
+    cards: data.cards.map((c) => ({ ...c, labelId: c.label ?? null })), // 例如 label → labelId
+  }),
+}
+```
+
+如果磁盘形状发生变化，同步更新 `index.js` 里的 `validateBoard` 与 `src/client/lib/types.ts` 的客户端类型，并在 `scripts/check-schema.mjs` / `scripts/check-pipeline.mjs` 中补充自检用例。
+
+异常数据不会让看板不可用：
+
+- **损坏/无法解析的文件**：备份为 `kanban-board-<workspaceId>.json.corrupt-<时间戳>`，看板以空板打开，并给出清晰提示。
+- **来自更新版本插件的文件**（`schemaVersion` 更高）：备份为 `kanban-board-<workspaceId>.json.unsupported-v<版本>` 且不改动原文件，避免降级插件破坏新数据。
+- 插件启动时会执行**全量校验扫描**：逐一检查看板文件（解析 + 版本 + 结构），损坏文件立即备份并汇总记录。
+
+迁移、损坏或版本超前的提示会同时出现在 Agent 工具结果（`warnings`）和「看板」标签页的提示横幅中。
+
 ## 工作原理
 
 `dsh-kanban` 使用标准的 DSH bundle 格式：
