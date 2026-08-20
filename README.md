@@ -2,171 +2,105 @@
 
 # dsh-kanban
 
-**Plan with your AI. See the work move.**
+### Plan with AI. Move work forward visually.
 
-A shared kanban board for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), built for both people and agents.
+A collaborative kanban board where you and your AI agent plan, organize, and ship work together—without leaving DeepSeek Harness.
 
-[简体中文](README.zh.md) · English
+[![npm version](https://img.shields.io/npm/v/@alpacachen/dsh-kanban?color=5b8def&label=npm)](https://www.npmjs.com/package/@alpacachen/dsh-kanban)
+![DeepSeek Harness Plugin](https://img.shields.io/badge/DeepSeek%20Harness-Plugin-7c5cff)
+![License](https://img.shields.io/badge/license-MIT-22c55e)
+
+[简体中文](README.zh.md) · **English**
 
 </div>
-
-Turn a conversation into an actionable plan without copying tasks between your AI assistant and a project tracker. Ask the agent to break down a feature, prioritize a bug, or move finished work—the same changes appear instantly in the **Board** tab, where you can continue organizing everything by hand.
 
 <p align="center">
   <img src="./image.png" alt="dsh-kanban board inside DeepSeek Harness" width="100%">
 </p>
 
-## Why dsh-kanban?
+## ✨ From conversation to action
 
-- **Plan in conversation** — 14 `kanban_*` tools let the agent create and manage cards, lists, and labels.
-- **Stay in control** — edit cards, drag work between lists, reorder your workflow, and filter by priority from the UI.
-- **Keep projects separate** — every DSH workspace gets its own board and persisted data.
-- **Feel at home in DSH** — the board follows the active language and theme, including dark mode.
-- **Install and go** — the browser bundle is prebuilt; no frontend toolchain or native build step is required.
+Stop copying AI-generated plans into a separate project tracker. Tell your agent what you want to build, and watch it turn the plan into cards, priorities, labels, and workflow updates on the **Board** tab.
 
-## Quick start
+You can take over at any time—drag a card, refine a note, reorder a list—and the agent immediately works from the same board.
 
-### 1. Install the plugin
+| 💬 Plan naturally | 🧭 Stay in control | ⚡ Start instantly |
+| --- | --- | --- |
+| Manage the board with 14 built-in `kanban_*` tools. | Edit, drag, prioritize, label, and filter from the UI. | Install the prebuilt plugin—no frontend setup required. |
+| **🗂️ Keep work separate** | **🌓 Feel at home** | **🤝 Share one source of truth** |
+| Every DSH workspace gets its own board. | Follows your DSH language, theme, and dark mode. | You and the agent always see the same tasks and status. |
 
-Install the published npm package:
+## 🚀 Get started
+
+### 1. Install
 
 ```sh
 dsh plugin --profile web add @alpacachen/dsh-kanban
 ```
 
-GitHub source checkouts are not a supported installation method because the generated browser bundle is created only by CI for the npm package.
-
-Restart `dsh web` after installation so the plugin bundle is loaded. To confirm that it was added successfully:
+Restart `dsh web` so the plugin bundle is loaded. You can confirm the installation with:
 
 ```sh
 dsh --profile web --dump-config
 ```
 
-The output should include a `dsh-kanban` layer.
+Look for a `dsh-kanban` layer in the output.
 
-### 2. Open the board
+### 2. Open your board
 
-Open a workspace and select the **Board** tab next to the conversation views. A new board starts with **Todo**, **In Progress**, **Review**, and **Done**.
+Enter any workspace and choose the **Board** tab beside the conversation views. A fresh board starts with four familiar stages:
 
-### 3. Plan with the agent
+`Todo` → `In Progress` → `Review` → `Done`
 
-Try a prompt like:
+### 3. Ask your agent to plan
 
-> Break the authentication feature into implementation tasks, add one card per step, and mark the security review as P0.
+Try this:
 
-The agent updates the board directly. You can then refine the plan in the UI, or keep working through conversation.
+> Break the authentication feature into implementation tasks, create one card per step, and mark the security review as P0.
 
-## What you can do
+The cards appear directly on your board. Continue in conversation, or switch to the Board tab and shape the plan by hand.
 
-### From the Board tab
+## 🧩 Everything you need to keep work moving
+
+### On the Board
 
 - Create, edit, delete, and drag cards between lists
 - Add notes, labels, and P0 / P1 / P2 priorities
-- View a card's activity history: when it was created and by whom, plus label / priority / status changes
-- Create, rename, reorder, and remove lists
-- Create labels and customize their colors
-- Filter the board by priority
+- Open a card's activity timeline to see when it changed, what changed, and whether you or the agent made the change
+- Track card creation, moves, title and note edits, label changes, and priority changes
+- Send any card to the agent in your current conversation or a new one
+- Create, rename, reorder, and remove workflow lists
+- Create color-coded labels for fast visual scanning
+- Filter the entire board by priority, or manually refresh it whenever needed
 
-### From a conversation
+### Continue any card with your agent
 
-The plugin makes these tools available automatically in every workspace conversation:
+Open a card and choose **Chat with agent**. dsh-kanban carries its ID, title, label, and notes into either the current conversation or a fresh one, so the agent has the context it needs immediately. The content is inserted as an editable draft—it is never sent until you choose to send it.
+
+### In conversation
+
+The plugin automatically gives the agent these tools in every workspace:
 
 | Area | Tools |
 | --- | --- |
-| Board | `kanban_get` |
-| Cards | `kanban_get_card`, `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
-| Lists | `kanban_add_column`, `kanban_rename_column`, `kanban_delete_column`, `kanban_move_column` |
-| Labels | `kanban_get_label`, `kanban_add_label`, `kanban_update_label`, `kanban_delete_label` |
+| **Board** | `kanban_get` |
+| **Cards** | `kanban_get_card`, `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
+| **Lists** | `kanban_add_column`, `kanban_rename_column`, `kanban_delete_column`, `kanban_move_column` |
+| **Labels** | `kanban_get_label`, `kanban_add_label`, `kanban_update_label`, `kanban_delete_label` |
 
-A few more things you can ask:
+## 💡 Things to ask your agent
 
-- “Summarize what is currently in progress.”
-- “Move ‘Fix login redirect’ to In Progress and set it to P0.”
-- “Add a Blocked list after In Progress.”
-- “Create a red Urgent label and apply it to the release card.”
+> “Summarize what is currently in progress.”
 
-## Data and persistence
+> “Move ‘Fix login redirect’ to In Progress and set it to P0.”
 
-Boards are isolated by workspace and stored through the DSH filesystem service as `kanban-board-<workspaceId>.json`. They survive browser refreshes and DSH restarts, and uninstalling the plugin does not delete existing board data.
+> “Add a Blocked list after In Progress.”
 
-### Schema versioning and safe migration
+> “Create a red Urgent label and apply it to the release card.”
 
-Persisted files carry a `schemaVersion` field (currently `1`). Files written by older versions (without a version field) are treated as `v0` and are **automatically upgraded the first time the workspace board is opened** — the pre-upgrade file is copied to `kanban-board-<workspaceId>.json.bak-v0` first, then the upgraded file is written back. Future format changes simply bump `SCHEMA_VERSION` and register a step-by-step migration function in `MIGRATIONS` (`index.js`).
+> “I'm a lawyer. Set up a board for my day-to-day casework, create the workflow stages and labels I’ll need, and keep them up to date as my work evolves.”
 
-#### Adding a future format version (e.g. v2)
-
-Migration functions live in `MIGRATIONS` in `index.js` and are pure functions — they transform data only, never touch the filesystem or runtime state. Each step upgrades by exactly one version; `migrateBoard` chains them automatically, so a `v0` file walks `v0 → v1 → v2`. Backups and write-back are handled by the load pipeline.
-
-```js
-export const SCHEMA_VERSION = 2 // 1) bump the version
-
-export const MIGRATIONS = {
-  0: (data) => ({ /* existing v0 → v1, unchanged */ }),
-  1: (data) => ({
-    schemaVersion: 2, // 2) output must declare the new version
-    columns: data.columns,
-    labels: data.labels,
-    cards: data.cards.map((c) => ({ ...c, labelId: c.label ?? null })), // e.g. label → labelId
-  }),
-}
-```
-
-If the on-disk shape changes, update `validateBoard` in `index.js` and the client types in `src/client/lib/types.ts` accordingly, and extend the self-checks in `scripts/check-schema.mjs` / `scripts/check-pipeline.mjs`.
-
-Abnormal data never makes the board unusable:
-
-- **Corrupt/unparseable files** are backed up to `kanban-board-<workspaceId>.json.corrupt-<timestamp>` and the board opens empty, with a clear notice.
-- **Files from a newer plugin version** (higher `schemaVersion`) are backed up to `kanban-board-<workspaceId>.json.unsupported-v<version>` and left untouched, so no data is destroyed by a downgraded plugin.
-- At plugin startup a **validation scan** checks every board file (parse + version + structure), backs up any corrupt files, and logs a summary.
-
-Notices from migrations, corruption, or unsupported versions are surfaced both in the agent tool results (`warnings`) and as a banner in the Board tab.
-
-## How it works
-
-`dsh-kanban` uses the standard DSH bundle format:
-
-- `index.js` registers the agent tools and the `/api/kanban` browser endpoint.
-- Both interfaces share one data layer, so the agent and the Board tab always operate on the same board.
-- `cordis.patch.yml` adds the plugin to the selected DSH profile.
-- `lib/client.js` is the prebuilt web client loaded by DSH.
-
-The client is built with React, TypeScript, Tailwind CSS, shadcn/ui, Radix UI, and dnd-kit. React itself is provided by DSH, keeping the distributed bundle smaller and avoiding duplicate runtimes.
-
-## Development
-
-Requirements: Node.js and pnpm.
-
-```sh
-pnpm install
-pnpm build
-pnpm typecheck
-```
-
-For an unminified client bundle while debugging:
-
-```sh
-node build.mjs --no-minify
-```
-
-Project layout:
-
-```text
-index.js              # Host plugin, tools, persistence, and HTTP endpoint
-cordis.patch.yml      # DSH bundle patch
-build.mjs             # Client build script
-src/client/           # React and TypeScript source
-lib/client.js         # Generated locally or by CI; included only in the npm package
-```
-
-## Contributing
-
-Issues and pull requests are welcome. If you are planning a larger change, opening an issue first is a good way to align on the approach before implementation.
-
-## Uninstall
-
-```sh
-dsh plugin --profile web remove @alpacachen/dsh-kanban
-```
+You do not need to design the workflow first. Tell the agent your role, situation, or goal, and it can create suitable stages and labels—then keep refining them as you work.
 
 ## License
 
