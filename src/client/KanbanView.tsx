@@ -65,7 +65,8 @@ export function KanbanView(props: KanbanViewProps) {
 
   const applyBoard = useCallback((res: any) => {
     if (res && res.board) {
-      setBoard(res.board)
+      // 旧版本主机插件可能不返回 activities；兜底为空数组，避免下游 .filter 崩溃
+      setBoard({ ...res.board, activities: Array.isArray(res.board.activities) ? res.board.activities : [] })
       setError("")
     }
     if (Array.isArray(res && res.warnings) && res.warnings.length > 0) {
@@ -395,6 +396,7 @@ export function KanbanView(props: KanbanViewProps) {
         open={dialog !== null}
         card={dialog?.card ?? null}
         labels={board.labels}
+        activities={dialog?.card ? board.activities.filter((a) => a.cardId === dialog.card!.id) : []}
         onOpenChange={(open) => {
           if (!open) setDialog(null)
         }}

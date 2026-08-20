@@ -11,10 +11,11 @@
  *  - 浏览器数据层：经 ctx.get('webServer') 注册 /api/kanban 前缀路由
  *
  * 数据模型（每工作区，磁盘文件带 schemaVersion）：
- *   schemaVersion: 1
+ *   schemaVersion: 2
  *   columns: [{ id, title }]
  *   labels:  [{ name, color }]          —— 标签与颜色绑定，name 为唯一键
- *   cards:   [{ id, columnId, title, note, label, priority }]
+ *   cards:   [{ id, columnId, title, note, label, priority, createdAt, createdBy }]
+ *   activities: [{ id, ts, cardId, type, source, field?, from?, to?, meta? }]  —— 追加式活动日志
  *
  * 数据安全：
  *   - 无 schemaVersion 的历史文件按 v0 处理，首次打开自动升级（见 MIGRATIONS）
@@ -43,8 +44,11 @@ export const inject = ['tools']
 // 旧文件在首次打开时自动沿迁移链升级，升级前原文件先备份。
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 export const LEGACY_VERSION = 0
+
+// 活动日志：追加式只读记录，随看板一起落盘；超过上限丢弃最旧事件，防止日志无界增长。
+const ACTIVITY_LIMIT = 5000
 
 const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const strField = (v, fb) => (typeof v === 'string' && v ? v : fb)
@@ -81,6 +85,23 @@ export const MIGRATIONS = {
       columns: pick(src.columns).map(normColumn).filter(Boolean),
       labels: pick(src.labels).map(normLabel).filter(Boolean),
       cards: pick(src.cards).map(normCard).filter(Boolean),
+    }
+  },
+  1: (data) => {
+    // v1 → v2：新增追加式活动日志 activities；卡片补 createdAt/createdBy（历史数据为 null）
+    const src = isObj(data) ? data : {}
+    const pick = (arr) => (Array.isArray(arr) ? arr : [])
+    return {
+      schemaVersion: 2,
+      columns: pick(src.columns).map(normColumn).filter(Boolean),
+      labels: pick(src.labels).map(normLabel).filter(Boolean),
+      cards: pick(src.cards)
+        .map((c) => {
+          const card = normCard(c)
+          return card ? { ...card, createdAt: null, createdBy: null } : null
+        })
+        .filter(Boolean),
+      activities: [],
     }
   },
 }
@@ -122,6 +143,7 @@ export function validateBoard(data) {
   if (!Array.isArray(data.columns)) errors.push('columns must be an array')
   if (!Array.isArray(data.labels)) errors.push('labels must be an array')
   if (!Array.isArray(data.cards)) errors.push('cards must be an array')
+  if (!Array.isArray(data.activities)) errors.push('activities must be an array')
   if (Array.isArray(data.cards)) {
     const seen = new Set()
     for (const c of data.cards) {
@@ -308,7 +330,7 @@ export function apply(ctx) {
   const boardOf = async (wsid) => {
     let board = boards.get(wsid)
     if (board) return board
-    board = { schemaVersion: SCHEMA_VERSION, columns: [], labels: [], cards: [], warnings: [] }
+    board = { schemaVersion: SCHEMA_VERSION, columns: [], labels: [], cards: [], activities: [], warnings: [] }
     boards.set(wsid, board)
     const fs = getFs()
     const target = await targetOf(wsid)
@@ -322,6 +344,7 @@ export function apply(ctx) {
           board.columns = parsed.data.columns
           board.labels = parsed.data.labels
           board.cards = parsed.data.cards
+          board.activities = Array.isArray(parsed.data.activities) ? parsed.data.activities : []
           migrated = parsed.migrated
           // 迁移场景：写回前先把迁移前的原文件备份下来，保证可回滚
           if (parsed.migrated) {
@@ -340,6 +363,7 @@ export function apply(ctx) {
     }
     for (const col of board.columns) bumpSeq(col.id)
     for (const card of board.cards) bumpSeq(card.id)
+    for (const act of board.activities) bumpSeq(act.id)
     if (board.columns.length === 0) {
       for (const title of DEFAULT_COLUMNS) board.columns.push({ id: nextId('c'), title })
     }
@@ -363,6 +387,7 @@ export function apply(ctx) {
           columns: board.columns,
           labels: board.labels,
           cards: board.cards,
+          activities: Array.isArray(board.activities) ? board.activities : [],
         }),
       )
     } catch (err) {
@@ -389,7 +414,10 @@ export function apply(ctx) {
       note: c.note ?? '',
       label: c.label ?? null,
       priority: c.priority ?? null,
+      createdAt: typeof c.createdAt === 'string' ? c.createdAt : null,
+      createdBy: typeof c.createdBy === 'string' ? c.createdBy : null,
     })),
+    activities: Array.isArray(b.activities) ? b.activities.map((a) => ({ ...a })) : [],
   })
   const summaryOfClone = (clone) => ({
     columns: clone.columns.map((c) => ({
@@ -407,10 +435,24 @@ export function apply(ctx) {
     })),
   })
 
+  // 追加一条活动事件（只读日志，随看板一起落盘）
+  const record = (board, ev) => {
+    if (!Array.isArray(board.activities)) board.activities = []
+    board.activities.push({
+      id: nextId('e'),
+      ts: new Date().toISOString(),
+      ...ev,
+    })
+    if (board.activities.length > ACTIVITY_LIMIT) {
+      board.activities.splice(0, board.activities.length - ACTIVITY_LIMIT)
+    }
+  }
+
   // ---- 核心数据操作：工具与浏览器 HTTP 共用同一份逻辑 ----
-  const dispatch = async (wsid, method, args) => {
+  const dispatch = async (wsid, method, args, source) => {
     const board = await boardOf(wsid)
     const a = args || {}
+    const actor = source === 'agent' ? 'agent' : 'human'
     const persisted = () => persistedFlag(wsid)
     const result = (extra) => ({ board: cloneBoard(board), persisted: persisted(), warnings: takeWarnings(board), ...extra })
 
@@ -427,13 +469,27 @@ export function apply(ctx) {
       case 'addCard': {
         const col = findColumn(board, str(a.columnId, '')) || board.columns[0]
         if (!col) return result({ error: 'No list available' })
-        board.cards.push({
+        const card = {
           id: nextId('k'),
           columnId: col.id,
           title: str(a.title, '').slice(0, 120) || 'Untitled card',
           note: str(a.note, '').slice(0, 500),
           label: typeof a.label === 'string' ? a.label.slice(0, 20) : undefined,
           priority: normPriority(a.priority),
+          createdAt: new Date().toISOString(),
+          createdBy: actor,
+        }
+        board.cards.push(card)
+        record(board, {
+          cardId: card.id,
+          type: 'card_created',
+          source: actor,
+          meta: {
+            title: card.title,
+            column: col.title,
+            label: card.label ?? null,
+            priority: card.priority ?? null,
+          },
         })
         await save(wsid)
         return result({ message: 'Card added to "' + col.title + '"' })
@@ -442,10 +498,34 @@ export function apply(ctx) {
       case 'updateCard': {
         const card = findCard(board, str(a.id, ''))
         if (card) {
+          const before = {
+            title: card.title,
+            note: card.note,
+            label: card.label ?? null,
+            priority: card.priority ?? null,
+          }
           if (typeof a.title === 'string') card.title = a.title.slice(0, 120) || card.title
           if (typeof a.note === 'string') card.note = a.note.slice(0, 500)
           if (typeof a.label === 'string') card.label = a.label.slice(0, 20) || undefined
           if (typeof a.priority === 'string') card.priority = normPriority(a.priority)
+          const after = {
+            title: card.title,
+            note: card.note,
+            label: card.label ?? null,
+            priority: card.priority ?? null,
+          }
+          if (after.title !== before.title) {
+            record(board, { cardId: card.id, type: 'card_title_changed', source: actor, field: 'title', from: before.title, to: after.title })
+          }
+          if (after.note !== before.note) {
+            record(board, { cardId: card.id, type: 'card_note_changed', source: actor, field: 'note' })
+          }
+          if (after.label !== before.label) {
+            record(board, { cardId: card.id, type: 'card_label_changed', source: actor, field: 'label', from: before.label, to: after.label })
+          }
+          if (after.priority !== before.priority) {
+            record(board, { cardId: card.id, type: 'card_priority_changed', source: actor, field: 'priority', from: before.priority, to: after.priority })
+          }
           await save(wsid)
         }
         return card
@@ -455,7 +535,11 @@ export function apply(ctx) {
 
       case 'deleteCard': {
         const id = str(a.id, '')
+        const card = findCard(board, id)
         board.cards = board.cards.filter((c) => c.id !== id)
+        if (card) {
+          record(board, { cardId: id, type: 'card_deleted', source: actor, meta: { title: card.title } })
+        }
         await save(wsid)
         return result({ message: 'Card deleted' })
       }
@@ -464,6 +548,8 @@ export function apply(ctx) {
         const card = findCard(board, str(a.id, ''))
         const target = findColumn(board, str(a.columnId, ''))
         if (!card || !target) return result({ error: 'Card or list not found' })
+        const fromCol = findColumn(board, card.columnId)
+        const fromTitle = fromCol ? fromCol.title : String(card.columnId)
         board.cards = board.cards.filter((c) => c.id !== card.id)
         card.columnId = target.id
         const inCol = board.cards.filter((c) => c.columnId === target.id)
@@ -473,6 +559,9 @@ export function apply(ctx) {
         const anchor = inCol[toIndex]
         if (anchor) board.cards.splice(board.cards.indexOf(anchor), 0, card)
         else board.cards.push(card)
+        if (fromTitle !== target.title) {
+          record(board, { cardId: card.id, type: 'card_moved', source: actor, field: 'columnId', from: fromTitle, to: target.title, meta: { title: card.title } })
+        }
         await save(wsid)
         return result({ message: 'Moved to "' + target.title + '"' })
       }
@@ -480,6 +569,7 @@ export function apply(ctx) {
       case 'addColumn': {
         const title = str(a.title, '').slice(0, 40) || 'New list'
         board.columns.push({ id: nextId('c'), title })
+        record(board, { cardId: null, type: 'column_added', source: actor, meta: { column: title } })
         await save(wsid)
         return result({ message: 'List added: "' + title + '"' })
       }
@@ -487,7 +577,11 @@ export function apply(ctx) {
       case 'renameColumn': {
         const col = findColumn(board, str(a.id, ''))
         if (col && typeof a.title === 'string') {
+          const before = col.title
           col.title = a.title.slice(0, 40) || col.title
+          if (col.title !== before) {
+            record(board, { cardId: null, type: 'column_renamed', source: actor, field: 'title', from: before, to: col.title, meta: { column: col.title } })
+          }
           await save(wsid)
         }
         return col ? result({ message: 'List renamed' }) : result({ error: 'List not found' })
@@ -498,11 +592,16 @@ export function apply(ctx) {
         if (board.columns.length <= 1) return result({ error: 'At least one list must remain' })
         const idx = board.columns.findIndex((c) => c.id === id)
         if (idx < 0) return result({ error: 'List not found' })
+        const deleted = board.columns[idx]
         board.columns.splice(idx, 1)
         const fallback = board.columns[0].id
         for (const card of board.cards) {
-          if (card.columnId === id) card.columnId = fallback
+          if (card.columnId === id) {
+            card.columnId = fallback
+            record(board, { cardId: card.id, type: 'card_moved', source: actor, field: 'columnId', from: deleted.title, to: board.columns[0].title, meta: { title: card.title } })
+          }
         }
+        record(board, { cardId: null, type: 'column_deleted', source: actor, meta: { column: deleted.title } })
         await save(wsid)
         return result({ message: 'List deleted, cards moved to "' + board.columns[0].title + '"' })
       }
@@ -525,6 +624,7 @@ export function apply(ctx) {
         if (!name) return result({ error: 'Label name required' })
         if (findLabel(board, name)) return result({ error: 'Label already exists' })
         board.labels.push({ name, color: normColor(a.color) || '#94a3b8' })
+        record(board, { cardId: null, type: 'label_added', source: actor, meta: { label: name } })
         await save(wsid)
         return result({ message: 'Label added: "' + name + '"' })
       }
@@ -538,10 +638,20 @@ export function apply(ctx) {
           if (findLabel(board, newName)) return result({ error: 'Label name already exists' })
           label.name = newName
           for (const card of board.cards) {
-            if (card.label === name) card.label = newName
+            if (card.label === name) {
+              card.label = newName
+              record(board, { cardId: card.id, type: 'card_label_changed', source: actor, field: 'label', from: name, to: newName, meta: { title: card.title } })
+            }
+          }
+          record(board, { cardId: null, type: 'label_renamed', source: actor, field: 'name', from: name, to: newName, meta: { label: newName } })
+        }
+        if (typeof a.color === 'string') {
+          const beforeColor = label.color
+          label.color = normColor(a.color) || label.color
+          if (label.color !== beforeColor) {
+            record(board, { cardId: null, type: 'label_color_changed', source: actor, field: 'color', from: beforeColor, to: label.color, meta: { label: label.name } })
           }
         }
-        if (typeof a.color === 'string') label.color = normColor(a.color) || label.color
         await save(wsid)
         return result({ message: 'Label updated' })
       }
@@ -552,8 +662,12 @@ export function apply(ctx) {
         if (idx < 0) return result({ error: 'Label not found' })
         board.labels.splice(idx, 1)
         for (const card of board.cards) {
-          if (card.label === name) card.label = undefined
+          if (card.label === name) {
+            card.label = undefined
+            record(board, { cardId: card.id, type: 'card_label_changed', source: actor, field: 'label', from: name, to: null, meta: { title: card.title } })
+          }
         }
+        record(board, { cardId: null, type: 'label_deleted', source: actor, meta: { label: name } })
         await save(wsid)
         return result({ message: 'Label deleted' })
       }
@@ -583,7 +697,7 @@ export function apply(ctx) {
 
   const runTool = async (method, args, exec) => {
     const wsid = await wsidOfExec(exec)
-    const r = await dispatch(wsid, method, args)
+    const r = await dispatch(wsid, method, args, 'agent')
     return {
       ok: !r.error,
       message: r.error || r.message || 'Done',
@@ -602,7 +716,7 @@ export function apply(ctx) {
       const method = typeof body.method === 'string' ? body.method : 'get'
       const args = body.args || {}
       const wsid = typeof args.workspaceId === 'string' && args.workspaceId ? args.workspaceId : 'default'
-      const result = await dispatch(wsid, method, args)
+      const result = await dispatch(wsid, method, args, 'human')
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(result))
     } catch (err) {
@@ -801,7 +915,7 @@ export function apply(ctx) {
       },
       async execute(args, exec) {
         const wsid = await wsidOfExec(exec)
-        const r = await dispatch(wsid, 'getCard', args)
+        const r = await dispatch(wsid, 'getCard', args, 'agent')
         if (r.error) return { ok: false, message: r.error, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
         return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
       },
@@ -1009,7 +1123,7 @@ export function apply(ctx) {
       },
       async execute(args, exec) {
         const wsid = await wsidOfExec(exec)
-        const r = await dispatch(wsid, 'get', args)
+        const r = await dispatch(wsid, 'get', args, 'agent')
         const labels = (r.board && r.board.labels) || []
         return {
           ok: true,
