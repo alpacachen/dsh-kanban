@@ -7,7 +7,7 @@
  * 职责：
  *  - 按工作区（项目）隔离：boards 以 workspaceId 为键，每个工作区一块独立看板
  *  - 磁盘持久化：经 ctx.fs 写入 <workspaceRoot>/kanban-board-<workspaceId>.json
- *  - 模型工具：经 ctx.tools.register 注册 8 个 kanban_* 工具
+ *  - 模型工具：经 ctx.tools.register 注册 14 个 kanban_* 工具
  *  - 浏览器数据层：经 ctx.get('webServer') 注册 /api/kanban 前缀路由
  *
  * 数据模型（每工作区）：
@@ -155,6 +155,12 @@ export function apply(ctx) {
     switch (method) {
       case 'get':
         return { board: cloneBoard(board), persisted: persisted(), message: 'Board loaded' }
+
+      case 'getCard': {
+        const card = cloneBoard(board).cards.find((c) => c.id === str(a.id, ''))
+        if (!card) return { error: 'Card not found: ' + str(a.id, '') }
+        return { card }
+      }
 
       case 'addCard': {
         const col = findColumn(board, str(a.columnId, '')) || board.columns[0]
@@ -410,6 +416,46 @@ export function apply(ctx) {
       output: output(renderBoard),
       async execute(args, exec) {
         return runTool('get', args, exec)
+      },
+    },
+    {
+      name: 'kanban_get_card',
+      description: "Read one card's full details (title, note, label, priority) by id from the current project (workspace) board. Use kanban_get first to discover card ids, then this tool to read a card's complete note and fields.",
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Card id (see kanban_get output)' },
+        },
+        required: ['id'],
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            ok: { type: 'boolean' },
+            message: { type: 'string' },
+            card: { type: 'object' },
+          },
+          required: ['ok', 'message'],
+          additionalProperties: false,
+        },
+        render: (args, value) => {
+          const c = value && value.card
+          const lines = [String((value && value.message) || '')]
+          if (c) {
+            lines.push('[' + c.id + '] ' + c.title)
+            if (c.priority) lines.push('Priority: ' + c.priority)
+            if (c.label) lines.push('Label: ' + c.label)
+            if (c.note) lines.push('Note: ' + c.note)
+          }
+          return [{ type: 'text', text: lines.join('\n') }]
+        },
+      },
+      async execute(args, exec) {
+        const wsid = await wsidOfExec(exec)
+        const r = await dispatch(wsid, 'getCard', args)
+        if (r.error) return { ok: false, message: r.error }
+        return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card }
       },
     },
     {

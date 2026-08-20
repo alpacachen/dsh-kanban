@@ -18,7 +18,7 @@ Turn a conversation into an actionable plan without copying tasks between your A
 
 ## Why dsh-kanban?
 
-- **Plan in conversation** — 13 `kanban_*` tools let the agent create and manage cards, lists, and labels.
+- **Plan in conversation** — 14 `kanban_*` tools let the agent create and manage cards, lists, and labels.
 - **Stay in control** — edit cards, drag work between lists, reorder your workflow, and filter by priority from the UI.
 - **Keep projects separate** — every DSH workspace gets its own board and persisted data.
 - **Feel at home in DSH** — the board follows the active language and theme, including dark mode.
@@ -73,7 +73,7 @@ The plugin makes these tools available automatically in every workspace conversa
 | Area | Tools |
 | --- | --- |
 | Board | `kanban_get` |
-| Cards | `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
+| Cards | `kanban_get_card`, `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
 | Lists | `kanban_add_column`, `kanban_rename_column`, `kanban_delete_column`, `kanban_move_column` |
 | Labels | `kanban_get_label`, `kanban_add_label`, `kanban_update_label`, `kanban_delete_label` |
 
