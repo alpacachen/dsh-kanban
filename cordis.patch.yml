@@ -1,0 +1,6 @@
+# dsh-kanban bundle patch：把看板插件行插入 profile 组合。
+# 安装后该行通过包名 dsh-kanban 解析（Node 从 profile 的 node_modules 找到本包）。
+# 层顺序：@deepseek-ai/dsh-base → 本 bundle → profile 自己的 cordis.patch.yml → 用户 --patch 覆盖。
+- insert:
+    - id: dsh-kanban
+      name: dsh-kanban

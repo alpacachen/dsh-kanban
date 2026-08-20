@@ -1,0 +1,83 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+@source "./**/*.{ts,tsx}";
+
+/*
+ * 关键：DSH 主题变量（--dsw-alias-*、--dsw-shadow-lv*）定义在 `body`（及
+ * `body[data-ds-dark-theme]` 暗黑覆盖）上，而非 `:root`。
+ * 因此这里用 `@theme inline` 把 Tailwind 工具类【直接】内联到 var(--dsw-alias-*)，
+ * 在 body 内的元素上解析，绝不经过 `:root` 中间层——否则背景/边框会落空。
+ */
+@theme inline {
+  /* 颜色 → DSH alias token */
+  --color-background: var(--dsw-alias-bg-base);
+  --color-foreground: var(--dsw-alias-label-primary);
+  --color-card: var(--dsw-alias-bg-layer-1);
+  --color-card-foreground: var(--dsw-alias-label-primary);
+  --color-popover: var(--dsw-alias-bg-overlay);
+  --color-popover-foreground: var(--dsw-alias-label-primary);
+  --color-primary: var(--dsw-alias-brand-primary);
+  --color-primary-foreground: var(--dsw-alias-label-primary-foreground, #ffffff);
+  --color-secondary: var(--dsw-alias-bg-layer-2);
+  --color-secondary-foreground: var(--dsw-alias-label-primary);
+  --color-muted: var(--dsw-alias-bg-layer-1);
+  --color-muted-foreground: var(--dsw-alias-label-secondary);
+  --color-accent: var(--dsw-alias-bg-layer-2);
+  --color-accent-foreground: var(--dsw-alias-label-primary);
+  --color-destructive: var(--dsw-alias-state-error-primary);
+  --color-destructive-foreground: var(--dsw-alias-label-primary-foreground, #ffffff);
+  --color-border: var(--dsw-alias-border-l1);
+  --color-input: var(--dsw-alias-border-l1);
+  --color-ring: var(--dsw-alias-brand-primary);
+
+  /* 阴影 → DSH 阴影 token（浅色/暗黑两套自动适配） */
+  --shadow-soft: var(--dsw-shadow-lv1);
+  --shadow-card: var(--dsw-shadow-lv2);
+  --shadow-float: var(--dsw-shadow-lv3);
+
+  /* 列阴影：轻阴影（柔和、低透明度），配合边框形成清晰分隔 */
+  --shadow-column: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.05);
+
+  /* 圆角（字面量，避免 var 间接层） */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--dsw-alias-border-l1);
+  }
+}
+
+/* ---- 看板细滚动条 ---- */
+.kan-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.kan-scroll::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-scrollbar-bg-l1, rgba(128, 128, 128, 0.3));
+  border-radius: 999px;
+}
+.kan-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--dsw-alias-scrollbar-hover-l1, rgba(128, 128, 128, 0.5));
+}
+.kan-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kan-dragging {
+  opacity: 0.4;
+}
+
+/* ---- 减少动态：用瞬时/淡入替代位移与弹簧 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

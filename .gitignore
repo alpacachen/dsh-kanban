@@ -1,0 +1,6 @@
+node_modules/
+.pnpm-store/
+dist/
+*.tgz
+.DS_Store
+kanban-board-*.json
