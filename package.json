@@ -1,6 +1,6 @@
 {
   "name": "@alpacachen/dsh-kanban",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A kanban board plugin for DeepSeek Harness: a 'Board' tab in conversations plus 13 kanban_* AI tools, per-workspace isolation and disk persistence. Built with React, TypeScript, dnd-kit, shadcn/ui and Tailwind CSS.",
   "type": "module",
   "main": "index.js",
@@ -21,6 +21,7 @@
   ],
   "scripts": {
     "build": "node build.mjs",
+    "check:client-bundle": "node scripts/check-client-bundle.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

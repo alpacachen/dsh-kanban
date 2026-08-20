@@ -28,17 +28,13 @@
 
 ### 1. 安装插件
 
-```sh
-# 从 GitHub 安装
-dsh plugin --profile web add github:alpacachen/dsh-kanban
-```
-
-也可以从 npm 或本地目录安装：
+从 npm 安装已发布的包：
 
 ```sh
 dsh plugin --profile web add @alpacachen/dsh-kanban
-dsh plugin --profile web add ./dsh-kanban
 ```
+
+项目不支持从 GitHub 源码安装，因为生成的浏览器 bundle 只会由 CI 构建并放入 npm 包。
 
 安装后重启 `dsh web`，让插件 bundle 在启动时加载。可以通过下面的命令确认配置：
 
@@ -126,7 +122,7 @@ index.js              # 宿主插件、Agent 工具、持久化与 HTTP 接口
 cordis.patch.yml      # DSH bundle 补丁
 build.mjs             # 客户端构建脚本
 src/client/           # React 与 TypeScript 源码
-lib/client.js         # 随包发布的预构建浏览器 bundle
+lib/client.js         # 本地或 CI 生成，仅随 npm 包发布
 ```
 
 ## 参与贡献

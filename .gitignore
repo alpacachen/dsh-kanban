@@ -2,6 +2,7 @@ node_modules/
 .pnpm-store/
 .npm-cache/
 dist/
+lib/client.js
 *.tgz
 .DS_Store
 kanban-board-*.json

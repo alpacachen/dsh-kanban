@@ -28,17 +28,13 @@ Turn a conversation into an actionable plan without copying tasks between your A
 
 ### 1. Install the plugin
 
-```sh
-# From GitHub
-dsh plugin --profile web add github:alpacachen/dsh-kanban
-```
-
-You can also install the published npm package or a local checkout:
+Install the published npm package:
 
 ```sh
 dsh plugin --profile web add @alpacachen/dsh-kanban
-dsh plugin --profile web add ./dsh-kanban
 ```
+
+GitHub source checkouts are not a supported installation method because the generated browser bundle is created only by CI for the npm package.
 
 Restart `dsh web` after installation so the plugin bundle is loaded. To confirm that it was added successfully:
 
@@ -126,7 +122,7 @@ index.js              # Host plugin, tools, persistence, and HTTP endpoint
 cordis.patch.yml      # DSH bundle patch
 build.mjs             # Client build script
 src/client/           # React and TypeScript source
-lib/client.js         # Prebuilt browser bundle published with the package
+lib/client.js         # Generated locally or by CI; included only in the npm package
 ```
 
 ## Contributing
