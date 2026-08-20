@@ -6,7 +6,7 @@
  *
  * 职责：
  *  - 按工作区（项目）隔离：boards 以 workspaceId 为键，每个工作区一块独立看板
- *  - 磁盘持久化：经 ctx.fs 写入 <workspaceRoot>/kanban-board-<workspaceId>.json
+ *  - 磁盘持久化：经 ctx.fs 写入 <workspace.path>/.dsh-kanban.json
  *  - 模型工具：经 ctx.tools.register 注册 14 个 kanban_* 工具
  *  - 浏览器数据层：经 ctx.get('webServer') 注册 /api/kanban 前缀路由
  *
@@ -275,41 +275,53 @@ export function apply(ctx) {
   ]
 
   // ---- 持久化定位 ----
-  const root = () => {
-    const p = getPolicy()
-    return p && typeof p.workspaceRoot === 'string' ? p.workspaceRoot : undefined
+  const BOARD_FILE = '.dsh-kanban.json'
+  const workspaceKey = (workspace) => String(workspace.id || workspace.path)
+  const writePolicyFor = (workspace, session) => {
+    const policy = getPolicy()
+    const resolved =
+      policy && typeof policy.resolve === 'function'
+        ? policy.resolve(session ? { session } : {})
+        : { mode: (policy && policy.defaultMode) || 'workspace-write' }
+    return { ...resolved, workspaceRoot: workspace.path }
   }
-  const fileName = (wsid) => 'kanban-board-' + wsid + '.json'
-  const resolveFile = async (wsid) => {
+  const resolveFile = async (workspace) => {
     const fs = getFs()
     if (!fs) return null
     try {
-      return await fs.resolve(fileName(wsid), root() ? { cwd: root() } : {})
+      return await fs.resolve(BOARD_FILE, { cwd: workspace.path })
     } catch (err) {
-      console.log('dsh-kanban: 解析看板文件失败，退回内存模式：' + ((err && err.message) || err))
+      console.log(
+        'dsh-kanban: 解析工作区看板文件失败 ' + workspaceKey(workspace) + '：' + ((err && err.message) || err),
+      )
       return null
     }
   }
-  const targetOf = async (wsid) => {
-    if (!fileTargets.has(wsid)) fileTargets.set(wsid, await resolveFile(wsid))
-    return fileTargets.get(wsid)
+  const targetOf = async (workspace) => {
+    const key = workspaceKey(workspace)
+    if (!fileTargets.has(key)) fileTargets.set(key, await resolveFile(workspace))
+    return fileTargets.get(key)
   }
-  const persistedFlag = (wsid) => fileTargets.has(wsid) && fileTargets.get(wsid) !== null
+  const persistedFlag = (workspace) => {
+    const key = workspaceKey(workspace)
+    return fileTargets.has(key) && fileTargets.get(key) !== null
+  }
 
   // ---- 看板读写 ----
 
-  // 备份原文件为 <文件名>.<suffix>（复制而非移动，保证原文件在写回前始终存在）
-  const backupFile = async (wsid, suffix) => {
+  // 备份原文件为 .dsh-kanban.json.<suffix>（复制而非移动，保证原文件在写回前始终存在）
+  const backupFile = async (workspace, suffix, session) => {
     const fs = getFs()
-    const target = await targetOf(wsid)
+    const target = await targetOf(workspace)
     if (!fs || !target) return null
+    const key = workspaceKey(workspace)
     try {
       const text = await fs.readText(target)
-      const backupTarget = await fs.resolve(fileName(wsid) + '.' + suffix, root() ? { cwd: root() } : {})
-      await fs.writeText(backupTarget, text)
+      const backupTarget = await fs.resolve(BOARD_FILE + '.' + suffix, { cwd: workspace.path })
+      await fs.writeText(backupTarget, text, undefined, undefined, writePolicyFor(workspace, session))
       return backupTarget
     } catch (err) {
-      console.log('dsh-kanban: 备份失败 ' + wsid + ' (' + suffix + ')：' + ((err && err.message) || err))
+      console.log('dsh-kanban: 备份失败 ' + key + ' (' + suffix + ')：' + ((err && err.message) || err))
       return null
     }
   }
@@ -326,14 +338,15 @@ export function apply(ctx) {
   }
   const timestamp = () => new Date().toISOString().replace(/[:.]/g, '-')
 
-  // 首次访问某工作区时从磁盘加载；异常数据一律不阻塞看板可用性
-  const boardOf = async (wsid) => {
-    let board = boards.get(wsid)
+  // 首次访问某工作区时从该工作区根目录加载；异常数据一律不阻塞看板可用性
+  const boardOf = async (workspace, session) => {
+    const key = workspaceKey(workspace)
+    let board = boards.get(key)
     if (board) return board
     board = { schemaVersion: SCHEMA_VERSION, columns: [], labels: [], cards: [], activities: [], warnings: [] }
-    boards.set(wsid, board)
+    boards.set(key, board)
     const fs = getFs()
-    const target = await targetOf(wsid)
+    const target = await targetOf(workspace)
     let migrated = false
     if (fs && target) {
       try {
@@ -346,19 +359,19 @@ export function apply(ctx) {
           board.cards = parsed.data.cards
           board.activities = Array.isArray(parsed.data.activities) ? parsed.data.activities : []
           migrated = parsed.migrated
-          // 迁移场景：写回前先把迁移前的原文件备份下来，保证可回滚
+          // schema 迁移场景：写回前先把迁移前的原文件备份下来，保证可回滚
           if (parsed.migrated) {
-            await backupFile(wsid, 'bak-v' + parsed.fromVersion)
+            await backupFile(workspace, 'bak-v' + parsed.fromVersion, session)
           }
         } else {
           // 损坏 / 结构无效 / 版本超前：原文件已无法安全读取，先备份再以空板继续
           const suffix =
             parsed.kind === 'unsupported' ? 'unsupported-v' + parsed.version : 'corrupt-' + timestamp()
-          await backupFile(wsid, suffix)
+          await backupFile(workspace, suffix, session)
         }
       } catch (err) {
         // 尚无看板文件（首次使用）或 fs 读取异常，保留默认空板
-        console.log('dsh-kanban: 读取看板失败 ' + wsid + '：' + ((err && err.message) || err))
+        console.log('dsh-kanban: 读取看板失败 ' + key + '：' + ((err && err.message) || err))
       }
     }
     for (const col of board.columns) bumpSeq(col.id)
@@ -370,14 +383,15 @@ export function apply(ctx) {
     if (board.labels.length === 0) {
       board.labels = DEFAULT_LABELS.map((l) => ({ ...l }))
     }
-    // 升级写回：迁移成功即落盘新版本，保证每个文件只迁移一次
-    if (migrated && fs && target) await save(wsid)
+    // schema 升级写回：迁移成功即落盘新版本，保证每个文件只迁移一次
+    if (migrated && fs && target) await save(workspace, session)
     return board
   }
-  const save = async (wsid) => {
+  const save = async (workspace, session) => {
     const fs = getFs()
-    const target = await targetOf(wsid)
-    const board = boards.get(wsid)
+    const target = await targetOf(workspace)
+    const key = workspaceKey(workspace)
+    const board = boards.get(key)
     if (!fs || !target || !board) return
     try {
       await fs.writeText(
@@ -389,9 +403,12 @@ export function apply(ctx) {
           cards: board.cards,
           activities: Array.isArray(board.activities) ? board.activities : [],
         }),
+        undefined,
+        undefined,
+        writePolicyFor(workspace, session),
       )
     } catch (err) {
-      console.log('dsh-kanban: 保存失败 ' + wsid + '：' + ((err && err.message) || err))
+      console.log('dsh-kanban: 保存失败 ' + key + '：' + ((err && err.message) || err))
     }
   }
 
@@ -449,11 +466,11 @@ export function apply(ctx) {
   }
 
   // ---- 核心数据操作：工具与浏览器 HTTP 共用同一份逻辑 ----
-  const dispatch = async (wsid, method, args, source) => {
-    const board = await boardOf(wsid)
+  const dispatch = async (workspace, method, args, source, session) => {
+    const board = await boardOf(workspace, session)
     const a = args || {}
     const actor = source === 'agent' ? 'agent' : 'human'
-    const persisted = () => persistedFlag(wsid)
+    const persisted = () => persistedFlag(workspace)
     const result = (extra) => ({ board: cloneBoard(board), persisted: persisted(), warnings: takeWarnings(board), ...extra })
 
     switch (method) {
@@ -491,7 +508,7 @@ export function apply(ctx) {
             priority: card.priority ?? null,
           },
         })
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'Card added to "' + col.title + '"' })
       }
 
@@ -526,7 +543,7 @@ export function apply(ctx) {
           if (after.priority !== before.priority) {
             record(board, { cardId: card.id, type: 'card_priority_changed', source: actor, field: 'priority', from: before.priority, to: after.priority })
           }
-          await save(wsid)
+          await save(workspace, session)
         }
         return card
           ? result({ message: 'Card updated' })
@@ -540,7 +557,7 @@ export function apply(ctx) {
         if (card) {
           record(board, { cardId: id, type: 'card_deleted', source: actor, meta: { title: card.title } })
         }
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'Card deleted' })
       }
 
@@ -562,7 +579,7 @@ export function apply(ctx) {
         if (fromTitle !== target.title) {
           record(board, { cardId: card.id, type: 'card_moved', source: actor, field: 'columnId', from: fromTitle, to: target.title, meta: { title: card.title } })
         }
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'Moved to "' + target.title + '"' })
       }
 
@@ -570,7 +587,7 @@ export function apply(ctx) {
         const title = str(a.title, '').slice(0, 40) || 'New list'
         board.columns.push({ id: nextId('c'), title })
         record(board, { cardId: null, type: 'column_added', source: actor, meta: { column: title } })
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'List added: "' + title + '"' })
       }
 
@@ -582,7 +599,7 @@ export function apply(ctx) {
           if (col.title !== before) {
             record(board, { cardId: null, type: 'column_renamed', source: actor, field: 'title', from: before, to: col.title, meta: { column: col.title } })
           }
-          await save(wsid)
+          await save(workspace, session)
         }
         return col ? result({ message: 'List renamed' }) : result({ error: 'List not found' })
       }
@@ -602,7 +619,7 @@ export function apply(ctx) {
           }
         }
         record(board, { cardId: null, type: 'column_deleted', source: actor, meta: { column: deleted.title } })
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'List deleted, cards moved to "' + board.columns[0].title + '"' })
       }
 
@@ -615,7 +632,7 @@ export function apply(ctx) {
           ? Math.max(0, Math.min(Math.floor(a.toIndex), board.columns.length))
           : board.columns.length
         board.columns.splice(toIndex, 0, col)
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'List order updated' })
       }
 
@@ -625,7 +642,7 @@ export function apply(ctx) {
         if (findLabel(board, name)) return result({ error: 'Label already exists' })
         board.labels.push({ name, color: normColor(a.color) || '#94a3b8' })
         record(board, { cardId: null, type: 'label_added', source: actor, meta: { label: name } })
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'Label added: "' + name + '"' })
       }
 
@@ -652,7 +669,7 @@ export function apply(ctx) {
             record(board, { cardId: null, type: 'label_color_changed', source: actor, field: 'color', from: beforeColor, to: label.color, meta: { label: label.name } })
           }
         }
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'Label updated' })
       }
 
@@ -668,7 +685,7 @@ export function apply(ctx) {
           }
         }
         record(board, { cardId: null, type: 'label_deleted', source: actor, meta: { label: name } })
-        await save(wsid)
+        await save(workspace, session)
         return result({ message: 'Label deleted' })
       }
 
@@ -677,27 +694,42 @@ export function apply(ctx) {
     }
   }
 
-  // ---- 工具执行上下文 -> 工作区 id ----
-  const wsidOfExec = async (exec) => {
+  // ---- 工具执行上下文 / 浏览器 workspaceId -> 工作区 ----
+  const workspaceOfExec = async (exec) => {
     const agent = exec && exec.agent
-    const cwd = agent && agent.session && agent.session.header && agent.session.header.cwd
-    if (typeof cwd === 'string' && cwd) {
-      const registry = getWorkspaceRegistry()
-      if (registry) {
-        try {
-          const ws = await registry.resolveByPath(cwd)
-          if (ws) return ws.id
-        } catch (err) {
-          console.log('dsh-kanban: 解析工作区失败：' + ((err && err.message) || err))
-        }
+    const session = agent && agent.session
+    const cwd = session && session.header && session.header.cwd
+    if (typeof cwd !== 'string' || !cwd) return null
+    const registry = getWorkspaceRegistry()
+    if (registry) {
+      try {
+        const workspace = await registry.resolveByPath(cwd)
+        if (workspace) return workspace
+      } catch (err) {
+        console.log('dsh-kanban: 解析工作区失败：' + ((err && err.message) || err))
       }
     }
-    return 'default'
+    // 未登记到 WorkspaceRegistry 的会话仍以自身 cwd 作为工作区根目录。
+    return { id: 'cwd:' + cwd, path: cwd, title: cwd }
   }
+  const workspaceOfId = (id) => {
+    const registry = getWorkspaceRegistry()
+    return registry && typeof registry.get === 'function' ? registry.get(id) : undefined
+  }
+  const emptyBoardSummary = { columns: [], labels: [], cards: [] }
 
   const runTool = async (method, args, exec) => {
-    const wsid = await wsidOfExec(exec)
-    const r = await dispatch(wsid, method, args, 'agent')
+    const workspace = await workspaceOfExec(exec)
+    if (!workspace) {
+      return {
+        ok: false,
+        message: 'Cannot determine the current workspace from the tool execution context',
+        board: emptyBoardSummary,
+        warnings: [],
+      }
+    }
+    const session = exec && exec.agent && exec.agent.session
+    const r = await dispatch(workspace, method, args, 'agent', session)
     return {
       ok: !r.error,
       message: r.error || r.message || 'Done',
@@ -715,8 +747,14 @@ export function apply(ctx) {
       const body = raw ? JSON.parse(raw) : {}
       const method = typeof body.method === 'string' ? body.method : 'get'
       const args = body.args || {}
-      const wsid = typeof args.workspaceId === 'string' && args.workspaceId ? args.workspaceId : 'default'
-      const result = await dispatch(wsid, method, args, 'human')
+      const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId : ''
+      const workspace = workspaceId ? workspaceOfId(workspaceId) : undefined
+      if (!workspace) {
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Unknown workspace: ' + (workspaceId || '(missing)') }))
+        return
+      }
+      const result = await dispatch(workspace, method, args, 'human')
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(result))
     } catch (err) {
@@ -753,61 +791,63 @@ export function apply(ctx) {
     }
   }
 
-  // ---- 启动校验：全量体检看板文件（只读 + 备份损坏文件，不迁移、不加载内存）----
+  // ---- 启动校验：逐个工作区体检 .dsh-kanban.json（只读 + 备份损坏文件）----
   const startupState = { done: false }
   const maybeStartupCheck = () => {
     if (startupState.done) return
-    if (!getFs()) return
+    const registry = getWorkspaceRegistry()
+    if (!getFs() || !registry || typeof registry.list !== 'function') return
     startupState.done = true
     runStartupCheck()
   }
   const runStartupCheck = async () => {
     const fs = getFs()
-    const wsRoot = root()
-    if (!fs || !wsRoot) return
+    const registry = getWorkspaceRegistry()
+    if (!fs || !registry || typeof registry.list !== 'function') return
     try {
-      const dir = await fs.resolve('.', { cwd: wsRoot })
-      const entries = await fs.listDir(dir)
-      const boardFiles = entries.filter(
-        (e) => typeof e.name === 'string' && /^kanban-board-.+\.json$/.test(e.name),
-      )
-      if (boardFiles.length === 0) {
-        console.log('dsh-kanban: 启动校验完成，未发现看板数据文件')
-        return
-      }
+      const workspaces = registry.list()
+      let found = 0
       let corrupt = 0
       let pendingUpgrade = 0
       let unsupported = 0
       let ok = 0
-      for (const entry of boardFiles) {
-        const wsid = entry.name.slice('kanban-board-'.length, -'.json'.length)
+      for (const workspace of workspaces) {
+        const key = workspaceKey(workspace)
         try {
-          const text = await fs.readText(entry.target)
+          const target = await fs.resolve(BOARD_FILE, { cwd: workspace.path })
+          const text = await fs.readText(target)
+          found++
           const parsed = parseBoardText(text)
           if (parsed.ok) {
             if (parsed.migrated) {
               pendingUpgrade++
-              console.log('dsh-kanban: 启动校验 ' + wsid + '：schemaVersion ' + parsed.fromVersion + '，首次打开时将自动升级')
+              console.log('dsh-kanban: 启动校验 ' + key + '：schemaVersion ' + parsed.fromVersion + '，首次打开时将自动升级')
             } else {
               ok++
             }
           } else if (parsed.kind === 'unsupported') {
             unsupported++
-            console.log('dsh-kanban: 启动校验 ' + wsid + '：文件由更新版本插件写入（schemaVersion ' + parsed.version + '）')
+            console.log('dsh-kanban: 启动校验 ' + key + '：文件由更新版本插件写入（schemaVersion ' + parsed.version + '）')
           } else {
             corrupt++
             const suffix = 'corrupt-' + timestamp()
-            const backupTarget = await fs.resolve(entry.name + '.' + suffix, { cwd: wsRoot })
-            await fs.writeText(backupTarget, text)
-            console.log('dsh-kanban: 启动校验 ' + wsid + '：数据文件损坏（' + parsed.kind + '），已备份为 ' + entry.name + '.' + suffix)
+            const backupTarget = await fs.resolve(BOARD_FILE + '.' + suffix, { cwd: workspace.path })
+            await fs.writeText(backupTarget, text, undefined, undefined, writePolicyFor(workspace))
+            console.log('dsh-kanban: 启动校验 ' + key + '：数据文件损坏（' + parsed.kind + '），已备份为 ' + BOARD_FILE + '.' + suffix)
           }
         } catch (err) {
-          console.log('dsh-kanban: 启动校验 ' + wsid + '：检查失败 ' + ((err && err.message) || err))
+          if (!err || (err.code !== 'ENOENT' && err.message !== 'ENOENT')) {
+            console.log('dsh-kanban: 启动校验 ' + key + '：检查失败 ' + ((err && err.message) || err))
+          }
         }
+      }
+      if (found === 0) {
+        console.log('dsh-kanban: 启动校验完成，未发现看板数据文件')
+        return
       }
       console.log(
         'dsh-kanban: 启动校验完成：共 ' +
-          boardFiles.length +
+          found +
           ' 个看板文件，正常 ' +
           ok +
           '，损坏并已备份 ' +
@@ -914,8 +954,10 @@ export function apply(ctx) {
         },
       },
       async execute(args, exec) {
-        const wsid = await wsidOfExec(exec)
-        const r = await dispatch(wsid, 'getCard', args, 'agent')
+        const workspace = await workspaceOfExec(exec)
+        if (!workspace) return { ok: false, message: 'Cannot determine the current workspace from the tool execution context', warnings: [] }
+        const session = exec && exec.agent && exec.agent.session
+        const r = await dispatch(workspace, 'getCard', args, 'agent', session)
         if (r.error) return { ok: false, message: r.error, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
         return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
       },
@@ -1122,12 +1164,14 @@ export function apply(ctx) {
         },
       },
       async execute(args, exec) {
-        const wsid = await wsidOfExec(exec)
-        const r = await dispatch(wsid, 'get', args, 'agent')
+        const workspace = await workspaceOfExec(exec)
+        if (!workspace) return { ok: false, message: 'Cannot determine the current workspace from the tool execution context', labels: [], warnings: [] }
+        const session = exec && exec.agent && exec.agent.session
+        const r = await dispatch(workspace, 'get', args, 'agent', session)
         const labels = (r.board && r.board.labels) || []
         return {
           ok: true,
-          message: 'Labels (workspace ' + wsid + ')',
+          message: 'Labels (workspace ' + workspaceKey(workspace) + ')',
           labels,
           warnings: Array.isArray(r.warnings) ? r.warnings : [],
         }

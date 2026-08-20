@@ -5,4 +5,5 @@ dist/
 lib/client.js
 *.tgz
 .DS_Store
-kanban-board-*.json
+.dsh-kanban.json
+.dsh-kanban.json.*
