@@ -86,9 +86,9 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: pnpm build
 
-      - name: Verify generated client bundle
+      - name: Check client bundle registration
         if: steps.version.outputs.changed == 'true'
-        run: git diff --exit-code -- lib/client.js
+        run: pnpm check:client-bundle
 
       - name: Pack release artifact
         if: steps.version.outputs.changed == 'true'
@@ -162,20 +162,17 @@ jobs:
             -f ref="refs/tags/$TAG" \
             -f sha="$GITHUB_SHA" >/dev/null
 
-      - name: Create or update GitHub Release
+      - name: Create GitHub Release
         if: steps.version.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
-          ARTIFACT: ${{ steps.pack.outputs.filename }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ARTIFACT" --clobber
-          else
-            gh release create "$TAG" "$ARTIFACT" \
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
               --title "dsh-kanban $VERSION" \
               --generate-notes \
               --verify-tag

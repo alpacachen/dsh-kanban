@@ -18,7 +18,13 @@ import { resolve } from 'node:path'
 
 const root = process.cwd()
 const minify = !process.argv.includes('--no-minify')
+const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+if (typeof packageJson.name !== 'string' || packageJson.name.length === 0) {
+  throw new Error('package.json must define a non-empty package name')
+}
+const moduleId = packageJson.name
 mkdirSync(resolve(root, 'dist'), { recursive: true })
+mkdirSync(resolve(root, 'lib'), { recursive: true })
 
 const result = await esbuild.build({
   entryPoints: [resolve(root, 'src/client/entry.tsx')],
@@ -56,7 +62,7 @@ if (result.errors.length > 0) {
 const app = readFileSync(resolve(root, 'dist/app.cjs'), 'utf8')
 const wrapped = [
   'window.__ModuleLoader__.load({',
-  "  id: 'dsh-kanban',",
+  `  id: ${JSON.stringify(moduleId)},`,
   '  factory: function (require) {',
   '    var module = { exports: {} }',
   '    var exports = module.exports',
