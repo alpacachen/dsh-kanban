@@ -18,7 +18,7 @@
 
 ## 为什么是 dsh-kanban？
 
-- **在对话里完成规划**：13 个 `kanban_*` 工具让 Agent 能直接管理卡片、列表和标签。
+- **在对话里完成规划**：14 个 `kanban_*` 工具让 Agent 能直接管理卡片、列表和标签。
 - **一切仍由你掌控**：编辑卡片、跨列拖拽、调整工作流，或按优先级筛选任务。
 - **项目之间互不干扰**：每个 DSH 工作区都有独立看板，并自动持久化数据。
 - **自然融入 DSH**：界面跟随当前语言和主题，也支持暗色模式。
@@ -73,7 +73,7 @@ Agent 会直接更新当前看板。之后你可以在界面中继续调整，�
 | 范围 | 工具 |
 | --- | --- |
 | 看板 | `kanban_get` |
-| 卡片 | `kanban_add_card`、`kanban_update_card`、`kanban_delete_card`、`kanban_move_card` |
+| 卡片 | `kanban_get_card`、`kanban_add_card`、`kanban_update_card`、`kanban_delete_card`、`kanban_move_card` |
 | 列表 | `kanban_add_column`、`kanban_rename_column`、`kanban_delete_column`、`kanban_move_column` |
 | 标签 | `kanban_get_label`、`kanban_add_label`、`kanban_update_label`、`kanban_delete_label` |
 

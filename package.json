@@ -1,7 +1,7 @@
 {
   "name": "@alpacachen/dsh-kanban",
   "version": "1.1.0",
-  "description": "A kanban board plugin for DeepSeek Harness: a 'Board' tab in conversations plus 13 kanban_* AI tools, per-workspace isolation and disk persistence. Built with React, TypeScript, dnd-kit, shadcn/ui and Tailwind CSS.",
+  "description": "A kanban board plugin for DeepSeek Harness: a 'Board' tab in conversations plus 14 kanban_* AI tools, per-workspace isolation and disk persistence. Built with React, TypeScript, dnd-kit, shadcn/ui and Tailwind CSS.",
   "type": "module",
   "main": "index.js",
   "exports": {
