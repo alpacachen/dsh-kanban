@@ -2,7 +2,7 @@
 
 本文记录 `dsh-kanban` 的正式发布、社区市场投稿和后续升级流程。项目当前 npm 包标识为 **`@alpacachen/dsh-kanban@1.0.1`**，源码仓库为 <https://github.com/alpacachen/dsh-kanban>。
 
-> 当前状态：本仓库的 `package.json` 已声明 `dsh.bundle`、公开 scoped npm 发布配置和 GitHub repository 映射，但本地仓库目前只有 **4 个 commits**。因此尚未满足 awesome-dsh-plugin 的 **至少 10 commits** 门槛，暂时不能提交该 registry 的上架 PR。不要为了凑数制造空提交；继续完成真实开发，达到门槛后再投稿。
+> 当前状态：本仓库的 `package.json` 已声明 `dsh.bundle`、公开 scoped npm 发布配置和 GitHub repository 映射。向 awesome-dsh-plugin 投稿前仍需现场确认其 **仓库创建满 1 天、至少 10 commits** 等门槛；不要为了凑数制造空提交。
 
 ## 1. 官方 DSH 发布方式
 
@@ -156,7 +156,7 @@ node scripts/generate-readme.mjs
 - 描述与实际代码、工具数量和 API 一致；
 - 项目保持活跃，且没有明显可疑的混淆、凭据外传或异常安装期行为。
 
-以上门槛和 CI 检查项来自 [awesome-dsh-plugin 贡献指南的 Requirements 与 CI checks](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md#requirements--要求)。**本项目当前只有 4 commits，所以现在不能投稿；至少还需产生 6 个真实开发提交，并同时满足仓库满 1 天。**
+以上门槛和 CI 检查项来自 [awesome-dsh-plugin 贡献指南的 Requirements 与 CI checks](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md#requirements--要求)。投稿前应以 GitHub 上的实际创建时间和提交数为准，并同时满足仓库满 1 天与至少 10 commits。
 
 截图在上游规则中是“可选但推荐”，不是 1 天/10 commits 那样的硬门槛；但 dsh-kanban 是可视化插件，应随投稿提供真实界面截图。可在 awesome-dsh-plugin 的 `data/screenshots.json` 中，用仓库 URL 为 key 添加 1–8 个 GitHub 托管的 HTTPS 图片地址：
 
@@ -184,50 +184,64 @@ npm 包不影响 registry 的基本收录资格，但发布 npm 后市场可显�
 
 不要把搜索结果、非官方汇总页或未经项目方说明的“市场”写入发布清单；新增渠道前必须先找到该渠道自己的 GitHub 仓库、官方文档或公开 API 说明。
 
-## 6. 后续升级流程
+## 6. 自动升级与发布流程
 
-每次升级按以下顺序执行：
+仓库以 `package.json` 的 `version` 作为唯一版本来源，并由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 自动保持 npm、Git tag 和 GitHub Release 一致。
 
-1. **开发与验证**
+### 6.1 一次性配置 npm Trusted Publisher
+
+在 npm 的 `@alpacachen/dsh-kanban` 包设置中添加 GitHub Actions Trusted Publisher：
+
+- GitHub owner / organization：`alpacachen`
+- Repository：`dsh-kanban`
+- Workflow filename：`release.yml`
+- Environment：留空（工作流没有使用 GitHub Environment）
+
+工作流使用 GitHub OIDC（`id-token: write`）向 npm 证明身份，不需要在 GitHub Secrets 保存长期 npm token，也不需要在自动发布时输入 OTP。
+
+### 6.2 每次发布只需改版本并合并 PR
+
+1. 完成功能开发和验证：
    ```sh
    pnpm install
    pnpm typecheck
    pnpm build
    npm pack --dry-run
    ```
-   检查真实 DSH Web profile 中的看板 UI、13 个 `kanban_*` 工具、工作区隔离和持久化。
-2. **升级版本**：按 [npm 官方语义化版本说明](https://docs.npmjs.com/about-semantic-versioning) 修改 `package.json`；修复用 patch、向后兼容功能用 minor、破坏性变化用 major。不要复用已发布版本。
-3. **提交与推送源码**：提交版本和构建产物；项目要求把 `lib/client.js` 作为预构建客户端随包发布。
-4. **发布 npm**
-   ```sh
-   npm login
-   npm whoami
-   npm publish --access public
-   npm view @alpacachen/dsh-kanban@<新版本> version repository --json
-   ```
-5. **创建对应 GitHub Release**
-   ```sh
-   git tag -a v<新版本> -m "Release v<新版本>"
-   git push origin v<新版本>
-   gh release create v<新版本> --title "dsh-kanban v<新版本>" --generate-notes
-   ```
-6. **验证用户升级**：DSH 的 `plugin` 命令会把 pnpm 子命令转发到指定 profile，因此可执行：
-   ```sh
-   dsh plugin --profile web update @alpacachen/dsh-kanban
-   dsh --profile web --dump-config
-   ```
-   然后按宿主加载方式刷新或重启 `dsh web`，再次做 UI 与工具 smoke test。转发机制见 [DSH 官方发布文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md#安装进-profile)。
-7. **同步市场信息**：普通版本更新通常不需要重新投稿；awesome-dsh-plugin 会根据 repository 映射自动关联 npm。只有仓库 URL、分类、描述或截图发生变化时，才修改自己的 `data/plugins/alpacachen__dsh-kanban.yml`/截图条目并提交 PR。
+2. 按 [npm 语义化版本说明](https://docs.npmjs.com/about-semantic-versioning) 修改 `package.json` 的 `version`：修复用 patch、向后兼容功能用 minor、破坏性变化用 major。不要复用已发布版本。
+3. 将版本修改连同对应代码和预构建 `lib/client.js` 一起提交 PR。
+4. PR 通过 CI 并合并到 `main` 后，`package.json` 的 push 事件触发 Release 工作流。工作流只有在版本字段相对上一个 `main` 提交发生变化时才发布；仅修改依赖或其他元数据但不修改版本时会安全跳过。
+5. 工作流自动执行：
+   - 校验 SemVer 和版本变化；
+   - `pnpm install --frozen-lockfile`、类型检查和构建；
+   - 确认构建后的 `lib/client.js` 没有未提交差异；
+   - 生成唯一一份 npm tgz；
+   - 通过 Trusted Publishing 发布 npm；
+   - 在同一个 `main` 提交创建 `v<版本>` Tag；
+   - 创建同版本 GitHub Release，并上传同一份 tgz。
 
-## 7. 首次发布检查单
+工作流支持失败后重跑：如果 npm 中已存在该版本，它会比较 registry integrity；内容完全一致时跳过 npm publish 并继续补建 Tag/Release，内容不一致则失败，防止同一版本对应不同代码。也可以从 GitHub Actions 页面手动运行工作流用于恢复，但不能用它绕过版本和 integrity 校验。
 
+发布完成后验证用户升级：
+
+```sh
+npm view @alpacachen/dsh-kanban@<新版本> version repository dist.integrity --json
+dsh plugin --profile web update @alpacachen/dsh-kanban
+dsh --profile web --dump-config
+```
+
+然后按宿主加载方式刷新或重启 `dsh web`，再次做 UI 与工具 smoke test。普通版本更新通常不需要重新投稿市场；awesome-dsh-plugin 会根据 repository 映射自动关联 npm。只有仓库 URL、分类、描述或截图发生变化时，才修改自己的 registry 条目。
+
+## 7. 自动发布检查单
+
+- [ ] npm Trusted Publisher 指向 `alpacachen/dsh-kanban` 的 `release.yml`
 - [ ] `pnpm typecheck`、`pnpm build` 通过
 - [ ] `npm pack --dry-run` 的文件清单正确
-- [ ] npm 登录账户有 `@alpacachen` scope 的发布权限
-- [ ] `@alpacachen/dsh-kanban@1.0.1` 发布并可查询
+- [ ] PR 中的 `package.json` 使用一个从未发布过的新版本
+- [ ] PR 包含对应代码和最新的 `lib/client.js`
+- [ ] PR 合并后 Release workflow 成功
+- [ ] npm、Git tag 和 GitHub Release 显示同一版本
 - [ ] 从 npm 安装到干净 DSH `web` profile 后可加载
-- [ ] GitHub tag 与 Release `v1.0.1` 已创建
 - [ ] 仓库已添加 `dsh-plugin` topic
-- [ ] 仓库已满 1 天且达到至少 10 commits（当前仅 4，尚未满足）
-- [ ] awesome-dsh-plugin YAML、准确描述和真实截图准备完成
+- [ ] 仓库达到 awesome-dsh-plugin 的收录门槛
 - [ ] registry PR 合并后，在 dsh-market 与其他以该 registry 为种子的入口中复核展示和安装命令
