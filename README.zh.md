@@ -36,7 +36,7 @@ dsh plugin --profile web add github:alpacachen/dsh-kanban
 也可以从 npm 或本地目录安装：
 
 ```sh
-dsh plugin --profile web add dsh-kanban
+dsh plugin --profile web add @alpacachen/dsh-kanban
 dsh plugin --profile web add ./dsh-kanban
 ```
 
@@ -136,7 +136,7 @@ lib/client.js         # 随包发布的预构建浏览器 bundle
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove dsh-kanban
+dsh plugin --profile web remove @alpacachen/dsh-kanban
 ```
 
 ## 开源许可
