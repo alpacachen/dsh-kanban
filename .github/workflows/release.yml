@@ -1,0 +1,182 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish package and release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Read and validate version change
+        id: version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if ! node -e "const v=process.argv[1]; if (!/^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$/.test(v)) process.exit(1)" "$version"; then
+            echo "package.json version must be a stable SemVer (x.y.z): $version" >&2
+            exit 1
+          fi
+
+          previous=""
+          if [[ "$EVENT_NAME" == "push" && -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]] && git cat-file -e "$BEFORE_SHA:package.json" 2>/dev/null; then
+            previous="$(git show "$BEFORE_SHA:package.json" | node -e "let data=''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => process.stdout.write(JSON.parse(data).version))")"
+          fi
+
+          changed=false
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$version" != "$previous" ]]; then
+            changed=true
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Current version: $version; previous version: ${previous:-none}; release: $changed"
+
+      - name: Set up pnpm
+        if: steps.version.outputs.changed == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.8.0
+
+      - name: Set up Node.js
+        if: steps.version.outputs.changed == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install Trusted Publishing compatible npm
+        if: steps.version.outputs.changed == 'true'
+        run: npm install --global npm@11.19.0
+
+      - name: Install dependencies
+        if: steps.version.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        if: steps.version.outputs.changed == 'true'
+        run: pnpm typecheck
+
+      - name: Build
+        if: steps.version.outputs.changed == 'true'
+        run: pnpm build
+
+      - name: Verify generated client bundle
+        if: steps.version.outputs.changed == 'true'
+        run: git diff --exit-code -- lib/client.js
+
+      - name: Pack release artifact
+        if: steps.version.outputs.changed == 'true'
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          json="$(npm pack --json)"
+          filename="$(node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(p[0].filename)" "$json")"
+          integrity="$(node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(p[0].integrity)" "$json")"
+          test -f "$filename"
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
+          echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
+
+      - name: Check registry state
+        if: steps.version.outputs.changed == 'true'
+        id: registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(node -p "require('./package.json').name")"
+          version="${{ steps.version.outputs.version }}"
+          local_integrity="${{ steps.pack.outputs.integrity }}"
+
+          if remote_integrity="$(npm view "$package@$version" dist.integrity --json 2>/dev/null | node -e "let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => { const value = JSON.parse(data || 'null'); if (typeof value !== 'string') process.exit(1); process.stdout.write(value) })")"; then
+            if [[ "$remote_integrity" != "$local_integrity" ]]; then
+              echo "npm already contains $package@$version, but its integrity differs from this commit." >&2
+              exit 1
+            fi
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "$package@$version is already published with matching integrity; npm publish will be skipped."
+          else
+            latest="$(npm view "$package" version --json 2>/dev/null | node -e "let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => { const value = JSON.parse(data || 'null'); if (typeof value === 'string') process.stdout.write(value) })")"
+            if [[ -n "$latest" ]] && ! node -e "const [next, current] = process.argv.slice(1).map(v => v.split('.').map(Number)); for (let i = 0; i < 3; i++) { if (next[i] > current[i]) process.exit(0); if (next[i] < current[i]) process.exit(1); } process.exit(1)" "$version" "$latest"; then
+              echo "Refusing to publish $version because npm latest is $latest; the new version must be higher." >&2
+              exit 1
+            fi
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify GitHub tag state
+        if: steps.version.outputs.changed == 'true'
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if tag_sha="$(gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null)"; then
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "$TAG already points to $tag_sha instead of $GITHUB_SHA." >&2
+              exit 1
+            fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.version.outputs.changed == 'true' && steps.registry.outputs.published == 'false'
+        run: npm publish "${{ steps.pack.outputs.filename }}" --access public --provenance
+
+      - name: Create GitHub tag
+        if: steps.version.outputs.changed == 'true' && steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh api --method POST "repos/${{ github.repository }}/git/refs" \
+            -f ref="refs/tags/$TAG" \
+            -f sha="$GITHUB_SHA" >/dev/null
+
+      - name: Create or update GitHub Release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ARTIFACT: ${{ steps.pack.outputs.filename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARTIFACT" --clobber
+          else
+            gh release create "$TAG" "$ARTIFACT" \
+              --title "dsh-kanban $VERSION" \
+              --generate-notes \
+              --verify-tag
+          fi
