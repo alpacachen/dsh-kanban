@@ -5,7 +5,7 @@ import {
   useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragStartEvent,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
-import { Check, Filter, List, Settings2, Tag } from "lucide-react"
+import { Check, Filter, List, RefreshCw, Settings2, Tag } from "lucide-react"
 import { CardDialog, type CardFormValues } from "./components/CardDialog"
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
@@ -44,6 +44,7 @@ export function KanbanView(props: KanbanViewProps) {
   const [dialog, setDialog] = useState<{ card: CardType | null; columnId: string } | null>(null)
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const [labelDialogOpen, setLabelDialogOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [priorityFilter, setPriorityFilter] = useState<Priority | "">("")
 
   const sensors = useSensors(
@@ -66,6 +67,14 @@ export function KanbanView(props: KanbanViewProps) {
     },
     [workspaceId, applyBoard],
   )
+
+  const refreshBoard = useCallback(() => {
+    setRefreshing(true)
+    callKanban("get", {}, workspaceId)
+      .then(applyBoard)
+      .catch((e) => setError(t("loadFailed") + String((e && e.message) || e)))
+      .finally(() => setRefreshing(false))
+  }, [workspaceId, applyBoard, t])
 
   useEffect(() => {
     let alive = true
@@ -180,6 +189,18 @@ export function KanbanView(props: KanbanViewProps) {
         <div className="flex min-h-0 flex-1 gap-3">
           {/* 操作面板：固定在最左侧 */}
           <div className="flex shrink-0 flex-col items-center gap-1.5 self-start rounded-2xl border border-[var(--dsw-alias-border-l2)] bg-card p-1.5 shadow-column">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+              title={t("refresh")}
+              aria-label={t("refresh")}
+              disabled={refreshing}
+              onClick={refreshBoard}
+            >
+              <RefreshCw className={refreshing ? "animate-spin" : undefined} />
+            </Button>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
