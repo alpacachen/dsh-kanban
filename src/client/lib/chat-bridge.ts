@@ -49,12 +49,14 @@ export function getDraftVersion(): number {
   return version
 }
 
-/** 把卡片表单值序列化成一段用于对话的纯文本（含标签，便于 agent 理解卡片类型）。 */
-export function cardToChatText(values: { title: string; note: string; label?: string }): string {
+/** 把卡片表单值序列化成一段用于对话的纯文本（含任务 ID 与标签，便于 agent 定位与理解卡片类型）。 */
+export function cardToChatText(values: { id?: string; title: string; note: string; label?: string }): string {
+  const id = (values.id ?? "").trim()
   const title = (values.title ?? "").trim()
   const note = (values.note ?? "").trim()
   const label = (values.label ?? "").trim()
   const parts: string[] = []
+  if (id) parts.push(t("fieldId") + ": " + id)
   if (title) parts.push(title)
   if (label) parts.push(t("fieldLabel") + ": " + label)
   if (note) parts.push(note)

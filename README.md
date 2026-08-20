@@ -62,6 +62,7 @@ The agent updates the board directly. You can then refine the plan in the UI, or
 
 - Create, edit, delete, and drag cards between lists
 - Add notes, labels, and P0 / P1 / P2 priorities
+- View a card's activity history: when it was created and by whom, plus label / priority / status changes
 - Create, rename, reorder, and remove lists
 - Create labels and customize their colors
 - Filter the board by priority

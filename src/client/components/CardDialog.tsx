@@ -15,9 +15,11 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { PRIORITY_OPTIONS, PRIORITY_META } from "@/lib/constants"
 import { useT } from "@/lib/i18n"
-import type { Card, Label as LabelType, Priority } from "@/lib/types"
+import type { Activity, Card, Label as LabelType, Priority } from "@/lib/types"
+import { CardActivity } from "./CardActivity"
 
 export interface CardFormValues {
+  id?: string
   title: string
   note: string
   label: string
@@ -31,21 +33,23 @@ interface CardDialogProps {
   open: boolean
   card: Card | null
   labels: LabelType[]
+  activities: Activity[]
   onOpenChange: (open: boolean) => void
   onSave: (values: CardFormValues) => void
   onDelete?: (card: Card) => void
   onChatWithAgent: (values: CardFormValues, target: ChatTarget) => void
 }
 
-export function CardDialog({ open, card, labels, onOpenChange, onSave, onDelete, onChatWithAgent }: CardDialogProps) {
+export function CardDialog({ open, card, labels, activities, onOpenChange, onSave, onDelete, onChatWithAgent }: CardDialogProps) {
   const t = useT()
   const [values, setValues] = useState<CardFormValues>({
-    title: "", note: "", label: "", priority: "",
+    id: "", title: "", note: "", label: "", priority: "",
   })
 
   useEffect(() => {
     if (open) {
       setValues({
+        id: card?.id ?? "",
         title: card?.title ?? "",
         note: card?.note ?? "",
         label: card?.label ?? "",
@@ -130,6 +134,14 @@ export function CardDialog({ open, card, labels, onOpenChange, onSave, onDelete,
               onChange={(e) => set({ note: e.target.value })}
             />
           </div>
+          {card && (
+            <div className="grid gap-2 rounded-xl border border-[var(--dsw-alias-border-l2)] p-3">
+              <Label className="text-xs text-muted-foreground">{t("activityTitle")}</Label>
+              <div className="max-h-48 overflow-y-auto pr-1">
+                <CardActivity activities={activities} />
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           {card && onDelete && (
