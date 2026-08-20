@@ -36,7 +36,7 @@ dsh plugin --profile web add github:alpacachen/dsh-kanban
 You can also install the published npm package or a local checkout:
 
 ```sh
-dsh plugin --profile web add dsh-kanban
+dsh plugin --profile web add @alpacachen/dsh-kanban
 dsh plugin --profile web add ./dsh-kanban
 ```
 
@@ -136,7 +136,7 @@ Issues and pull requests are welcome. If you are planning a larger change, openi
 ## Uninstall
 
 ```sh
-dsh plugin --profile web remove dsh-kanban
+dsh plugin --profile web remove @alpacachen/dsh-kanban
 ```
 
 ## License
