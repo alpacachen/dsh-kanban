@@ -47,6 +47,7 @@ export function KanbanView(props: KanbanViewProps) {
 
   const [board, setBoard] = useState<Board | null>(null)
   const [error, setError] = useState("")
+  const [warnings, setWarnings] = useState<string[]>([])
   const [activeCard, setActiveCard] = useState<CardType | null>(null)
   const [dialog, setDialog] = useState<{ card: CardType | null; columnId: string } | null>(null)
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
@@ -66,6 +67,9 @@ export function KanbanView(props: KanbanViewProps) {
     if (res && res.board) {
       setBoard(res.board)
       setError("")
+    }
+    if (Array.isArray(res && res.warnings) && res.warnings.length > 0) {
+      setWarnings((prev) => [...prev, ...res.warnings])
     }
   }, [])
 
@@ -263,6 +267,27 @@ export function KanbanView(props: KanbanViewProps) {
       style={viewHeight != null ? { height: viewHeight } : undefined}
     >
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {warnings.length > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-amber-500">{t("warnings")}</p>
+            {warnings.map((w, i) => (
+              <p key={i} className="mt-0.5 break-words text-xs text-amber-600">
+                {w}
+              </p>
+            ))}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 px-2 text-xs text-amber-600 hover:text-amber-500"
+            onClick={() => setWarnings([])}
+          >
+            {t("dismiss")}
+          </Button>
+        </div>
+      )}
 
       <DndContext
         sensors={sensors}

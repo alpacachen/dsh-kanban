@@ -20,6 +20,7 @@ export interface Card {
 }
 
 export interface Board {
+  schemaVersion?: number
   columns: Column[]
   labels: Label[]
   cards: Card[]
@@ -36,5 +37,6 @@ export interface KanbanResponse {
   persisted?: boolean
   error?: string
   message?: string
+  warnings?: string[]
   undone?: boolean
 }

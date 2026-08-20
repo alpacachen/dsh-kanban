@@ -88,6 +88,38 @@ A few more things you can ask:
 
 Boards are isolated by workspace and stored through the DSH filesystem service as `kanban-board-<workspaceId>.json`. They survive browser refreshes and DSH restarts, and uninstalling the plugin does not delete existing board data.
 
+### Schema versioning and safe migration
+
+Persisted files carry a `schemaVersion` field (currently `1`). Files written by older versions (without a version field) are treated as `v0` and are **automatically upgraded the first time the workspace board is opened** — the pre-upgrade file is copied to `kanban-board-<workspaceId>.json.bak-v0` first, then the upgraded file is written back. Future format changes simply bump `SCHEMA_VERSION` and register a step-by-step migration function in `MIGRATIONS` (`index.js`).
+
+#### Adding a future format version (e.g. v2)
+
+Migration functions live in `MIGRATIONS` in `index.js` and are pure functions — they transform data only, never touch the filesystem or runtime state. Each step upgrades by exactly one version; `migrateBoard` chains them automatically, so a `v0` file walks `v0 → v1 → v2`. Backups and write-back are handled by the load pipeline.
+
+```js
+export const SCHEMA_VERSION = 2 // 1) bump the version
+
+export const MIGRATIONS = {
+  0: (data) => ({ /* existing v0 → v1, unchanged */ }),
+  1: (data) => ({
+    schemaVersion: 2, // 2) output must declare the new version
+    columns: data.columns,
+    labels: data.labels,
+    cards: data.cards.map((c) => ({ ...c, labelId: c.label ?? null })), // e.g. label → labelId
+  }),
+}
+```
+
+If the on-disk shape changes, update `validateBoard` in `index.js` and the client types in `src/client/lib/types.ts` accordingly, and extend the self-checks in `scripts/check-schema.mjs` / `scripts/check-pipeline.mjs`.
+
+Abnormal data never makes the board unusable:
+
+- **Corrupt/unparseable files** are backed up to `kanban-board-<workspaceId>.json.corrupt-<timestamp>` and the board opens empty, with a clear notice.
+- **Files from a newer plugin version** (higher `schemaVersion`) are backed up to `kanban-board-<workspaceId>.json.unsupported-v<version>` and left untouched, so no data is destroyed by a downgraded plugin.
+- At plugin startup a **validation scan** checks every board file (parse + version + structure), backs up any corrupt files, and logs a summary.
+
+Notices from migrations, corruption, or unsupported versions are surfaced both in the agent tool results (`warnings`) and as a banner in the Board tab.
+
 ## How it works
 
 `dsh-kanban` uses the standard DSH bundle format:

@@ -48,6 +48,8 @@ const zh: Dict = {
   newLabelPlaceholder: "新标签名称",
   priorityFilter: "按优先级筛选",
   all: "全部",
+  warnings: "数据提示",
+  dismiss: "知道了",
 }
 
 const en: Dict = {
@@ -86,6 +88,8 @@ const en: Dict = {
   newLabelPlaceholder: "New label name",
   priorityFilter: "Filter by priority",
   all: "All",
+  warnings: "Data notice",
+  dismiss: "Got it",
 }
 
 let localeService: any = null

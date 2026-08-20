@@ -22,6 +22,9 @@
   "scripts": {
     "build": "node build.mjs",
     "check:client-bundle": "node scripts/check-client-bundle.mjs",
+    "check:schema": "node scripts/check-schema.mjs",
+    "check:pipeline": "node scripts/check-pipeline.mjs",
+    "test": "pnpm check:schema && pnpm check:pipeline",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
