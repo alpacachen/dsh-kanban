@@ -23,7 +23,7 @@ export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnP
     <div
       ref={setNodeRef}
       className={cn(
-        "flex w-72 shrink-0 flex-col rounded-2xl border border-[var(--dsw-alias-border-l2)] bg-card shadow-column transition-colors",
+        "flex min-h-0 w-72 shrink-0 flex-col rounded-2xl border border-[var(--dsw-alias-border-l2)] bg-card shadow-column transition-colors",
         isOver && "border-primary",
       )}
     >
