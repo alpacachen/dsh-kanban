@@ -82,6 +82,10 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: pnpm typecheck
 
+      - name: Unit and integration tests
+        if: steps.version.outputs.changed == 'true'
+        run: pnpm test
+
       - name: Build
         if: steps.version.outputs.changed == 'true'
         run: pnpm build
@@ -89,6 +93,10 @@ jobs:
       - name: Check client bundle registration
         if: steps.version.outputs.changed == 'true'
         run: pnpm check:client-bundle
+
+      - name: Check npm package contents
+        if: steps.version.outputs.changed == 'true'
+        run: pnpm check:package
 
       - name: Pack release artifact
         if: steps.version.outputs.changed == 'true'

@@ -22,9 +22,11 @@
   "scripts": {
     "build": "node build.mjs",
     "check:client-bundle": "node scripts/check-client-bundle.mjs",
+    "check:package": "node scripts/check-package-contents.mjs",
     "check:schema": "node scripts/check-schema.mjs",
     "check:pipeline": "node scripts/check-pipeline.mjs",
-    "test": "pnpm check:schema && pnpm check:pipeline",
+    "test:unit": "vitest run",
+    "test": "pnpm test:unit && pnpm check:schema && pnpm check:pipeline",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -49,16 +51,20 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.5",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "esbuild": "^0.28.2",
+    "jsdom": "^26.1.0",
     "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^4.0.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
   },
   "license": "MIT",
   "publishConfig": {

@@ -38,14 +38,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Unit and integration tests
+        run: pnpm test
+
       - name: Build
         run: pnpm build
 
-      - name: Schema migration self-check
-        run: pnpm check:schema
-
-      - name: Load pipeline self-check
-        run: pnpm check:pipeline
-
       - name: Check client bundle registration
         run: pnpm check:client-bundle
+
+      - name: Check npm package contents
+        run: pnpm check:package
