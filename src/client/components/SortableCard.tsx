@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { PRIORITY_META, labelColor } from "@/lib/constants"
 import type { Card as CardType, Label } from "@/lib/types"
-import { cn } from "@/lib/utils"
 
 interface SortableCardProps {
   card: CardType
@@ -28,19 +27,16 @@ export function SortableCard({ card, labels, onOpen }: SortableCardProps) {
       {...attributes}
       {...listeners}
       onClick={() => onOpen(card)}
-      className={cn(
-        "group cursor-grab touch-none select-none active:cursor-grabbing",
-        isDragging && "opacity-40",
-      )}
+      className={`kanban-sortable-card${isDragging ? " is-dragging" : ""}`}
     >
-      <Card className="pointer-events-none rounded-xl border-[var(--dsw-alias-border-l2)] shadow-card transition-shadow duration-200 group-hover:shadow-float">
-        <CardContent className="p-3.5">
+      <Card className="kanban-card">
+        <CardContent className="kanban-sortable-card-content">
           {(card.label || priority) && (
-            <div className="mb-1.5 flex items-center gap-1.5">
+            <div className="kanban-card-meta">
               {card.label && (
                 <Badge
                   variant="secondary"
-                  className="rounded-full px-2 py-0 text-[10.5px] font-medium leading-4"
+                  className="kanban-card-badge"
                   style={{ background: color, color: "#0b1220" }}
                 >
                   {card.label}
@@ -49,7 +45,7 @@ export function SortableCard({ card, labels, onOpen }: SortableCardProps) {
               {priority && (
                 <Badge
                   variant="secondary"
-                  className="rounded-full px-2 py-0 text-[10.5px] font-medium leading-4"
+                  className="kanban-card-badge"
                   style={{ background: priority.color, color: "#0b1220" }}
                 >
                   {priority.label}
@@ -57,11 +53,11 @@ export function SortableCard({ card, labels, onOpen }: SortableCardProps) {
               )}
             </div>
           )}
-          <p className="text-[13.5px] font-medium leading-snug tracking-tight break-words">
+          <p className="kanban-card-title">
             {card.title}
           </p>
           {card.note && (
-            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground line-clamp-3 whitespace-pre-wrap break-words">
+            <p className="kanban-card-note">
               {card.note}
             </p>
           )}

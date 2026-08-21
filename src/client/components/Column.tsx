@@ -5,7 +5,6 @@ import { SortableCard } from "./SortableCard"
 import { Button } from "@/components/ui/button"
 import { useT } from "@/lib/i18n"
 import type { Card as CardType, Column as ColumnType, Label } from "@/lib/types"
-import { cn } from "@/lib/utils"
 
 interface ColumnProps {
   column: ColumnType
@@ -22,19 +21,16 @@ export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnP
   return (
     <div
       ref={setNodeRef}
-      className={cn(
-        "flex min-h-0 w-72 shrink-0 flex-col rounded-2xl border border-[var(--dsw-alias-border-l2)] bg-card shadow-column transition-colors",
-        isOver && "border-primary",
-      )}
+      className={`kanban-column${isOver ? " is-over" : ""}`}
     >
-      <div className="flex items-center gap-1.5 px-3 py-3">
-        <h3 className="flex-1 truncate text-[13.5px] font-semibold tracking-tight">{column.title}</h3>
-        <span className="rounded-full bg-secondary/70 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+      <div className="kanban-column-header">
+        <h3 className="kanban-column-title">{column.title}</h3>
+        <span className="kanban-column-count">
           {cards.length}
         </span>
       </div>
 
-      <div className="kan-scroll flex min-h-[4rem] flex-1 flex-col gap-2 overflow-y-auto px-2.5 pb-2.5">
+      <div className="kanban-column-cards kan-scroll">
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
           {cards.map((card) => (
             <SortableCard
@@ -46,18 +42,18 @@ export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnP
           ))}
         </SortableContext>
         {cards.length === 0 && (
-          <p className="py-5 text-center text-xs text-muted-foreground/70">{t("emptyColumn")}</p>
+          <p className="kanban-column-empty">{t("emptyColumn")}</p>
         )}
       </div>
 
-      <div className="p-2.5 pt-1">
+      <div className="kanban-column-footer">
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start rounded-xl text-muted-foreground hover:text-foreground"
+          className="kanban-add-card"
           onClick={() => onAddCard(column)}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="kanban-icon" />
           {t("addCard")}
         </Button>
       </div>

@@ -40,15 +40,15 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="flex items-center gap-1.5"
+      className="kanban-sortable-row"
     >
       <button
         {...attributes}
         {...listeners}
-        className="shrink-0 cursor-grab touch-none rounded-md p-1 text-muted-foreground/60 hover:bg-accent hover:text-foreground"
+        className="kanban-drag-handle"
         aria-label={t("dragSort")}
       >
-        <GripVertical className="h-4 w-4" />
+        <GripVertical className="kanban-icon" />
       </button>
       <Input
         value={value}
@@ -61,12 +61,12 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 shrink-0 text-destructive"
+        className="kanban-icon-button kanban-danger-button"
         aria-label={t("delete")}
         disabled={!canDelete}
         onClick={onDelete}
       >
-        <Trash2 className="h-4 w-4" />
+        <Trash2 className="kanban-icon" />
       </Button>
     </div>
   )
@@ -103,14 +103,14 @@ export function ColumnDialog({ open, columns, onOpenChange, onReorder, onRename,
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="kanban-dialog-medium">
         <DialogHeader>
           <DialogTitle>{t("columnEdit")}</DialogTitle>
           <DialogDescription>{t("columnEditDesc")}</DialogDescription>
         </DialogHeader>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={columns.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-            <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto py-2">
+            <div className="kanban-sortable-list">
               {columns.map((col) => (
                 <SortableRow
                   key={col.id}
@@ -125,7 +125,7 @@ export function ColumnDialog({ open, columns, onOpenChange, onReorder, onRename,
             </div>
           </SortableContext>
         </DndContext>
-        <div className="flex items-center gap-1.5">
+        <div className="kanban-sortable-row">
           <Input
             value={newTitle}
             placeholder={t("newColumnPlaceholder")}
@@ -137,7 +137,7 @@ export function ColumnDialog({ open, columns, onOpenChange, onReorder, onRename,
             }}
           />
           <Button size="sm" onClick={() => { if (newTitle.trim()) { onAdd(newTitle.trim()); setNewTitle("") } }}>
-            <Plus className="h-4 w-4" />
+            <Plus className="kanban-icon" />
             {t("add")}
           </Button>
         </div>

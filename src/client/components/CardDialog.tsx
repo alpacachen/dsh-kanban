@@ -63,20 +63,20 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-xl"
+        className="kanban-dialog-wide"
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         {/* 标题仅保留给屏幕阅读器；可见区域不显示「编辑卡片」等装饰性文案 */}
         <DialogHeader>
-          <DialogTitle className="sr-only">{card ? t("editCard") : t("addCard")}</DialogTitle>
+          <DialogTitle className="kanban-sr-only">{card ? t("editCard") : t("addCard")}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-2">
-            <Label htmlFor="card-title" className="flex items-center justify-between">
+        <div className="kanban-form-stack">
+          <div className="kanban-form-field">
+            <Label htmlFor="card-title" className="kanban-field-label">
               <span>{t("fieldTitle")}</span>
               {card && (
-                <span className="text-[11px] font-medium text-muted-foreground">
+                <span className="kanban-field-id">
                   {t("fieldId")}: {card.id}
                 </span>
               )}
@@ -88,7 +88,7 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
               onChange={(e) => set({ title: e.target.value })}
             />
           </div>
-          <div className="grid gap-2">
+          <div className="kanban-form-field">
             <Label>{t("fieldLabel")}</Label>
             <Select value={values.label || "__none__"} onValueChange={(v) => set({ label: v === "__none__" ? "" : v })}>
               <SelectTrigger>
@@ -102,7 +102,7 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2">
+          <div className="kanban-form-field">
             <Label>{t("fieldPriority")}</Label>
             <Select value={values.priority || "__none__"} onValueChange={(v) => set({ priority: v === "__none__" ? "" : (v as Priority) })}>
               <SelectTrigger>
@@ -114,8 +114,8 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
                   const meta = PRIORITY_META[p]
                   return (
                     <SelectItem key={p} value={p}>
-                      <span className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full" style={{ background: meta.color }} />
+                      <span className="kanban-inline-priority">
+                        <span className="kanban-priority-dot" style={{ background: meta.color }} />
                         {meta.label}
                       </span>
                     </SelectItem>
@@ -124,7 +124,7 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2">
+          <div className="kanban-form-field">
             <Label htmlFor="card-note">{t("fieldNote")}</Label>
             <Textarea
               id="card-note"
@@ -135,9 +135,9 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
             />
           </div>
           {card && (
-            <div className="grid gap-2 rounded-xl border border-[var(--dsw-alias-border-l2)] p-3">
-              <Label className="text-xs text-muted-foreground">{t("activityTitle")}</Label>
-              <div className="max-h-48 overflow-y-auto pr-1">
+            <div className="kanban-activity-box">
+              <Label className="kanban-muted-small">{t("activityTitle")}</Label>
+              <div className="kanban-activity-scroll">
                 <CardActivity activities={activities} />
               </div>
             </div>
@@ -146,14 +146,14 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
         <DialogFooter>
           {card && onDelete && (
             <Button
-              variant="destructive"
-              className="mr-auto"
+              variant="outline"
+              className="kanban-dialog-delete"
               onClick={() => {
                 onDelete(card)
                 onOpenChange(false)
               }}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="kanban-icon" />
               {t("delete")}
             </Button>
           )}
@@ -163,7 +163,7 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
                 variant="outline"
                 disabled={!values.title.trim() && !values.note.trim()}
               >
-                <MessageSquare className="h-4 w-4" />
+                <MessageSquare className="kanban-icon" />
                 {t("chatWithAgent")}
               </Button>
             </DropdownMenuTrigger>
@@ -187,6 +187,7 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
+            variant="outline"
             disabled={!values.title.trim()}
             onClick={() => {
               onSave(values)

@@ -1,18 +1,11 @@
 /**
  * dsh-kanban 客户端构建脚本
  *
- * 用 esbuild 把 React + TSX + dnd-kit + Radix/shadcn 组件打包成单个 CJS 产物，
+ * 用 esbuild 把 React + TSX + dnd-kit + Radix 组件打包成单个 CJS 产物，
  * 再包进官方 client-modules 的 `window.__ModuleLoader__.load({ id, factory })` 闭包。
- *
- * 关键点：
- *  - react / react-dom / react/jsx-runtime 必须 external：DSH 平台提供它们，
- *    闭包内的 `require('react')` 由 module loader 的 require 参数解析，避免「两个 React」。
- *  - 其余依赖（dnd-kit、Radix、cva、clsx、tailwind-merge、lucide、Tailwind 产物）全部内联。
- *  - CSS 经 @tailwindcss/postcss 编译后以字符串内联，运行时注入 <style>（带去重标记）。
+ * CSS 使用插件自己的 kanban-* 命名空间，以字符串内联并在运行时注入。
  */
 import esbuild from 'esbuild'
-import postcss from 'postcss'
-import tailwindcss from '@tailwindcss/postcss'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -42,13 +35,12 @@ const result = await esbuild.build({
   alias: { '@': resolve(root, 'src/client') },
   plugins: [
     {
-      name: 'tailwind-css',
+      name: 'inline-native-css',
       setup(build) {
-        build.onLoad({ filter: /\.css$/ }, async (args) => {
-          const css = readFileSync(args.path, 'utf8')
-          const processed = await postcss([tailwindcss()]).process(css, { from: args.path })
-          return { contents: processed.css, loader: 'text' }
-        })
+        build.onLoad({ filter: /\.css$/ }, (args) => ({
+          contents: readFileSync(args.path, 'utf8'),
+          loader: 'text',
+        }))
       },
     },
   ],

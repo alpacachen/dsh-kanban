@@ -251,11 +251,11 @@ export function KanbanView(props: KanbanViewProps) {
 
   if (!board) {
     return (
-      <div className="flex h-full min-h-[420px] items-center justify-center p-5">
+      <div className="kanban-root kanban-loading">
         {error ? (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="kanban-error">{error}</p>
         ) : (
-          <p className="text-sm text-muted-foreground">{t("loading")}</p>
+          <p className="kanban-muted-text">{t("loading")}</p>
         )}
       </div>
     )
@@ -264,17 +264,17 @@ export function KanbanView(props: KanbanViewProps) {
   return (
     <div
       ref={rootRef}
-      className="flex h-full flex-col gap-3 p-5"
+      className="kanban-root kanban-view"
       style={viewHeight != null ? { height: viewHeight } : undefined}
     >
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="kanban-error">{error}</p>}
 
       {warnings.length > 0 && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-amber-500">{t("warnings")}</p>
+        <div className="kanban-warning">
+          <div className="kanban-warning-body">
+            <p className="kanban-warning-title">{t("warnings")}</p>
             {warnings.map((w, i) => (
-              <p key={i} className="mt-0.5 break-words text-xs text-amber-600">
+              <p key={i} className="kanban-warning-item">
                 {w}
               </p>
             ))}
@@ -282,7 +282,7 @@ export function KanbanView(props: KanbanViewProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 shrink-0 px-2 text-xs text-amber-600 hover:text-amber-500"
+            className="kanban-warning-dismiss"
             onClick={() => setWarnings([])}
           >
             {t("dismiss")}
@@ -296,19 +296,19 @@ export function KanbanView(props: KanbanViewProps) {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex min-h-0 flex-1 gap-3">
+        <div className="kanban-content">
           {/* 操作面板：固定在最左侧 */}
-          <div className="flex shrink-0 flex-col items-center gap-1.5 self-start rounded-2xl border border-[var(--dsw-alias-border-l2)] bg-card p-1.5 shadow-column">
+          <div className="kanban-toolbar">
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+              className="kanban-toolbar-button"
               title={t("refresh")}
               aria-label={t("refresh")}
               disabled={refreshing}
               onClick={refreshBoard}
             >
-              <RefreshCw className={refreshing ? "animate-spin" : undefined} />
+              <RefreshCw className={refreshing ? "kanban-animate-spin" : undefined} />
             </Button>
 
             <DropdownMenu>
@@ -316,19 +316,19 @@ export function KanbanView(props: KanbanViewProps) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+                  className="kanban-toolbar-button"
                   title={t("settings")}
                 >
-                  <Settings2 className="h-4 w-4" />
+                  <Settings2 className="kanban-icon" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuItem onClick={() => setColumnDialogOpen(true)}>
-                  <List className="h-4 w-4" />
+                  <List className="kanban-icon" />
                   {t("columnEdit")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setLabelDialogOpen(true)}>
-                  <Tag className="h-4 w-4" />
+                  <Tag className="kanban-icon" />
                   {t("labelEdit")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -339,21 +339,21 @@ export function KanbanView(props: KanbanViewProps) {
                 <Button
                   variant={priorityFilter ? "secondary" : "ghost"}
                   size="icon"
-                  className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+                  className="kanban-toolbar-button"
                   title={t("priorityFilter")}
                 >
-                  <Filter className="h-4 w-4" />
+                  <Filter className="kanban-icon" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuItem onClick={() => setPriorityFilter("")}>
-                  <span className="flex h-4 w-4 items-center">{!priorityFilter && <Check className="h-4 w-4" />}</span>
+                  <span className="kanban-filter-check">{!priorityFilter && <Check className="kanban-icon" />}</span>
                   {t("all")}
                 </DropdownMenuItem>
                 {PRIORITY_OPTIONS.map((p) => (
                   <DropdownMenuItem key={p} onClick={() => setPriorityFilter(p)}>
-                    <span className="flex h-4 w-4 items-center">{priorityFilter === p && <Check className="h-4 w-4" />}</span>
-                    <span className="h-2 w-2 rounded-full" style={{ background: PRIORITY_META[p].color }} />
+                    <span className="kanban-filter-check">{priorityFilter === p && <Check className="kanban-icon" />}</span>
+                    <span className="kanban-priority-dot" style={{ background: PRIORITY_META[p].color }} />
                     {PRIORITY_META[p].label}
                   </DropdownMenuItem>
                 ))}
@@ -362,7 +362,7 @@ export function KanbanView(props: KanbanViewProps) {
           </div>
 
           {/* 看板列（可横向滚动） */}
-          <div className="kan-scroll flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden pb-2">
+          <div className="kanban-board-scroll">
             {board.columns.map((col) => {
               const cards = board.cards.filter(
                 (c) => c.columnId === col.id && (!priorityFilter || c.priority === priorityFilter),
@@ -383,9 +383,9 @@ export function KanbanView(props: KanbanViewProps) {
 
         <DragOverlay>
           {activeCard ? (
-            <Card className="w-64 rotate-2 rounded-xl border-[var(--dsw-alias-border-l2)] bg-secondary shadow-float">
-              <CardContent className="p-3.5">
-                <p className="text-[13.5px] font-medium tracking-tight break-words">{activeCard.title}</p>
+            <Card className="kanban-drag-preview">
+              <CardContent className="kanban-drag-preview-content">
+                <p className="kanban-drag-preview-title">{activeCard.title}</p>
               </CardContent>
             </Card>
           ) : null}
