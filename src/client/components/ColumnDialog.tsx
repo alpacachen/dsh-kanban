@@ -58,7 +58,14 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
           if (e.key === "Enter") (e.target as HTMLInputElement).blur()
         }}
       />
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive" disabled={!canDelete} onClick={onDelete}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0 text-destructive"
+        aria-label={t("delete")}
+        disabled={!canDelete}
+        onClick={onDelete}
+      >
         <Trash2 className="h-4 w-4" />
       </Button>
     </div>
