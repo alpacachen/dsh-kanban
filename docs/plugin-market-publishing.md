@@ -1,6 +1,6 @@
 # dsh-kanban 发布与市场上架指南
 
-本文记录 `dsh-kanban` 的正式发布、社区市场投稿和后续升级流程。项目当前 npm 包标识为 **`@alpacachen/dsh-kanban@1.0.3`**，源码仓库为 <https://github.com/alpacachen/dsh-kanban>。
+本文记录 `dsh-kanban` 的正式发布、社区市场投稿和后续升级流程。项目当前 npm 包标识为 **`@alpacachen/dsh-kanban@1.3.1`**，源码仓库为 <https://github.com/alpacachen/dsh-kanban>。
 
 > 当前状态：本仓库的 `package.json` 已声明 `dsh.bundle`、公开 scoped npm 发布配置和 GitHub repository 映射。向 awesome-dsh-plugin 投稿前仍需现场确认其 **仓库创建满 1 天、至少 10 commits** 等门槛；不要为了凑数制造空提交。
 
@@ -24,13 +24,14 @@ DSH 官方把可分发插件定义为 npm **bundle 包**：`package.json` 必须
 }
 ```
 
-项目只支持通过 npm 安装。Release CI 会先构建 `lib/client.js`，再将它与 `index.js`、`cordis.patch.yml` 一起打入 npm 包：
+项目同时支持 npm 和 GitHub 源码安装。`lib/client.js` 是 Web 客户端的预构建产物，必须提交到仓库；这样市场默认使用的 GitHub 安装路径也能直接加载客户端。Release CI 会先构建并校验它，再将它与 `index.js`、`cordis.patch.yml` 一起打入 npm 包：
 
 ```sh
 dsh plugin --profile web add @alpacachen/dsh-kanban
+dsh plugin --profile web add github:alpacachen/dsh-kanban
 ```
 
-不支持 `github:` 源码安装或本地源码目录安装：仓库不跟踪生成的 `lib/client.js`，也不提供安装期 `prepare` 构建。GitHub Release 仅保留版本记录，不提供可安装 tarball；npm 是唯一受支持的分发渠道。
+GitHub 源码安装不依赖安装期 `prepare` 构建，而是直接使用仓库中已提交的 `lib/client.js`。因此修改客户端源码后必须重新执行 `pnpm build` 并提交产物。
 
 安装后可检查组合层并启动 Web profile：
 
@@ -79,8 +80,8 @@ npm publish --access public
 发布后验证：
 
 ```sh
-npm view @alpacachen/dsh-kanban@1.0.3 name version repository dist-tags --json
-dsh plugin --profile web add @alpacachen/dsh-kanban@1.0.3
+npm view @alpacachen/dsh-kanban@1.3.1 name version repository dist-tags --json
+dsh plugin --profile web add @alpacachen/dsh-kanban@1.3.1
 dsh --profile web --dump-config
 ```
 
@@ -88,7 +89,7 @@ dsh --profile web --dump-config
 
 ## 3. GitHub Release
 
-GitHub Release 只记录与 npm 版本一致的 tag 和 release notes，不上传可安装 tarball。Release notes 至少说明用户可见变化、npm 安装命令、兼容性或迁移事项，并确保 tag、npm 版本和 Release 标题一致。
+GitHub Release 记录与 npm 版本一致的 tag 和 release notes。可安装的 GitHub 源码版本来自仓库本身，要求 tag 对应提交已经包含最新的 `lib/client.js`。Release notes 至少说明用户可见变化、安装命令、兼容性或迁移事项，并确保 tag、npm 版本和 Release 标题一致。
 
 ## 4. dsh-market 的真实上架入口
 
@@ -187,11 +188,12 @@ npm 包不影响 registry 的基本收录资格，但发布 npm 后市场可显�
    npm pack --dry-run
    ```
 2. 按 [npm 语义化版本说明](https://docs.npmjs.com/about-semantic-versioning) 修改 `package.json` 的 `version`：修复用 patch、向后兼容功能用 minor、破坏性变化用 major。不要复用已发布版本。
-3. 将版本修改和对应源码一起提交 PR；不要提交由构建生成的 `lib/client.js`。
+3. 将版本修改、对应源码和重新构建的 `lib/client.js` 一起提交 PR。
 4. PR 通过 CI 并合并到 `main` 后，`package.json` 的 push 事件触发 Release 工作流。工作流只有在版本字段相对上一个 `main` 提交发生变化时才发布；仅修改依赖或其他元数据但不修改版本时会安全跳过。
 5. 工作流自动执行：
    - 校验 SemVer 和版本变化；
    - `pnpm install --frozen-lockfile`、类型检查、构建和客户端注册检查；
+   - 确认构建没有产生未提交的 `lib/client.js` 差异，防止 GitHub 安装拿到过期产物；
    - 生成唯一一份包含 `lib/client.js` 的 npm tgz；
    - 通过 Trusted Publishing 发布 npm；
    - 在同一个 `main` 提交创建 `v<版本>` Tag；
@@ -215,7 +217,8 @@ dsh --profile web --dump-config
 - [ ] `pnpm typecheck`、`pnpm build` 通过
 - [ ] `npm pack --dry-run` 的文件清单正确
 - [ ] PR 中的 `package.json` 使用一个从未发布过的新版本
-- [ ] PR 包含对应源码，但不包含生成的 `lib/client.js`
+- [ ] PR 包含对应源码和最新的 `lib/client.js`
+- [ ] 从 GitHub 源码安装到干净 DSH `web` profile 后可加载
 - [ ] PR 合并后 Release workflow 成功
 - [ ] npm、Git tag 和 GitHub Release 显示同一版本
 - [ ] 从 npm 安装到干净 DSH `web` profile 后可加载
