@@ -24,4 +24,11 @@ assert.equal(
 )
 assert.equal(typeof registrations[0].factory, "function", "client bundle registration must provide a factory")
 
+// The client style is injected into the host document, so keep the bundle
+// free of Tailwind/PostCSS output and require the native CSS namespace.
+assert.doesNotMatch(clientBundle, /tailwindcss|preflight|@theme|@layer/, "client bundle must not contain Tailwind CSS")
+assert.doesNotMatch(clientBundle, /-webkit-text-size-adjust:\s*100%/, "client bundle must not contain a global reset")
+assert.match(clientBundle, /\.kanban-root/, "client CSS must use the plugin root scope")
+assert.match(clientBundle, /\.kanban-button/, "client bundle must contain native primitive styles")
+
 console.log(`client bundle registers ${packageJson.name}`)

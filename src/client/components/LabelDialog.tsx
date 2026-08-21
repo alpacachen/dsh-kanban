@@ -41,20 +41,20 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="kanban-dialog-medium">
         <DialogHeader>
           <DialogTitle>{t("labelEdit")}</DialogTitle>
           <DialogDescription>{t("labelEditDesc")}</DialogDescription>
         </DialogHeader>
-        <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto py-2">
+        <div className="kanban-label-list">
           {labels.map((label) => {
             const d = drafts[label.name] ?? { name: label.name, color: label.color }
             return (
-              <div key={label.name} className="flex items-center gap-1.5">
+              <div key={label.name} className="kanban-label-row">
                 <input
                   type="color"
                   value={d.color}
-                  className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+                  className="kanban-color-input"
                   onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, color: e.target.value } }))}
                   onBlur={() => commit(label.name)}
                 />
@@ -66,19 +66,19 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
                     if (e.key === "Enter") (e.target as HTMLInputElement).blur()
                   }}
                 />
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive" onClick={() => onDelete(label.name)}>
-                  <Trash2 className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="kanban-icon-button kanban-danger-button" onClick={() => onDelete(label.name)}>
+                  <Trash2 className="kanban-icon" />
                 </Button>
               </div>
             )
           })}
         </div>
-        <DialogFooter className="flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-1.5">
+        <DialogFooter className="kanban-dialog-footer-layout">
+          <div className="kanban-label-add-row">
             <input
               type="color"
               value={newColor}
-              className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+              className="kanban-color-input"
               onChange={(e) => setNewColor(e.target.value)}
             />
             <Input
@@ -92,7 +92,7 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
               }}
             />
             <Button size="sm" onClick={() => { if (newName.trim()) { onAdd(newName.trim(), newColor); setNewName("") } }}>
-              <Plus className="h-4 w-4" />
+              <Plus className="kanban-icon" />
               {t("add")}
             </Button>
           </div>
