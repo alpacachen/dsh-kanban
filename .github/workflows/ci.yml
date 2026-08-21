@@ -44,6 +44,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Check tracked client bundle
+        run: git diff --exit-code -- lib/client.js
+
       - name: Check client bundle registration
         run: pnpm check:client-bundle
 
