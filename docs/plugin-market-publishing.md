@@ -1,6 +1,6 @@
 # dsh-kanban 发布与市场上架指南
 
-本文记录 `dsh-kanban` 的正式发布、社区市场投稿和后续升级流程。项目当前 npm 包标识为 **`@alpacachen/dsh-kanban@1.3.1`**，源码仓库为 <https://github.com/alpacachen/dsh-kanban>。
+本文记录 `dsh-kanban` 的正式发布、社区市场投稿和后续升级流程。项目当前 npm 包标识为 **`@alpacachen/dsh-kanban@1.3.2`**，源码仓库为 <https://github.com/alpacachen/dsh-kanban>。
 
 > 当前状态：本仓库的 `package.json` 已声明 `dsh.bundle`、公开 scoped npm 发布配置和 GitHub repository 映射。向 awesome-dsh-plugin 投稿前仍需现场确认其 **仓库创建满 1 天、至少 10 commits** 等门槛；不要为了凑数制造空提交。
 
@@ -11,7 +11,7 @@ DSH 官方把可分发插件定义为 npm **bundle 包**：`package.json` 必须
 ```json
 {
   "name": "@alpacachen/dsh-kanban",
-  "version": "1.0.3",
+  "version": "1.3.2",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -42,7 +42,7 @@ dsh web
 
 来源：[DSH 官方《打包与安装插件》](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)。
 
-## 2. 发布 `@alpacachen/dsh-kanban@1.0.3` 到 npm
+## 2. 发布 `@alpacachen/dsh-kanban@1.3.2` 到 npm
 
 Scoped 包默认需要明确公开访问权限；本项目已设置 `publishConfig.access: "public"`，发布命令仍保留 `--access public`，使意图清楚。npm 登录和发布的官方说明见 [npm login](https://docs.npmjs.com/cli/v12/commands/npm-login)、[npm publish](https://docs.npmjs.com/cli/v11/commands/npm-publish)、[About scopes](https://docs.npmjs.com/about-scopes) 与 [About public packages](https://docs.npmjs.com/about-public-packages)。
 
@@ -80,12 +80,12 @@ npm publish --access public
 发布后验证：
 
 ```sh
-npm view @alpacachen/dsh-kanban@1.3.1 name version repository dist-tags --json
-dsh plugin --profile web add @alpacachen/dsh-kanban@1.3.1
+npm view @alpacachen/dsh-kanban@1.3.2 name version repository dist-tags --json
+dsh plugin --profile web add @alpacachen/dsh-kanban@1.3.2
 dsh --profile web --dump-config
 ```
 
-注意：npm 不允许覆盖已存在的同版本。一旦 `1.0.3` 成功发布，任何内容变更都必须先升级版本号再发包。发布凭据和一次性验证码只在终端/npm 官方页面输入，不写进仓库。
+注意：npm 不允许覆盖已存在的同版本。一旦 `1.3.2` 成功发布，任何内容变更都必须先升级版本号再发包。发布凭据和一次性验证码只在终端/npm 官方页面输入，不写进仓库。
 
 ## 3. GitHub Release
 
