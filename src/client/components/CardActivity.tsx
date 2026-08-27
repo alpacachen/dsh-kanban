@@ -1,4 +1,3 @@
-import { Clock } from "lucide-react"
 import { describeActivity, formatTime } from "@/lib/activity"
 import { useT } from "@/lib/i18n"
 import type { Activity } from "@/lib/types"
@@ -7,7 +6,7 @@ interface CardActivityProps {
   activities: Activity[]
 }
 
-/** 卡片详情里的活动时间线：按时间倒序展示每一条操作记录。 */
+/** 卡片详情里的紧凑活动列表：最新记录在前，内容与时间保持在同一视觉行。 */
 export function CardActivity({ activities }: CardActivityProps) {
   const t = useT()
 
@@ -15,27 +14,33 @@ export function CardActivity({ activities }: CardActivityProps) {
     return <p className="kanban-muted-small">{t("activityEmpty")}</p>
   }
 
-  // 后端按时间正序追加，倒序后即"最新的在前"
+  // 后端按时间正序追加，倒序后即“最新的在前”。
   const items = [...activities].reverse()
 
   return (
     <ol className="kanban-activity-list">
-      {items.map((a) => {
-        const isAgent = a.source === "agent"
+      {items.map((activity) => {
+        const isAgent = activity.source === "agent"
+        const actor = isAgent ? t("actorAgent") : t("actorHuman")
         return (
-          <li key={a.id} className="kanban-activity-item">
+          <li key={activity.id} className="kanban-activity-item">
             <span
               className={`kanban-activity-dot ${isAgent ? "is-agent" : "is-human"}`}
+              aria-hidden="true"
             />
-            <div className="kanban-activity-meta">
-              <Clock className="kanban-tiny-icon" />
-              <time className="kanban-tabular">{formatTime(a.ts)}</time>
-              <span>·</span>
+            <p className="kanban-activity-description">
               <span className={`kanban-activity-actor ${isAgent ? "is-agent" : "is-human"}`}>
-                {isAgent ? t("actorAgent") : t("actorHuman")}
-              </span>
-            </div>
-            <p className="kanban-activity-description">{describeActivity(a, t)}</p>
+                {actor}
+              </span>{" "}
+              {describeActivity(activity, t)}
+            </p>
+            <time
+              className="kanban-activity-time kanban-tabular"
+              dateTime={activity.ts}
+              title={formatTime(activity.ts)}
+            >
+              {formatTime(activity.ts)}
+            </time>
           </li>
         )
       })}
