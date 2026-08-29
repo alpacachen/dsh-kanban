@@ -26,8 +26,10 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
   useEffect(() => {
     if (open) {
       setDrafts(Object.fromEntries(labels.map((l) => [l.name, { name: l.name, color: l.color }])))
+      setNewName("")
+      setNewColor("#38bdf8")
     }
-  }, [open, labels])
+  }, [open])
 
   const commit = (name: string) => {
     const d = drafts[name]

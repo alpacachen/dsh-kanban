@@ -11,7 +11,7 @@ afterEach(() => {
   for (const dir of workspaces.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-"))) {
+function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {}) {
   workspaces.push(dir)
   const workspace = { id: "ws-test", path: dir, title: "Test" }
   const registered = []
@@ -28,6 +28,8 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-"))) {
       return readFileSync(target, "utf8")
     },
     async writeText(target, content) {
+      if (options.writeDelay) await new Promise((resolve) => setTimeout(resolve, options.writeDelay(content)))
+      if (options.failWrites) throw new Error("ENOSPC")
       writeFileSync(target, content, "utf8")
       return { version: 1 }
     },
@@ -71,6 +73,26 @@ describe("host board seam", () => {
     expect(parsed.data.cards[0]).toMatchObject({ note: "", label: null, priority: null, createdAt: null, createdBy: null })
   })
 
+  it("rejects malformed entities and dangling references", () => {
+    const malformed = parseBoardText(JSON.stringify({
+      schemaVersion: SCHEMA_VERSION,
+      columns: [null],
+      labels: [],
+      cards: [],
+      activities: [],
+    }))
+    expect(malformed).toMatchObject({ ok: false, kind: "invalid" })
+
+    const dangling = parseBoardText(JSON.stringify({
+      schemaVersion: SCHEMA_VERSION,
+      columns: [{ id: "c1", title: "Todo" }],
+      labels: [],
+      cards: [{ id: "k1", columnId: "missing", title: "Broken", note: "", label: null, priority: null }],
+      activities: [],
+    }))
+    expect(dangling).toMatchObject({ ok: false, kind: "invalid" })
+  })
+
   it("registers every model tool with a usable schema", () => {
     const { registered } = boot()
     const names = registered.map(({ name }) => name)
@@ -88,6 +110,7 @@ describe("host board seam", () => {
     expect(tool(registered, "kanban_update_card").parameters.required).toEqual(["id"])
     expect(tool(registered, "kanban_move_card").parameters.properties.toIndex).toMatchObject({ type: "integer" })
     expect(tool(registered, "kanban_add_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low"])
+    expect(tool(registered, "kanban_update_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low", ""])
   })
 
   it("executes CRUD through registered tools and persists activity history", async () => {
@@ -131,5 +154,43 @@ describe("host board seam", () => {
     expect(result.warnings.some((warning) => warning.includes("automatically upgraded"))).toBe(true)
     expect(existsSync(join(dir, ".dsh-kanban.json.bak-v1"))).toBe(true)
     expect(JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))).toMatchObject({ schemaVersion: SCHEMA_VERSION, activities: [] })
+  })
+
+  it("serializes concurrent mutations before persisting", async () => {
+    const { dir, registered, exec } = boot(undefined, {
+      writeDelay: (content) => content.includes("First") && !content.includes("Second") ? 30 : 0,
+    })
+    const add = tool(registered, "kanban_add_card")
+    const [first, second] = await Promise.all([
+      add.execute({ title: "First" }, exec),
+      add.execute({ title: "Second" }, exec),
+    ])
+
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+    const persisted = JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))
+    expect(persisted.cards.map(({ title }) => title)).toEqual(["First", "Second"])
+  })
+
+  it("rolls back memory and reports a failed write", async () => {
+    const { registered, exec } = boot(undefined, { failWrites: true })
+    const result = await tool(registered, "kanban_add_card").execute({ title: "Must persist" }, exec)
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("ENOSPC")
+    expect(result.board.cards).toEqual([])
+  })
+
+  it("keeps newer-schema files read-only", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-kanban-future-"))
+    workspaces.push(dir)
+    const original = JSON.stringify({ schemaVersion: 99, columns: [], labels: [], cards: [], activities: [] })
+    writeFileSync(join(dir, ".dsh-kanban.json"), original)
+    const { registered, exec } = boot(dir)
+
+    const result = await tool(registered, "kanban_add_card").execute({ title: "Do not overwrite" }, exec)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("newer plugin version")
+    expect(readFileSync(join(dir, ".dsh-kanban.json"), "utf8")).toBe(original)
   })
 })

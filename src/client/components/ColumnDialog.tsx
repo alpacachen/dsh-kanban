@@ -85,8 +85,9 @@ export function ColumnDialog({ open, columns, onOpenChange, onReorder, onRename,
   useEffect(() => {
     if (open) {
       setDrafts(Object.fromEntries(columns.map((c) => [c.id, c.title])))
+      setNewTitle("")
     }
-  }, [open, columns])
+  }, [open])
 
   const commit = (id: string) => {
     const value = (drafts[id] ?? "").trim()

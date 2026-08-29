@@ -35,8 +35,8 @@ interface CardDialogProps {
   labels: LabelType[]
   activities: Activity[]
   onOpenChange: (open: boolean) => void
-  onSave: (values: CardFormValues) => void
-  onDelete?: (card: Card) => void
+  onSave: (values: CardFormValues) => Promise<boolean>
+  onDelete?: (card: Card) => Promise<boolean>
   onChatWithAgent: (values: CardFormValues, target: ChatTarget) => void
 }
 
@@ -45,6 +45,7 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
   const [values, setValues] = useState<CardFormValues>({
     id: "", title: "", note: "", label: "", priority: "",
   })
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -148,9 +149,12 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
             <Button
               variant="outline"
               className="kanban-dialog-delete"
-              onClick={() => {
-                onDelete(card)
-                onOpenChange(false)
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true)
+                const ok = await onDelete(card)
+                setSaving(false)
+                if (ok !== false) onOpenChange(false)
               }}
             >
               <Trash2 className="kanban-icon" />
@@ -188,10 +192,12 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
           </DropdownMenu>
           <Button
             variant="outline"
-            disabled={!values.title.trim()}
-            onClick={() => {
-              onSave(values)
-              onOpenChange(false)
+            disabled={saving || !values.title.trim()}
+            onClick={async () => {
+              setSaving(true)
+              const ok = await onSave(values)
+              setSaving(false)
+              if (ok !== false) onOpenChange(false)
             }}
           >
             {t("save")}

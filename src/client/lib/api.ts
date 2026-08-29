@@ -10,5 +10,16 @@ export function callKanban(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ method, args: { ...args, workspaceId } }),
-  }).then((r) => r.json())
+  }).then(async (response) => {
+    let payload: KanbanResponse
+    try {
+      payload = await response.json() as KanbanResponse
+    } catch {
+      throw new Error(`Kanban request failed (${response.status})`)
+    }
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error || `Kanban request failed (${response.status})`)
+    }
+    return payload
+  })
 }

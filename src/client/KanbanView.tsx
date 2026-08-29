@@ -56,6 +56,10 @@ export function KanbanView(props: KanbanViewProps) {
   const [priorityFilter, setPriorityFilter] = useState<Priority | "">("")
 
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const workspaceIdRef = useRef(workspaceId)
+  const issuedRequestRef = useRef(0)
+  const appliedRequestRef = useRef(0)
+  workspaceIdRef.current = workspaceId
   const [viewHeight, setViewHeight] = useState<number | null>(null)
 
   const sensors = useSensors(
@@ -63,7 +67,9 @@ export function KanbanView(props: KanbanViewProps) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const applyBoard = useCallback((res: any) => {
+  const applyBoard = useCallback((res: any, expectedWorkspace: string, requestId: number) => {
+    if (workspaceIdRef.current !== expectedWorkspace || requestId < appliedRequestRef.current) return
+    appliedRequestRef.current = requestId
     if (res && res.board) {
       // 旧版本主机插件可能不返回 activities；兜底为空数组，避免下游 .filter 崩溃
       setBoard({ ...res.board, activities: Array.isArray(res.board.activities) ? res.board.activities : [] })
@@ -75,27 +81,40 @@ export function KanbanView(props: KanbanViewProps) {
   }, [])
 
   const act = useCallback(
-    (method: string, args: Record<string, unknown> = {}) => {
-      callKanban(method, args, workspaceId)
-        .then(applyBoard)
-        .catch((e) => setError(t("actionFailed") + String((e && e.message) || e)))
+    async (method: string, args: Record<string, unknown> = {}) => {
+      const requestId = ++issuedRequestRef.current
+      try {
+        const res = await callKanban(method, args, workspaceId)
+        applyBoard(res, workspaceId, requestId)
+        return true
+      } catch (e: any) {
+        setError(t("actionFailed") + String((e && e.message) || e))
+        return false
+      }
     },
-    [workspaceId, applyBoard],
+    [workspaceId, applyBoard, t],
   )
 
   const refreshBoard = useCallback(() => {
+    const requestId = ++issuedRequestRef.current
     setRefreshing(true)
     callKanban("get", {}, workspaceId)
-      .then(applyBoard)
+      .then((res) => applyBoard(res, workspaceId, requestId))
       .catch((e) => setError(t("loadFailed") + String((e && e.message) || e)))
       .finally(() => setRefreshing(false))
   }, [workspaceId, applyBoard, t])
 
   useEffect(() => {
     let alive = true
+    const requestId = ++issuedRequestRef.current
+    setBoard(null)
+    setDialog(null)
+    setActiveCard(null)
+    setError("")
+    setWarnings([])
     callKanban("get", {}, workspaceId)
       .then((res) => {
-        if (alive) applyBoard(res)
+        if (alive) applyBoard(res, workspaceId, requestId)
       })
       .catch((e) => {
         if (alive) setError(t("loadFailed") + String((e && e.message) || e))
@@ -103,7 +122,7 @@ export function KanbanView(props: KanbanViewProps) {
     return () => {
       alive = false
     }
-  }, [workspaceId, applyBoard])
+  }, [workspaceId, applyBoard, t])
 
   // 让看板固定在会话滚动容器的可视高度内。DSH 的 conversation.view 槽位在 active
   // 阶段会让父容器随内容增高（min-height:auto），根节点 h-full(100%) 因此拿不到
@@ -200,30 +219,39 @@ export function KanbanView(props: KanbanViewProps) {
       const overCard = board.cards.find((c) => c.id === over.id)
       if (!overCard || overCard.id === active.id) return
       const inCol = board.cards.filter((c) => c.columnId === overCard.columnId)
-      const toIndex = inCol.findIndex((c) => c.id === overCard.id)
+      const overIndex = inCol.findIndex((c) => c.id === overCard.id)
+      const activeTop = active.rect.current.translated?.top
+      const insertAfter = typeof activeTop === "number" && activeTop > over.rect.top + over.rect.height / 2
+      let toIndex = overIndex >= 0 ? overIndex + (insertAfter ? 1 : 0) : undefined
+      const activeIndex = inCol.findIndex((c) => c.id === active.id)
+      if (toIndex != null && activeIndex >= 0 && activeIndex < toIndex) toIndex--
       act("moveCard", {
         id: String(active.id),
         columnId: overCard.columnId,
-        toIndex: toIndex >= 0 ? toIndex : undefined,
+        toIndex,
       })
     } else if (oType === "column") {
       act("moveCard", { id: String(active.id), columnId: String(over.id) })
     }
   }
 
-  const saveCard = (values: CardFormValues) => {
-    if (!dialog) return
-    const payload = {
+  const saveCard = (values: CardFormValues): Promise<boolean> => {
+    if (!dialog) return Promise.resolve(false)
+    if (dialog.card) {
+      const payload: Record<string, unknown> = { id: dialog.card.id }
+      if (values.title !== dialog.card.title) payload.title = values.title
+      if (values.note !== dialog.card.note) payload.note = values.note
+      if (values.label !== (dialog.card.label ?? "")) payload.label = values.label
+      if (values.priority !== (dialog.card.priority ?? "")) payload.priority = values.priority
+      return act("updateCard", payload)
+    }
+    return act("addCard", {
+      columnId: dialog.columnId,
       title: values.title,
       note: values.note,
       label: values.label || undefined,
       priority: values.priority || undefined,
-    }
-    if (dialog.card) {
-      act("updateCard", { id: dialog.card.id, ...payload })
-    } else {
-      act("addCard", { columnId: dialog.columnId, ...payload })
-    }
+    })
   }
 
   // 把卡片内容填入对话输入框，但不自动发送。

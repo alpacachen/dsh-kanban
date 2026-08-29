@@ -144,18 +144,61 @@ export function validateBoard(data) {
   if (!Array.isArray(data.labels)) errors.push('labels must be an array')
   if (!Array.isArray(data.cards)) errors.push('cards must be an array')
   if (!Array.isArray(data.activities)) errors.push('activities must be an array')
+
+  const columnIds = new Set()
+  if (Array.isArray(data.columns)) {
+    for (const c of data.columns) {
+      if (!isObj(c) || typeof c.id !== 'string' || !c.id || typeof c.title !== 'string' || !c.title) {
+        errors.push('columns contain an invalid entry')
+        break
+      }
+      if (columnIds.has(c.id)) {
+        errors.push('duplicate column id: ' + c.id)
+        break
+      }
+      columnIds.add(c.id)
+    }
+  }
+
+  const labelNames = new Set()
+  if (Array.isArray(data.labels)) {
+    for (const l of data.labels) {
+      if (!isObj(l) || typeof l.name !== 'string' || !l.name || typeof l.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(l.color)) {
+        errors.push('labels contain an invalid entry')
+        break
+      }
+      if (labelNames.has(l.name)) {
+        errors.push('duplicate label name: ' + l.name)
+        break
+      }
+      labelNames.add(l.name)
+    }
+  }
+
   if (Array.isArray(data.cards)) {
     const seen = new Set()
     for (const c of data.cards) {
-      if (!isObj(c) || typeof c.id !== 'string' || !c.id) {
-        errors.push('cards contain an entry without a valid id')
+      if (!isObj(c) || typeof c.id !== 'string' || !c.id || typeof c.columnId !== 'string' || typeof c.title !== 'string') {
+        errors.push('cards contain an invalid entry')
         break
       }
       if (seen.has(c.id)) {
         errors.push('duplicate card id: ' + c.id)
         break
       }
+      if (!columnIds.has(c.columnId)) errors.push('card references missing column: ' + c.id)
+      if (c.label != null && !labelNames.has(c.label)) errors.push('card references missing label: ' + c.id)
+      if (c.priority != null && !['high', 'medium', 'low'].includes(c.priority)) errors.push('card has invalid priority: ' + c.id)
       seen.add(c.id)
+    }
+  }
+
+  if (Array.isArray(data.activities)) {
+    for (const a of data.activities) {
+      if (!isObj(a) || typeof a.id !== 'string' || !a.id || typeof a.ts !== 'string' || typeof a.type !== 'string' || !['human', 'agent'].includes(a.source)) {
+        errors.push('activities contain an invalid entry')
+        break
+      }
     }
   }
   return { ok: errors.length === 0, errors }
@@ -255,7 +298,9 @@ export function apply(ctx) {
   const getWorkspaceRegistry = () => ctx.get('workspaceRegistry')
 
   const boards = new Map() // workspaceId -> { columns, labels, cards }
-  const fileTargets = new Map() // workspaceId -> FsTarget | null
+  const boardLoads = new Map() // workspaceId -> Promise<board>，防止冷启动发布半初始化状态
+  const workspaceQueues = new Map() // workspaceId -> Promise，串行化完整 mutation 临界区
+  const fileTargets = new Map() // workspaceId -> FsTarget；解析失败不缓存，允许后续重试
   let seq = 0 // 全局自增，用于生成 cN（列）/ kN（卡）唯一 id
 
   // ---- id 生成 ----
@@ -299,13 +344,12 @@ export function apply(ctx) {
   }
   const targetOf = async (workspace) => {
     const key = workspaceKey(workspace)
-    if (!fileTargets.has(key)) fileTargets.set(key, await resolveFile(workspace))
-    return fileTargets.get(key)
+    if (fileTargets.has(key)) return fileTargets.get(key)
+    const target = await resolveFile(workspace)
+    if (target) fileTargets.set(key, target)
+    return target
   }
-  const persistedFlag = (workspace) => {
-    const key = workspaceKey(workspace)
-    return fileTargets.has(key) && fileTargets.get(key) !== null
-  }
+  const persistedFlag = (workspace) => fileTargets.has(workspaceKey(workspace))
 
   // ---- 看板读写 ----
 
@@ -338,54 +382,91 @@ export function apply(ctx) {
   }
   const timestamp = () => new Date().toISOString().replace(/[:.]/g, '-')
 
-  // 首次访问某工作区时从该工作区根目录加载；异常数据一律不阻塞看板可用性
+  const isNotFound = (err) => err && (err.code === 'ENOENT' || err.code === 'FS_NOT_FOUND' || err.message === 'ENOENT')
+
+  // 首次访问缓存初始化 Promise；完成读取、迁移和默认值建立后才发布 board。
   const boardOf = async (workspace, session) => {
     const key = workspaceKey(workspace)
-    let board = boards.get(key)
-    if (board) return board
-    board = { schemaVersion: SCHEMA_VERSION, columns: [], labels: [], cards: [], activities: [], warnings: [] }
-    boards.set(key, board)
-    const fs = getFs()
-    const target = await targetOf(workspace)
-    let migrated = false
-    if (fs && target) {
-      try {
-        const text = await fs.readText(target)
-        const parsed = parseBoardText(text)
-        for (const w of parsed.warnings) warn(board, w)
-        if (parsed.ok) {
-          board.columns = parsed.data.columns
-          board.labels = parsed.data.labels
-          board.cards = parsed.data.cards
-          board.activities = Array.isArray(parsed.data.activities) ? parsed.data.activities : []
-          migrated = parsed.migrated
-          // schema 迁移场景：写回前先把迁移前的原文件备份下来，保证可回滚
-          if (parsed.migrated) {
-            await backupFile(workspace, 'bak-v' + parsed.fromVersion, session)
-          }
-        } else {
-          // 损坏 / 结构无效 / 版本超前：原文件已无法安全读取，先备份再以空板继续
-          const suffix =
-            parsed.kind === 'unsupported' ? 'unsupported-v' + parsed.version : 'corrupt-' + timestamp()
-          await backupFile(workspace, suffix, session)
-        }
-      } catch (err) {
-        // 尚无看板文件（首次使用）或 fs 读取异常，保留默认空板
-        console.log('dsh-kanban: 读取看板失败 ' + key + '：' + ((err && err.message) || err))
+    const existing = boards.get(key)
+    if (existing) return existing
+    if (boardLoads.has(key)) return boardLoads.get(key)
+
+    const load = (async () => {
+      const board = {
+        schemaVersion: SCHEMA_VERSION,
+        columns: [],
+        labels: [],
+        cards: [],
+        activities: [],
+        warnings: [],
+        readOnlyReason: null,
       }
+      const fs = getFs()
+      const target = await targetOf(workspace)
+      let migrated = false
+      if (fs && target) {
+        try {
+          const text = await fs.readText(target)
+          const parsed = parseBoardText(text)
+          for (const w of parsed.warnings) warn(board, w)
+          if (parsed.ok) {
+            board.columns = parsed.data.columns
+            board.labels = parsed.data.labels
+            board.cards = parsed.data.cards
+            board.activities = parsed.data.activities
+            migrated = parsed.migrated
+            if (parsed.migrated) {
+              const backup = await backupFile(workspace, 'bak-v' + parsed.fromVersion, session)
+              if (!backup) {
+                migrated = false
+                board.readOnlyReason = 'Board migration backup failed; changes are disabled to protect the original file.'
+                warn(board, board.readOnlyReason)
+              }
+            }
+          } else {
+            const suffix = parsed.kind === 'unsupported'
+              ? 'unsupported-v' + parsed.version
+              : 'corrupt-' + timestamp()
+            const backup = await backupFile(workspace, suffix, session)
+            if (parsed.kind === 'unsupported' || !backup) {
+              board.readOnlyReason = parsed.kind === 'unsupported'
+                ? 'Board was created by a newer plugin version; changes are disabled until the plugin is upgraded.'
+                : 'Board backup failed; changes are disabled to protect the original file.'
+              warn(board, board.readOnlyReason)
+            }
+          }
+        } catch (err) {
+          console.log('dsh-kanban: 读取看板失败 ' + key + '：' + ((err && err.message) || err))
+          if (!isNotFound(err)) {
+            board.readOnlyReason = 'Board could not be read; changes are disabled to protect the existing file.'
+            warn(board, board.readOnlyReason)
+          }
+        }
+      }
+      for (const col of board.columns) bumpSeq(col.id)
+      for (const card of board.cards) bumpSeq(card.id)
+      for (const act of board.activities) bumpSeq(act.id)
+      if (board.columns.length === 0) {
+        for (const title of DEFAULT_COLUMNS) board.columns.push({ id: nextId('c'), title })
+      }
+      if (board.labels.length === 0) board.labels = DEFAULT_LABELS.map((l) => ({ ...l }))
+      boards.set(key, board)
+      if (migrated && fs && target) {
+        try {
+          await save(workspace, session)
+        } catch (err) {
+          board.readOnlyReason = 'Migrated board could not be saved; changes are disabled to protect the original file.'
+          warn(board, board.readOnlyReason)
+        }
+      }
+      return board
+    })()
+    boardLoads.set(key, load)
+    try {
+      return await load
+    } finally {
+      boardLoads.delete(key)
     }
-    for (const col of board.columns) bumpSeq(col.id)
-    for (const card of board.cards) bumpSeq(card.id)
-    for (const act of board.activities) bumpSeq(act.id)
-    if (board.columns.length === 0) {
-      for (const title of DEFAULT_COLUMNS) board.columns.push({ id: nextId('c'), title })
-    }
-    if (board.labels.length === 0) {
-      board.labels = DEFAULT_LABELS.map((l) => ({ ...l }))
-    }
-    // schema 升级写回：迁移成功即落盘新版本，保证每个文件只迁移一次
-    if (migrated && fs && target) await save(workspace, session)
-    return board
   }
   const save = async (workspace, session) => {
     const fs = getFs()
@@ -409,6 +490,7 @@ export function apply(ctx) {
       )
     } catch (err) {
       console.log('dsh-kanban: 保存失败 ' + key + '：' + ((err && err.message) || err))
+      throw err
     }
   }
 
@@ -466,12 +548,16 @@ export function apply(ctx) {
   }
 
   // ---- 核心数据操作：工具与浏览器 HTTP 共用同一份逻辑 ----
-  const dispatch = async (workspace, method, args, source, session) => {
+  const READ_METHODS = new Set(['get', 'getCard'])
+  const dispatchUnlocked = async (workspace, method, args, source, session) => {
     const board = await boardOf(workspace, session)
     const a = args || {}
     const actor = source === 'agent' ? 'agent' : 'human'
     const persisted = () => persistedFlag(workspace)
     const result = (extra) => ({ board: cloneBoard(board), persisted: persisted(), warnings: takeWarnings(board), ...extra })
+    if (!READ_METHODS.has(method) && board.readOnlyReason) {
+      return result({ error: board.readOnlyReason })
+    }
 
     switch (method) {
       case 'get':
@@ -486,12 +572,14 @@ export function apply(ctx) {
       case 'addCard': {
         const col = findColumn(board, str(a.columnId, '')) || board.columns[0]
         if (!col) return result({ error: 'No list available' })
+        const label = typeof a.label === 'string' ? a.label.slice(0, 20) : undefined
+        if (label && !findLabel(board, label)) return result({ error: 'Label not found: ' + label })
         const card = {
           id: nextId('k'),
           columnId: col.id,
           title: str(a.title, '').slice(0, 120) || 'Untitled card',
           note: str(a.note, '').slice(0, 500),
-          label: typeof a.label === 'string' ? a.label.slice(0, 20) : undefined,
+          label,
           priority: normPriority(a.priority),
           createdAt: new Date().toISOString(),
           createdBy: actor,
@@ -515,6 +603,8 @@ export function apply(ctx) {
       case 'updateCard': {
         const card = findCard(board, str(a.id, ''))
         if (card) {
+          const nextLabel = typeof a.label === 'string' ? a.label.slice(0, 20) : undefined
+          if (nextLabel && !findLabel(board, nextLabel)) return result({ error: 'Label not found: ' + nextLabel })
           const before = {
             title: card.title,
             note: card.note,
@@ -523,7 +613,7 @@ export function apply(ctx) {
           }
           if (typeof a.title === 'string') card.title = a.title.slice(0, 120) || card.title
           if (typeof a.note === 'string') card.note = a.note.slice(0, 500)
-          if (typeof a.label === 'string') card.label = a.label.slice(0, 20) || undefined
+          if (typeof a.label === 'string') card.label = nextLabel || undefined
           if (typeof a.priority === 'string') card.priority = normPriority(a.priority)
           const after = {
             title: card.title,
@@ -553,10 +643,9 @@ export function apply(ctx) {
       case 'deleteCard': {
         const id = str(a.id, '')
         const card = findCard(board, id)
+        if (!card) return result({ error: 'Card not found: ' + id })
         board.cards = board.cards.filter((c) => c.id !== id)
-        if (card) {
-          record(board, { cardId: id, type: 'card_deleted', source: actor, meta: { title: card.title } })
-        }
+        record(board, { cardId: id, type: 'card_deleted', source: actor, meta: { title: card.title } })
         await save(workspace, session)
         return result({ message: 'Card deleted' })
       }
@@ -694,6 +783,27 @@ export function apply(ctx) {
     }
   }
 
+  const dispatch = (workspace, method, args, source, session) => {
+    const key = workspaceKey(workspace)
+    const previous = workspaceQueues.get(key) || Promise.resolve()
+    const run = previous.catch(() => {}).then(async () => {
+      const board = await boardOf(workspace, session)
+      const snapshot = READ_METHODS.has(method) ? null : JSON.parse(JSON.stringify(board))
+      try {
+        return await dispatchUnlocked(workspace, method, args, source, session)
+      } catch (err) {
+        if (snapshot) boards.set(key, snapshot)
+        throw err
+      }
+    })
+    const settled = run.then(() => undefined, () => undefined)
+    workspaceQueues.set(key, settled)
+    settled.finally(() => {
+      if (workspaceQueues.get(key) === settled) workspaceQueues.delete(key)
+    })
+    return run
+  }
+
   // ---- 工具执行上下文 / 浏览器 workspaceId -> 工作区 ----
   const workspaceOfExec = async (exec) => {
     const agent = exec && exec.agent
@@ -729,47 +839,73 @@ export function apply(ctx) {
       }
     }
     const session = exec && exec.agent && exec.agent.session
-    const r = await dispatch(workspace, method, args, 'agent', session)
-    return {
-      ok: !r.error,
-      message: r.error || r.message || 'Done',
-      board: summaryOfClone(r.board),
-      warnings: Array.isArray(r.warnings) ? r.warnings : [],
+    try {
+      const r = await dispatch(workspace, method, args, 'agent', session)
+      return {
+        ok: !r.error,
+        message: r.error || r.message || 'Done',
+        board: summaryOfClone(r.board),
+        warnings: Array.isArray(r.warnings) ? r.warnings : [],
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        message: 'Board change could not be persisted: ' + ((err && err.message) || err),
+        board: summaryOfClone(cloneBoard(await boardOf(workspace, session))),
+        warnings: [],
+      }
     }
   }
 
   // ---- 浏览器数据层：经官方 webServer 扩展点注册 /api/kanban ----
+  const MAX_HTTP_BODY = 1024 * 1024
+  const sendJson = (res, status, value) => {
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify(value))
+  }
   const httpHandler = async (req, res) => {
     try {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' })
+      const contentType = String(req.headers && req.headers['content-type'] || '').toLowerCase()
+      if (!contentType.startsWith('application/json')) return sendJson(res, 415, { error: 'Expected application/json' })
+      const origin = req.headers && req.headers.origin
+      const host = req.headers && req.headers.host
+      if (origin && host) {
+        let originHost = ''
+        try { originHost = new URL(origin).host } catch {}
+        if (originHost !== host) return sendJson(res, 403, { error: 'Cross-origin request denied' })
+      }
+
       const chunks = []
-      for await (const chunk of req) chunks.push(chunk)
+      let size = 0
+      for await (const chunk of req) {
+        size += chunk.length
+        if (size > MAX_HTTP_BODY) return sendJson(res, 413, { error: 'Request body too large' })
+        chunks.push(chunk)
+      }
       const raw = Buffer.concat(chunks).toString('utf8')
       const body = raw ? JSON.parse(raw) : {}
       const method = typeof body.method === 'string' ? body.method : 'get'
-      const args = body.args || {}
+      const args = isObj(body.args) ? body.args : {}
       const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId : ''
       const workspace = workspaceId ? workspaceOfId(workspaceId) : undefined
-      if (!workspace) {
-        res.writeHead(400, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Unknown workspace: ' + (workspaceId || '(missing)') }))
-        return
-      }
+      if (!workspace) return sendJson(res, 400, { error: 'Unknown workspace: ' + (workspaceId || '(missing)') })
       const result = await dispatch(workspace, method, args, 'human')
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(result))
+      return sendJson(res, result.error ? 400 : 200, result)
     } catch (err) {
-      res.writeHead(500, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: String((err && err.message) || err) }))
+      const status = err instanceof SyntaxError ? 400 : 500
+      return sendJson(res, status, { error: String((err && err.message) || err) })
     }
   }
 
-  const routeState = { registered: false, timer: null, attempts: 0 }
+  const routeState = { registered: false, timer: null, dispose: null, disposed: false, attempts: 0 }
   const registerRoute = () => {
-    if (routeState.registered) return
+    if (routeState.registered || routeState.disposed) return
     const webServer = ctx.get('webServer')
     if (webServer === undefined) return
     try {
-      webServer.register({ kind: 'prefix', path: '/api/kanban', handler: httpHandler })
+      const dispose = webServer.register({ kind: 'prefix', path: '/api/kanban', handler: httpHandler })
+      routeState.dispose = typeof dispose === 'function' ? dispose : null
       routeState.registered = true
       console.log('dsh-kanban: /api/kanban 路由已注册')
     } catch (err) {
@@ -786,6 +922,7 @@ export function apply(ctx) {
         maybeStartupCheck()
         if (routeState.registered || routeState.attempts >= 40) {
           if (routeState.timer) routeState.timer()
+          routeState.timer = null
         }
       }, 500)
     }
@@ -991,7 +1128,7 @@ export function apply(ctx) {
           title: { type: 'string', description: 'New title (optional)' },
           note: { type: 'string', description: 'New note (optional)' },
           label: { type: 'string', description: 'New label name (optional); pass empty string to clear' },
-          priority: { type: 'string', enum: ['high', 'medium', 'low'], description: 'New priority (optional): high=P0 / medium=P1 / low=P2; pass empty string to clear' },
+          priority: { type: 'string', enum: ['high', 'medium', 'low', ''], description: 'New priority (optional): high=P0 / medium=P1 / low=P2; pass empty string to clear' },
         },
         required: ['id'],
       },
@@ -1180,4 +1317,16 @@ export function apply(ctx) {
   ]
 
   for (const tool of tools) ctx.tools.register(tool)
+
+  return () => {
+    routeState.disposed = true
+    if (routeState.timer) routeState.timer()
+    routeState.timer = null
+    if (routeState.dispose) routeState.dispose()
+    routeState.dispose = null
+    boards.clear()
+    boardLoads.clear()
+    workspaceQueues.clear()
+    fileTargets.clear()
+  }
 }
