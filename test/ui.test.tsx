@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import { CardDialog, type CardFormValues } from "../src/client/components/CardDialog"
 import { ColumnDialog } from "../src/client/components/ColumnDialog"
+import { placeCard } from "../src/client/KanbanView"
 
 const labels = [{ name: "bug", color: "#f87171" }]
 const activities = []
@@ -10,6 +11,25 @@ const activities = []
 function cardValues(overrides: Partial<CardFormValues> = {}): CardFormValues {
   return { id: "", title: "", note: "", label: "", priority: "", ...overrides }
 }
+
+describe("card drag placement", () => {
+  const cards = [
+    { id: "a", columnId: "c1", title: "A", note: "", label: null, priority: null, createdAt: null, createdBy: null },
+    { id: "b", columnId: "c1", title: "B", note: "", label: null, priority: null, createdAt: null, createdBy: null },
+    { id: "c", columnId: "c2", title: "C", note: "", label: null, priority: null, createdAt: null, createdBy: null },
+    { id: "d", columnId: "c2", title: "D", note: "", label: null, priority: null, createdAt: null, createdBy: null },
+  ]
+
+  it("places a cross-column card before or after the hovered card", () => {
+    const before = placeCard(cards, "a", "c2", "c", false)
+    expect(before.cards.filter((card) => card.columnId === "c2").map((card) => card.id)).toEqual(["a", "c", "d"])
+    expect(before.toIndex).toBe(0)
+
+    const after = placeCard(before.cards, "a", "c2", "c", true)
+    expect(after.cards.filter((card) => card.columnId === "c2").map((card) => card.id)).toEqual(["c", "a", "d"])
+    expect(after.toIndex).toBe(1)
+  })
+})
 
 describe("CardDialog user flows", () => {
   it("submits the edited fields and closes after save", async () => {

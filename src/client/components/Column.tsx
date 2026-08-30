@@ -1,4 +1,4 @@
-import { useDroppable } from "@dnd-kit/core"
+import { useDndContext, useDroppable } from "@dnd-kit/core"
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { Plus } from "lucide-react"
 import { SortableCard } from "./SortableCard"
@@ -16,12 +16,15 @@ interface ColumnProps {
 
 export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { type: "column" } })
+  const { active, over } = useDndContext()
   const t = useT()
+  const isCardOver = active?.data.current?.type === "card"
+    && (isOver || over?.data.current?.columnId === column.id)
 
   return (
     <div
       ref={setNodeRef}
-      className={`kanban-column${isOver ? " is-over" : ""}`}
+      className={`kanban-column${isCardOver ? " is-over" : ""}`}
     >
       <div className="kanban-column-header">
         <h3 className="kanban-column-title">{column.title}</h3>

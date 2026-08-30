@@ -214,13 +214,16 @@
   flex-direction: column;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 16px;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--dsw-shadow-lv2);
-  transition: border-color 150ms ease;
+  transition: border-color 150ms ease, outline-color 150ms ease;
 }
 
 .kanban-column.is-over {
   border-color: var(--dsw-alias-brand-primary);
+  outline-color: var(--dsw-alias-brand-primary);
 }
 
 .kanban-column-header {
@@ -360,22 +363,14 @@
 }
 
 .kanban-drag-preview {
-  width: 256px;
+  width: 100%;
   transform: rotate(2deg);
-  border-color: var(--dsw-alias-border-l2);
+  cursor: grabbing;
+}
+
+.kanban-drag-preview .kanban-card {
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3);
-}
-
-.kanban-drag-preview-content {
-  padding: 14px;
-}
-
-.kanban-drag-preview-title {
-  overflow-wrap: anywhere;
-  color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xs-strong-13);
-  font-size: 13.5px;
 }
 
 /* Form and activity */

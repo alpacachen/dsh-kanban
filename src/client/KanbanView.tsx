@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCorners,
   getFirstCollision, pointerWithin, rectIntersection,
-  useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragStartEvent,
+  useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
 import { Check, Filter, List, RefreshCw, Settings2, Tag } from "lucide-react"
@@ -10,8 +10,8 @@ import { CardDialog, type CardFormValues, type ChatTarget } from "./components/C
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
 import { LabelDialog } from "./components/LabelDialog"
+import { KanbanCard } from "./components/SortableCard"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -29,6 +29,44 @@ interface KanbanViewProps {
   inputActions?: { setDraft: (text: string) => void }
   workspaces?: { connectWorkspace: (workspaceId: string) => Promise<string> }
   sessions?: { open: (id: string) => void }
+}
+
+export function placeCard(
+  cards: CardType[],
+  activeId: string,
+  targetColumnId: string,
+  overCardId: string | null,
+  insertAfter: boolean,
+): { cards: CardType[]; toIndex: number } {
+  const activeCard = cards.find((card) => card.id === activeId)
+  if (!activeCard) return { cards, toIndex: -1 }
+
+  const currentIndex = cards.filter((card) => card.columnId === activeCard.columnId)
+    .findIndex((card) => card.id === activeId)
+  if (overCardId === activeId && activeCard.columnId === targetColumnId) {
+    return { cards, toIndex: currentIndex }
+  }
+
+  const remaining = cards.filter((card) => card.id !== activeId)
+  const targetCards = remaining.filter((card) => card.columnId === targetColumnId)
+  const overIndex = overCardId
+    ? targetCards.findIndex((card) => card.id === overCardId)
+    : -1
+  const toIndex = overIndex < 0 ? targetCards.length : overIndex + (insertAfter ? 1 : 0)
+  const next = [...remaining]
+  const anchor = targetCards[toIndex]
+  const lastTarget = targetCards[targetCards.length - 1]
+  const insertAt = anchor
+    ? next.indexOf(anchor)
+    : lastTarget
+      ? next.indexOf(lastTarget) + 1
+      : next.length
+  next.splice(insertAt, 0, { ...activeCard, columnId: targetColumnId })
+
+  const unchanged = next.every(
+    (card, index) => card.id === cards[index]?.id && card.columnId === cards[index]?.columnId,
+  )
+  return { cards: unchanged ? cards : next, toIndex }
 }
 
 export function KanbanView(props: KanbanViewProps) {
@@ -56,9 +94,12 @@ export function KanbanView(props: KanbanViewProps) {
   const [priorityFilter, setPriorityFilter] = useState<Priority | "">("")
 
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const boardRef = useRef<Board | null>(board)
+  const dragCardsRef = useRef<CardType[] | null>(null)
   const workspaceIdRef = useRef(workspaceId)
   const issuedRequestRef = useRef(0)
   const appliedRequestRef = useRef(0)
+  boardRef.current = board
   workspaceIdRef.current = workspaceId
   const [viewHeight, setViewHeight] = useState<number | null>(null)
 
@@ -199,40 +240,91 @@ export function KanbanView(props: KanbanViewProps) {
     [board],
   )
 
+  const setLocalCards = (cards: CardType[]) => {
+    const current = boardRef.current
+    if (!current || current.cards === cards) return
+    const next = { ...current, cards }
+    boardRef.current = next
+    setBoard(next)
+  }
+
   const handleDragStart = (event: DragStartEvent) => {
-    if (event.active.data.current?.type === "card") {
-      const card = board?.cards.find((c) => c.id === event.active.id)
-      if (card) setActiveCard(card)
+    if (event.active.data.current?.type !== "card") return
+    const current = boardRef.current
+    const card = current?.cards.find((item) => item.id === event.active.id)
+    if (!card || !current) return
+    dragCardsRef.current = current.cards
+    setActiveCard(card)
+  }
+
+  const handleDragOver = ({ active, over }: DragOverEvent) => {
+    const current = boardRef.current
+    if (!over || !current || active.data.current?.type !== "card") return
+
+    const activeId = String(active.id)
+    const activeCard = current.cards.find((card) => card.id === activeId)
+    const overCard = current.cards.find((card) => card.id === over.id)
+    const targetColumnId = overCard?.columnId
+      ?? (over.data.current?.type === "column" ? String(over.id) : null)
+    if (!activeCard || !targetColumnId || activeCard.columnId === targetColumnId) return
+
+    const activeRect = active.rect.current.translated
+    const insertAfter = Boolean(
+      overCard && activeRect
+      && activeRect.top + activeRect.height / 2 > over.rect.top + over.rect.height / 2,
+    )
+    setLocalCards(placeCard(current.cards, activeId, targetColumnId, overCard?.id ?? null, insertAfter).cards)
+  }
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    const current = boardRef.current
+    const snapshot = dragCardsRef.current
+    dragCardsRef.current = null
+
+    if (!over || !current || active.data.current?.type !== "card") {
+      if (snapshot) setLocalCards(snapshot)
+      setActiveCard(null)
+      return
+    }
+
+    const activeId = String(active.id)
+    const overCard = current.cards.find((card) => card.id === over.id)
+    const targetColumnId = overCard?.columnId
+      ?? (over.data.current?.type === "column" ? String(over.id) : null)
+    if (!targetColumnId) {
+      if (snapshot) setLocalCards(snapshot)
+      setActiveCard(null)
+      return
+    }
+
+    const activeRect = active.rect.current.translated
+    const insertAfter = Boolean(
+      overCard && activeRect
+      && activeRect.top + activeRect.height / 2 > over.rect.top + over.rect.height / 2,
+    )
+    const placement = placeCard(
+      current.cards,
+      activeId,
+      targetColumnId,
+      overCard?.id ?? null,
+      insertAfter,
+    )
+    setLocalCards(placement.cards)
+    setActiveCard(null)
+
+    const changed = !snapshot || placement.cards.some(
+      (card, index) => card.id !== snapshot[index]?.id || card.columnId !== snapshot[index]?.columnId,
+    )
+    if (changed) {
+      void act("moveCard", { id: activeId, columnId: targetColumnId, toIndex: placement.toIndex })
+        .then((ok) => { if (!ok) refreshBoard() })
     }
   }
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
+  const handleDragCancel = () => {
+    if (dragCardsRef.current) setLocalCards(dragCardsRef.current)
+    dragCardsRef.current = null
     setActiveCard(null)
-    if (!over || !board) return
-    const aType = active.data.current?.type as string | undefined
-    const oType = over.data.current?.type as string | undefined
-
-    if (aType !== "card") return
-
-    if (oType === "card") {
-      const overCard = board.cards.find((c) => c.id === over.id)
-      if (!overCard || overCard.id === active.id) return
-      const inCol = board.cards.filter((c) => c.columnId === overCard.columnId)
-      const overIndex = inCol.findIndex((c) => c.id === overCard.id)
-      const activeTop = active.rect.current.translated?.top
-      const insertAfter = typeof activeTop === "number" && activeTop > over.rect.top + over.rect.height / 2
-      let toIndex = overIndex >= 0 ? overIndex + (insertAfter ? 1 : 0) : undefined
-      const activeIndex = inCol.findIndex((c) => c.id === active.id)
-      if (toIndex != null && activeIndex >= 0 && activeIndex < toIndex) toIndex--
-      act("moveCard", {
-        id: String(active.id),
-        columnId: overCard.columnId,
-        toIndex,
-      })
-    } else if (oType === "column") {
-      act("moveCard", { id: String(active.id), columnId: String(over.id) })
-    }
   }
 
   const saveCard = (values: CardFormValues): Promise<boolean> => {
@@ -322,7 +414,9 @@ export function KanbanView(props: KanbanViewProps) {
         sensors={sensors}
         collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
         <div className="kanban-content">
           {/* 操作面板：固定在最左侧 */}
@@ -411,11 +505,9 @@ export function KanbanView(props: KanbanViewProps) {
 
         <DragOverlay>
           {activeCard ? (
-            <Card className="kanban-drag-preview">
-              <CardContent className="kanban-drag-preview-content">
-                <p className="kanban-drag-preview-title">{activeCard.title}</p>
-              </CardContent>
-            </Card>
+            <div className="kanban-drag-preview">
+              <KanbanCard card={activeCard} labels={board.labels} />
+            </div>
           ) : null}
         </DragOverlay>
       </DndContext>
