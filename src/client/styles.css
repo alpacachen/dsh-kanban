@@ -362,6 +362,21 @@
   -webkit-line-clamp: 3;
 }
 
+.kanban-card-comment-count {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxxs-11);
+}
+
+.kanban-card-comment-count svg {
+  width: 12px;
+  height: 12px;
+}
+
 .kanban-drag-preview {
   width: 100%;
   transform: rotate(2deg);
@@ -400,6 +415,58 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.kanban-comments-box {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.kanban-comments-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.kanban-comment-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.kanban-comment-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.kanban-comment-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kanban-comment-content {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kanban-comment-composer {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.kanban-comment-composer .kanban-textarea {
+  width: 100%;
 }
 
 .kanban-activity-box {
@@ -772,6 +839,8 @@
 
 .kanban-dialog-wide {
   max-width: 576px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 
 .kanban-dialog-medium {

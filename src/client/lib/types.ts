@@ -9,6 +9,7 @@ export type ActivityType =
   | "card_priority_changed"
   | "card_title_changed"
   | "card_note_changed"
+  | "card_comment_added"
   | "card_deleted"
   | "column_added"
   | "column_renamed"
@@ -45,6 +46,13 @@ export interface Label {
   color: string
 }
 
+export interface Comment {
+  id: string
+  content: string
+  source: ActivitySource
+  createdAt: string
+}
+
 export interface Card {
   id: string
   columnId: string
@@ -54,6 +62,7 @@ export interface Card {
   priority: Priority | null
   createdAt: string | null
   createdBy: ActivitySource | null
+  comments: Comment[]
 }
 
 export interface Board {

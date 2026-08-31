@@ -112,8 +112,14 @@ export function KanbanView(props: KanbanViewProps) {
     if (workspaceIdRef.current !== expectedWorkspace || requestId < appliedRequestRef.current) return
     appliedRequestRef.current = requestId
     if (res && res.board) {
-      // 旧版本主机插件可能不返回 activities；兜底为空数组，避免下游 .filter 崩溃
-      setBoard({ ...res.board, activities: Array.isArray(res.board.activities) ? res.board.activities : [] })
+      // 旧版本主机插件可能不返回 comments/activities；兜底为空数组，避免下游渲染崩溃
+      setBoard({
+        ...res.board,
+        cards: Array.isArray(res.board.cards)
+          ? res.board.cards.map((card: CardType) => ({ ...card, comments: Array.isArray(card.comments) ? card.comments : [] }))
+          : [],
+        activities: Array.isArray(res.board.activities) ? res.board.activities : [],
+      })
       setError("")
     }
     if (Array.isArray(res && res.warnings) && res.warnings.length > 0) {
@@ -516,11 +522,13 @@ export function KanbanView(props: KanbanViewProps) {
         open={dialog !== null}
         card={dialog?.card ?? null}
         labels={board.labels}
+        comments={dialog?.card ? board.cards.find((card) => card.id === dialog.card!.id)?.comments ?? [] : []}
         activities={dialog?.card ? board.activities.filter((a) => a.cardId === dialog.card!.id) : []}
         onOpenChange={(open) => {
           if (!open) setDialog(null)
         }}
         onSave={saveCard}
+        onAddComment={(id, content) => act("addComment", { id, content })}
         onDelete={(card) => act("deleteCard", { id: card.id })}
         onChatWithAgent={handleChatWithAgent}
       />

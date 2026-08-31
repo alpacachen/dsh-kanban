@@ -5,7 +5,7 @@
  *
  * 覆盖：
  *   - 无 schemaVersion 的历史文件（v0）→ 自动升级为 v1，字段规范化
- *   - v1 文件原样通过
+ *   - v3 文件原样通过，v1/v2 文件自动升级
  *   - 损坏 JSON → corrupt 分诊
  *   - 结构无效 → invalid 分诊
  *   - 版本超前（来自更新版本插件）→ unsupported 分诊且不迁移
@@ -44,6 +44,7 @@ console.log('\n[1] v0 历史文件自动升级')
   check('列/卡保留', r.ok && r.data.columns[0].id === 'c1' && r.data.cards[0].id === 'k1')
   check('新增 activities 空数组', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
   check('历史卡片补 createdAt/createdBy 为 null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
+  check('历史卡片补 comments 空数组', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
 }
 
 // ---- 2. v0 文件缺可选字段 ----
@@ -56,16 +57,32 @@ console.log('\n[2] v0 文件缺 note/label/priority')
   check('priority 补 null', r.ok && r.data.cards[0].priority === null)
 }
 
-// ---- 3. v2 文件原样通过 ----
-console.log('\n[3] v2 文件直接通过')
+// ---- 3. v3 文件原样通过 ----
+console.log('\n[3] v3 文件直接通过')
 {
-  const r = parseBoardText(JSON.stringify({ schemaVersion: 2, columns: [], labels: [], cards: [], activities: [] }))
-  check('v2 → ok 且不迁移', r.ok && r.migrated === false, JSON.stringify(r))
-  check('v2 无警告', r.ok && r.warnings.length === 0)
+  const r = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: [], activities: [] }))
+  check('v3 → ok 且不迁移', r.ok && r.migrated === false, JSON.stringify(r))
+  check('v3 无警告', r.ok && r.warnings.length === 0)
 }
 
-// ---- 3b. v1 文件 → 自动升级到 v2 ----
-console.log('\n[3b] v1 文件自动升级到 v2')
+// ---- 3a. v2 文件 → 自动升级到 v3 ----
+console.log('\n[3a] v2 文件自动升级到 v3')
+{
+  const r = parseBoardText(JSON.stringify({
+    schemaVersion: 2,
+    columns: [{ id: 'c1', title: 'Todo' }],
+    labels: [],
+    cards: [{ id: 'k1', columnId: 'c1', title: 'Keep metadata', note: '', label: null, priority: null, createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'human' }],
+    activities: [{ id: 'e1', ts: '2026-01-01T00:00:00.000Z', cardId: 'k1', type: 'card_created', source: 'human' }],
+  }))
+  check('v2 → ok 且标记迁移', r.ok && r.migrated === true, JSON.stringify(r))
+  check('fromVersion = 2', r.ok && r.fromVersion === 2)
+  check('保留 v2 元数据', r.ok && r.data.cards[0].createdBy === 'human' && r.data.activities.length === 1)
+  check('卡片补 comments 空数组', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
+}
+
+// ---- 3b. v1 文件 → 自动升级到 v3 ----
+console.log('\n[3b] v1 文件自动升级到 v3')
 {
   const r = parseBoardText(JSON.stringify({
     schemaVersion: 1,
@@ -75,9 +92,10 @@ console.log('\n[3b] v1 文件自动升级到 v2')
   }))
   check('v1 → ok 且标记迁移', r.ok && r.migrated === true, JSON.stringify(r))
   check('fromVersion = 1', r.ok && r.fromVersion === 1)
-  check('升级到 v2', r.ok && r.data.schemaVersion === 2)
+  check('升级到 v3', r.ok && r.data.schemaVersion === 3)
   check('activities 空数组', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
   check('卡片补 createdAt/createdBy null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
+  check('卡片补 comments 空数组', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
   check('卡片数据保留', r.ok && r.data.cards[0].title === 'Fix' && r.data.cards[0].label === 'bug')
 }
 
@@ -92,11 +110,13 @@ console.log('\n[4] 损坏 JSON')
 // ---- 5. 结构无效 ----
 console.log('\n[5] 结构无效')
 {
-  const r = parseBoardText(JSON.stringify({ schemaVersion: 2, columns: [], labels: [], cards: 'oops', activities: [] }))
+  const r = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: 'oops', activities: [] }))
   check('invalid 分诊', !r.ok && r.kind === 'invalid', JSON.stringify(r))
-  const dup = parseBoardText(JSON.stringify({ schemaVersion: 2, columns: [], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a' }, { id: 'k1', columnId: 'c1', title: 'b' }], activities: [] }))
+  const dup = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', comments: [] }, { id: 'k1', columnId: 'c1', title: 'b', comments: [] }], activities: [] }))
   check('重复卡 id → invalid', !dup.ok && dup.kind === 'invalid', JSON.stringify(dup))
-  const noAct = parseBoardText(JSON.stringify({ schemaVersion: 2, columns: [], labels: [], cards: [] }))
+  const badComment = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', comments: [{ id: 'm1', content: ' ', source: 'human', createdAt: 'now' }] }], activities: [] }))
+  check('空评论 → invalid', !badComment.ok && badComment.kind === 'invalid', JSON.stringify(badComment))
+  const noAct = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: [] }))
   check('缺 activities → invalid', !noAct.ok && noAct.kind === 'invalid', JSON.stringify(noAct))
 }
 
@@ -148,9 +168,9 @@ console.log('\n[7] 迁移链契约')
 // ---- 8. validateBoard ----
 console.log('\n[8] validateBoard')
 {
-  check('合法 v2 通过', validateBoard({ schemaVersion: 2, columns: [], labels: [], cards: [], activities: [] }).ok)
-  check('缺 labels 失败', !validateBoard({ schemaVersion: 2, columns: [], cards: [], activities: [] }).ok)
-  check('缺 activities 失败', !validateBoard({ schemaVersion: 2, columns: [], labels: [], cards: [] }).ok)
+  check('合法 v3 通过', validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [], activities: [] }).ok)
+  check('缺 labels 失败', !validateBoard({ schemaVersion: 3, columns: [], cards: [], activities: [] }).ok)
+  check('缺 activities 失败', !validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [] }).ok)
   check('非对象失败', !validateBoard(null).ok && !validateBoard('x').ok)
 }
 

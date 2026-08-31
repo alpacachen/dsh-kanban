@@ -7,14 +7,15 @@
  * 职责：
  *  - 按工作区（项目）隔离：boards 以 workspaceId 为键，每个工作区一块独立看板
  *  - 磁盘持久化：经 ctx.fs 写入 <workspace.path>/.dsh-kanban.json
- *  - 模型工具：经 ctx.tools.register 注册 14 个 kanban_* 工具
+ *  - 模型工具：经 ctx.tools.register 注册 15 个 kanban_* 工具
  *  - 浏览器数据层：经 ctx.get('webServer') 注册 /api/kanban 前缀路由
  *
  * 数据模型（每工作区，磁盘文件带 schemaVersion）：
- *   schemaVersion: 2
+ *   schemaVersion: 3
  *   columns: [{ id, title }]
  *   labels:  [{ name, color }]          —— 标签与颜色绑定，name 为唯一键
- *   cards:   [{ id, columnId, title, note, label, priority, createdAt, createdBy }]
+ *   cards:   [{ id, columnId, title, note, label, priority, createdAt, createdBy,
+ *               comments: [{ id, content, source, createdAt }] }]
  *   activities: [{ id, ts, cardId, type, source, field?, from?, to?, meta? }]  —— 追加式活动日志
  *
  * 数据安全：
@@ -44,7 +45,7 @@ export const inject = ['tools']
 // 旧文件在首次打开时自动沿迁移链升级，升级前原文件先备份。
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 export const LEGACY_VERSION = 0
 
 // 活动日志：追加式只读记录，随看板一起落盘；超过上限丢弃最旧事件，防止日志无界增长。
@@ -102,6 +103,20 @@ export const MIGRATIONS = {
         })
         .filter(Boolean),
       activities: [],
+    }
+  },
+  2: (data) => {
+    // v2 → v3：卡片新增评论数组；历史卡片默认没有评论
+    const src = isObj(data) ? data : {}
+    const pick = (arr) => (Array.isArray(arr) ? arr : [])
+    return {
+      schemaVersion: 3,
+      columns: pick(src.columns),
+      labels: pick(src.labels),
+      cards: pick(src.cards)
+        .map((c) => (isObj(c) ? { ...c, comments: [] } : null))
+        .filter(Boolean),
+      activities: pick(src.activities),
     }
   },
 }
@@ -177,8 +192,9 @@ export function validateBoard(data) {
 
   if (Array.isArray(data.cards)) {
     const seen = new Set()
+    const commentIds = new Set()
     for (const c of data.cards) {
-      if (!isObj(c) || typeof c.id !== 'string' || !c.id || typeof c.columnId !== 'string' || typeof c.title !== 'string') {
+      if (!isObj(c) || typeof c.id !== 'string' || !c.id || typeof c.columnId !== 'string' || typeof c.title !== 'string' || !Array.isArray(c.comments)) {
         errors.push('cards contain an invalid entry')
         break
       }
@@ -189,6 +205,17 @@ export function validateBoard(data) {
       if (!columnIds.has(c.columnId)) errors.push('card references missing column: ' + c.id)
       if (c.label != null && !labelNames.has(c.label)) errors.push('card references missing label: ' + c.id)
       if (c.priority != null && !['high', 'medium', 'low'].includes(c.priority)) errors.push('card has invalid priority: ' + c.id)
+      for (const comment of c.comments) {
+        if (!isObj(comment) || typeof comment.id !== 'string' || !comment.id || typeof comment.content !== 'string' || !comment.content.trim() || comment.content.length > 2000 || !['human', 'agent'].includes(comment.source) || typeof comment.createdAt !== 'string' || !comment.createdAt) {
+          errors.push('card comments contain an invalid entry: ' + c.id)
+          break
+        }
+        if (commentIds.has(comment.id)) {
+          errors.push('duplicate comment id: ' + comment.id)
+          break
+        }
+        commentIds.add(comment.id)
+      }
       seen.add(c.id)
     }
   }
@@ -444,7 +471,10 @@ export function apply(ctx) {
         }
       }
       for (const col of board.columns) bumpSeq(col.id)
-      for (const card of board.cards) bumpSeq(card.id)
+      for (const card of board.cards) {
+        bumpSeq(card.id)
+        for (const comment of card.comments) bumpSeq(comment.id)
+      }
       for (const act of board.activities) bumpSeq(act.id)
       if (board.columns.length === 0) {
         for (const title of DEFAULT_COLUMNS) board.columns.push({ id: nextId('c'), title })
@@ -515,6 +545,14 @@ export function apply(ctx) {
       priority: c.priority ?? null,
       createdAt: typeof c.createdAt === 'string' ? c.createdAt : null,
       createdBy: typeof c.createdBy === 'string' ? c.createdBy : null,
+      comments: Array.isArray(c.comments)
+        ? c.comments.map((comment) => ({
+            id: comment.id,
+            content: comment.content,
+            source: comment.source,
+            createdAt: comment.createdAt,
+          }))
+        : [],
     })),
     activities: Array.isArray(b.activities) ? b.activities.map((a) => ({ ...a })) : [],
   })
@@ -531,6 +569,7 @@ export function apply(ctx) {
       title: c.title,
       label: c.label ?? null,
       priority: c.priority ?? null,
+      commentCount: c.comments.length,
     })),
   })
 
@@ -583,6 +622,7 @@ export function apply(ctx) {
           priority: normPriority(a.priority),
           createdAt: new Date().toISOString(),
           createdBy: actor,
+          comments: [],
         }
         board.cards.push(card)
         record(board, {
@@ -638,6 +678,24 @@ export function apply(ctx) {
         return card
           ? result({ message: 'Card updated' })
           : result({ error: 'Card not found: ' + str(a.id, '') })
+      }
+
+      case 'addComment': {
+        const card = findCard(board, str(a.id, ''))
+        if (!card) return result({ error: 'Card not found: ' + str(a.id, '') })
+        const content = str(a.content, '').trim()
+        if (!content) return result({ error: 'Comment content required' })
+        if (content.length > 2000) return result({ error: 'Comment exceeds 2000 characters' })
+        const comment = {
+          id: nextId('m'),
+          content,
+          source: actor,
+          createdAt: new Date().toISOString(),
+        }
+        card.comments.push(comment)
+        record(board, { cardId: card.id, type: 'card_comment_added', source: actor, meta: { title: card.title } })
+        await save(workspace, session)
+        return result({ message: 'Comment added' })
       }
 
       case 'deleteCard': {
@@ -1033,7 +1091,8 @@ export function apply(ctx) {
             '  - [' + card.id + '] ' +
             (card.priority ? '[' + card.priority + '] ' : '') +
             (card.label ? '[' + card.label + '] ' : '') +
-            card.title,
+            card.title +
+            (card.commentCount ? ' (' + card.commentCount + ' comments)' : ''),
           )
         }
       }
@@ -1054,7 +1113,7 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_get_card',
-      description: "Read one card's full details (title, note, label, priority) by id from the current project (workspace) board. Use kanban_get first to discover card ids, then this tool to read a card's complete note and fields.",
+      description: "Read one card's full details (title, note, label, priority and comments) by id from the current project (workspace) board. Use kanban_get first to discover card ids, then this tool to read the complete card and comment history.",
       parameters: {
         type: 'object',
         properties: {
@@ -1086,6 +1145,12 @@ export function apply(ctx) {
             if (c.priority) lines.push('Priority: ' + c.priority)
             if (c.label) lines.push('Label: ' + c.label)
             if (c.note) lines.push('Note: ' + c.note)
+            if (Array.isArray(c.comments) && c.comments.length > 0) {
+              lines.push('Comments:')
+              for (const comment of c.comments) {
+                lines.push('  - [' + comment.createdAt + '] ' + comment.source + ': ' + comment.content)
+              }
+            }
           }
           return [{ type: 'text', text: lines.join('\n') }]
         },
@@ -1097,6 +1162,22 @@ export function apply(ctx) {
         const r = await dispatch(workspace, 'getCard', args, 'agent', session)
         if (r.error) return { ok: false, message: r.error, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
         return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
+      },
+    },
+    {
+      name: 'kanban_add_comment',
+      description: 'Add a comment to a card in the current project (workspace). Use it to leave progress updates, decisions, questions, or review feedback.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Card id' },
+          content: { type: 'string', description: 'Comment text (1-2000 characters)' },
+        },
+        required: ['id', 'content'],
+      },
+      output: output(renderBoard),
+      async execute(args, exec) {
+        return runTool('addComment', args, exec)
       },
     },
     {

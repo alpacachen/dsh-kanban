@@ -14,10 +14,10 @@ function cardValues(overrides: Partial<CardFormValues> = {}): CardFormValues {
 
 describe("card drag placement", () => {
   const cards = [
-    { id: "a", columnId: "c1", title: "A", note: "", label: null, priority: null, createdAt: null, createdBy: null },
-    { id: "b", columnId: "c1", title: "B", note: "", label: null, priority: null, createdAt: null, createdBy: null },
-    { id: "c", columnId: "c2", title: "C", note: "", label: null, priority: null, createdAt: null, createdBy: null },
-    { id: "d", columnId: "c2", title: "D", note: "", label: null, priority: null, createdAt: null, createdBy: null },
+    { id: "a", columnId: "c1", title: "A", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
+    { id: "b", columnId: "c1", title: "B", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
+    { id: "c", columnId: "c2", title: "C", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
+    { id: "d", columnId: "c2", title: "D", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
   ]
 
   it("places a cross-column card before or after the hovered card", () => {
@@ -41,9 +41,11 @@ describe("CardDialog user flows", () => {
         open
         card={null}
         labels={labels}
+        comments={[]}
         activities={activities}
         onOpenChange={onOpenChange}
         onSave={onSave}
+        onAddComment={vi.fn()}
         onChatWithAgent={vi.fn()}
       />,
     )
@@ -65,9 +67,11 @@ describe("CardDialog user flows", () => {
         open
         card={null}
         labels={labels}
+        comments={[]}
         activities={activities}
         onOpenChange={onOpenChange}
         onSave={vi.fn()}
+        onAddComment={vi.fn()}
         onChatWithAgent={onChatWithAgent}
       />,
     )
@@ -83,9 +87,63 @@ describe("CardDialog user flows", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it("renders and submits comments without closing the dialog", async () => {
+    const user = userEvent.setup()
+    const card = { id: "k1", columnId: "c1", title: "Discuss me", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    const onAddComment = vi.fn().mockResolvedValue(true)
+    const onOpenChange = vi.fn()
+    render(
+      <CardDialog
+        open
+        card={card}
+        labels={labels}
+        comments={[{ id: "m1", content: "Existing feedback", source: "agent", createdAt: "2026-08-30T12:00:00.000Z" }]}
+        activities={activities}
+        onOpenChange={onOpenChange}
+        onSave={vi.fn()}
+        onAddComment={onAddComment}
+        onChatWithAgent={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText("Existing feedback")).toBeTruthy()
+    const send = screen.getByRole("button", { name: "发送评论" }) as HTMLButtonElement
+    expect(send.disabled).toBe(true)
+    const input = screen.getByLabelText(/评论/) as HTMLTextAreaElement
+    await user.type(input, "  Ready to merge  ")
+    await user.click(send)
+
+    expect(onAddComment).toHaveBeenCalledWith("k1", "Ready to merge")
+    expect(input.value).toBe("")
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
+  it("keeps a failed comment draft", async () => {
+    const user = userEvent.setup()
+    const card = { id: "k1", columnId: "c1", title: "Discuss me", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    render(
+      <CardDialog
+        open
+        card={card}
+        labels={labels}
+        comments={[]}
+        activities={activities}
+        onOpenChange={vi.fn()}
+        onSave={vi.fn()}
+        onAddComment={vi.fn().mockResolvedValue(false)}
+        onChatWithAgent={vi.fn()}
+      />,
+    )
+
+    const input = screen.getByLabelText(/评论/) as HTMLTextAreaElement
+    await user.type(input, "Keep this draft")
+    await user.click(screen.getByRole("button", { name: "发送评论" }))
+    expect(input.value).toBe("Keep this draft")
+  })
+
   it("deletes an existing card and closes the dialog", async () => {
     const user = userEvent.setup()
-    const card = { id: "k1", columnId: "c1", title: "Remove me", note: "", label: null, priority: null, createdAt: null, createdBy: null }
+    const card = { id: "k1", columnId: "c1", title: "Remove me", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
     const onDelete = vi.fn()
     const onOpenChange = vi.fn()
     render(
@@ -93,9 +151,11 @@ describe("CardDialog user flows", () => {
         open
         card={card}
         labels={labels}
+        comments={[]}
         activities={activities}
         onOpenChange={onOpenChange}
         onSave={vi.fn()}
+        onAddComment={vi.fn()}
         onDelete={onDelete}
         onChatWithAgent={vi.fn()}
       />,

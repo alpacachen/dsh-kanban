@@ -41,6 +41,8 @@ export function describeActivity(activity: Activity, t: (key: string) => string)
       return fill(t("actTitle"), { from: from ?? none, to: to ?? none })
     case "card_note_changed":
       return t("actNote")
+    case "card_comment_added":
+      return t("actComment")
     case "card_deleted":
       return t("actDeleted")
     case "column_added":

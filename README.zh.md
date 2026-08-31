@@ -27,7 +27,7 @@
 
 | 💬 自然对话 | 🧭 随时掌控 | ⚡ 开箱即用 |
 | --- | --- | --- |
-| 通过 14 个 `kanban_*` 工具直接管理任务。 | 在界面中编辑、拖拽、标记和筛选卡片。 | 浏览器端已预构建，无需配置前端环境。 |
+| 通过 15 个 `kanban_*` 工具直接管理任务。 | 在界面中编辑、评论、拖拽、标记和筛选卡片。 | 浏览器端已预构建，无需配置前端环境。 |
 | **🗂️ 项目隔离** | **🌓 原生体验** | **🤝 实时协作** |
 | 每个 DSH 工作区都有自己的独立看板。 | 自动跟随 DSH 的语言、主题与暗色模式。 | 你做的调整，Agent 立即可见；反之亦然。 |
 
@@ -67,8 +67,9 @@ dsh --profile web --dump-config
 
 - 创建、编辑、删除卡片，并将卡片拖到其他列表
 - 为卡片补充备注、标签和 P0 / P1 / P2 优先级
+- 与 Agent 在卡片下持续评论，并在看板上快速查看评论数量
 - 打开卡片活动时间线，查看变更时间、具体内容，以及操作来自你还是 Agent
-- 追踪卡片创建、移动、标题与备注编辑、标签变化和优先级变化
+- 追踪卡片创建、评论、移动、标题与备注编辑、标签变化和优先级变化
 - 从任意卡片发起对话，在当前会话或新会话中让 Agent 接着处理
 - 创建、重命名、排序和删除工作流列表
 - 创建彩色标签，让不同任务一眼可辨
@@ -85,7 +86,7 @@ dsh --profile web --dump-config
 | 范围 | 工具 |
 | --- | --- |
 | **看板** | `kanban_get` |
-| **卡片** | `kanban_get_card`、`kanban_add_card`、`kanban_update_card`、`kanban_delete_card`、`kanban_move_card` |
+| **卡片** | `kanban_get_card`、`kanban_add_comment`、`kanban_add_card`、`kanban_update_card`、`kanban_delete_card`、`kanban_move_card` |
 | **列表** | `kanban_add_column`、`kanban_rename_column`、`kanban_delete_column`、`kanban_move_column` |
 | **标签** | `kanban_get_label`、`kanban_add_label`、`kanban_update_label`、`kanban_delete_label` |
 

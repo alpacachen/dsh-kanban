@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { MessageSquare, Trash2 } from "lucide-react"
+import { MessageSquare, Send, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -14,8 +14,9 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { PRIORITY_OPTIONS, PRIORITY_META } from "@/lib/constants"
+import { formatTime } from "@/lib/activity"
 import { useT } from "@/lib/i18n"
-import type { Activity, Card, Label as LabelType, Priority } from "@/lib/types"
+import type { Activity, Card, Comment, Label as LabelType, Priority } from "@/lib/types"
 import { CardActivity } from "./CardActivity"
 
 export interface CardFormValues {
@@ -33,19 +34,23 @@ interface CardDialogProps {
   open: boolean
   card: Card | null
   labels: LabelType[]
+  comments: Comment[]
   activities: Activity[]
   onOpenChange: (open: boolean) => void
   onSave: (values: CardFormValues) => Promise<boolean>
+  onAddComment: (cardId: string, content: string) => Promise<boolean>
   onDelete?: (card: Card) => Promise<boolean>
   onChatWithAgent: (values: CardFormValues, target: ChatTarget) => void
 }
 
-export function CardDialog({ open, card, labels, activities, onOpenChange, onSave, onDelete, onChatWithAgent }: CardDialogProps) {
+export function CardDialog({ open, card, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
   const t = useT()
   const [values, setValues] = useState<CardFormValues>({
     id: "", title: "", note: "", label: "", priority: "",
   })
+  const [comment, setComment] = useState("")
   const [saving, setSaving] = useState(false)
+  const [commenting, setCommenting] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -56,10 +61,19 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
         label: card?.label ?? "",
         priority: card?.priority ?? "",
       })
+      setComment("")
     }
   }, [open, card])
 
   const set = (patch: Partial<CardFormValues>) => setValues((v) => ({ ...v, ...patch }))
+  const submitComment = async () => {
+    const content = comment.trim()
+    if (!card || !content || content.length > 2000 || commenting) return
+    setCommenting(true)
+    const ok = await onAddComment(card.id, content)
+    setCommenting(false)
+    if (ok !== false) setComment("")
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,6 +149,63 @@ export function CardDialog({ open, card, labels, activities, onOpenChange, onSav
               onChange={(e) => set({ note: e.target.value })}
             />
           </div>
+          {card && (
+            <div className="kanban-comments-box">
+              <Label htmlFor="card-comment">
+                {t("commentsTitle")} <span className="kanban-tabular">({comments.length})</span>
+              </Label>
+              <div className="kanban-comments-scroll" aria-live="polite">
+                {comments.length === 0 ? (
+                  <p className="kanban-muted-small">{t("commentEmpty")}</p>
+                ) : (
+                  <ol className="kanban-comment-list">
+                    {comments.map((item) => {
+                      const isAgent = item.source === "agent"
+                      return (
+                        <li key={item.id} className="kanban-comment-item">
+                          <div className="kanban-comment-meta">
+                            <span className={`kanban-activity-actor ${isAgent ? "is-agent" : "is-human"}`}>
+                              {isAgent ? t("actorAgent") : t("actorHuman")}
+                            </span>
+                            <time className="kanban-activity-time kanban-tabular" dateTime={item.createdAt}>
+                              {formatTime(item.createdAt)}
+                            </time>
+                          </div>
+                          <p className="kanban-comment-content">{item.content}</p>
+                        </li>
+                      )
+                    })}
+                  </ol>
+                )}
+              </div>
+              <div className="kanban-comment-composer">
+                <Textarea
+                  id="card-comment"
+                  value={comment}
+                  placeholder={t("commentPlaceholder")}
+                  rows={3}
+                  maxLength={2000}
+                  disabled={commenting}
+                  onChange={(e) => setComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault()
+                      void submitComment()
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={commenting || !comment.trim()}
+                  onClick={() => void submitComment()}
+                >
+                  <Send className="kanban-icon" />
+                  {t("sendComment")}
+                </Button>
+              </div>
+            </div>
+          )}
           {card && (
             <div className="kanban-activity-box">
               <Label className="kanban-muted-small">{t("activityTitle")}</Label>

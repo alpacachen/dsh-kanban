@@ -27,7 +27,7 @@ You can take over at any time—drag a card, refine a note, reorder a list—and
 
 | 💬 Plan naturally | 🧭 Stay in control | ⚡ Start instantly |
 | --- | --- | --- |
-| Manage the board with 14 built-in `kanban_*` tools. | Edit, drag, prioritize, label, and filter from the UI. | Install the prebuilt plugin—no frontend setup required. |
+| Manage the board with 15 built-in `kanban_*` tools. | Edit, comment, drag, prioritize, label, and filter from the UI. | Install the prebuilt plugin—no frontend setup required. |
 | **🗂️ Keep work separate** | **🌓 Feel at home** | **🤝 Share one source of truth** |
 | Every DSH workspace gets its own board. | Follows your DSH language, theme, and dark mode. | You and the agent always see the same tasks and status. |
 
@@ -67,8 +67,9 @@ The cards appear directly on your board. Continue in conversation, or switch to 
 
 - Create, edit, delete, and drag cards between lists
 - Add notes, labels, and P0 / P1 / P2 priorities
+- Exchange persistent card comments with the agent and see comment counts at a glance
 - Open a card's activity timeline to see when it changed, what changed, and whether you or the agent made the change
-- Track card creation, moves, title and note edits, label changes, and priority changes
+- Track card creation, comments, moves, title and note edits, label changes, and priority changes
 - Send any card to the agent in your current conversation or a new one
 - Create, rename, reorder, and remove workflow lists
 - Create color-coded labels for fast visual scanning
@@ -85,7 +86,7 @@ The plugin automatically gives the agent these tools in every workspace:
 | Area | Tools |
 | --- | --- |
 | **Board** | `kanban_get` |
-| **Cards** | `kanban_get_card`, `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
+| **Cards** | `kanban_get_card`, `kanban_add_comment`, `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
 | **Lists** | `kanban_add_column`, `kanban_rename_column`, `kanban_delete_column`, `kanban_move_column` |
 | **Labels** | `kanban_get_label`, `kanban_add_label`, `kanban_update_label`, `kanban_delete_label` |
 

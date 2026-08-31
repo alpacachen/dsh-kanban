@@ -70,7 +70,7 @@ describe("host board seam", () => {
     expect(parsed.ok).toBe(true)
     expect(parsed.data.schemaVersion).toBe(SCHEMA_VERSION)
     expect(parsed.data.activities).toEqual([])
-    expect(parsed.data.cards[0]).toMatchObject({ note: "", label: null, priority: null, createdAt: null, createdBy: null })
+    expect(parsed.data.cards[0]).toMatchObject({ note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] })
   })
 
   it("rejects malformed entities and dangling references", () => {
@@ -87,18 +87,44 @@ describe("host board seam", () => {
       schemaVersion: SCHEMA_VERSION,
       columns: [{ id: "c1", title: "Todo" }],
       labels: [],
-      cards: [{ id: "k1", columnId: "missing", title: "Broken", note: "", label: null, priority: null }],
+      cards: [{ id: "k1", columnId: "missing", title: "Broken", note: "", label: null, priority: null, comments: [] }],
       activities: [],
     }))
     expect(dangling).toMatchObject({ ok: false, kind: "invalid" })
+
+    const invalidComments = parseBoardText(JSON.stringify({
+      schemaVersion: SCHEMA_VERSION,
+      columns: [{ id: "c1", title: "Todo" }],
+      labels: [],
+      cards: [{
+        id: "k1",
+        columnId: "c1",
+        title: "Broken comments",
+        comments: [{ id: "m1", content: "  ", source: "human", createdAt: "now" }],
+      }],
+      activities: [],
+    }))
+    expect(invalidComments).toMatchObject({ ok: false, kind: "invalid" })
+
+    const duplicateComments = parseBoardText(JSON.stringify({
+      schemaVersion: SCHEMA_VERSION,
+      columns: [{ id: "c1", title: "Todo" }],
+      labels: [],
+      cards: [
+        { id: "k1", columnId: "c1", title: "One", comments: [{ id: "m1", content: "A", source: "human", createdAt: "now" }] },
+        { id: "k2", columnId: "c1", title: "Two", comments: [{ id: "m1", content: "B", source: "agent", createdAt: "now" }] },
+      ],
+      activities: [],
+    }))
+    expect(duplicateComments).toMatchObject({ ok: false, kind: "invalid" })
   })
 
   it("registers every model tool with a usable schema", () => {
     const { registered } = boot()
     const names = registered.map(({ name }) => name)
 
-    expect(names).toHaveLength(14)
-    expect(new Set(names).size).toBe(14)
+    expect(names).toHaveLength(15)
+    expect(new Set(names).size).toBe(15)
     for (const registeredTool of registered) {
       expect(registeredTool.name).toMatch(/^kanban_/)
       expect(registeredTool.parameters).toMatchObject({ type: "object" })
@@ -108,6 +134,7 @@ describe("host board seam", () => {
 
     expect(tool(registered, "kanban_add_card").parameters.required).toEqual(["title"])
     expect(tool(registered, "kanban_update_card").parameters.required).toEqual(["id"])
+    expect(tool(registered, "kanban_add_comment").parameters.required).toEqual(["id", "content"])
     expect(tool(registered, "kanban_move_card").parameters.properties.toIndex).toMatchObject({ type: "integer" })
     expect(tool(registered, "kanban_add_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low"])
     expect(tool(registered, "kanban_update_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low", ""])
@@ -122,6 +149,13 @@ describe("host board seam", () => {
 
     const update = await tool(registered, "kanban_update_card").execute({ id: card.id, priority: "low" }, exec)
     expect(update).toMatchObject({ ok: true, message: "Card updated" })
+    const commented = await tool(registered, "kanban_add_comment").execute({ id: card.id, content: "  Ready for review  " }, exec)
+    expect(commented).toMatchObject({ ok: true, message: "Comment added", board: { cards: [{ id: card.id, commentCount: 1 }] } })
+    const details = await tool(registered, "kanban_get_card").execute({ id: card.id }, exec)
+    expect(details.card.comments).toEqual([
+      expect.objectContaining({ content: "Ready for review", source: "agent", createdAt: expect.any(String) }),
+    ])
+    expect(tool(registered, "kanban_get_card").output.render({}, details)[0].text).toContain("Ready for review")
     const move = await tool(registered, "kanban_move_card").execute({ id: card.id, columnId: target.id }, exec)
     expect(move).toMatchObject({ ok: true, message: 'Moved to "Done"' })
     const deleted = await tool(registered, "kanban_delete_card").execute({ id: card.id }, exec)
@@ -133,9 +167,21 @@ describe("host board seam", () => {
     expect(persisted.activities.map(({ type }) => type)).toEqual([
       "card_created",
       "card_priority_changed",
+      "card_comment_added",
       "card_moved",
       "card_deleted",
     ])
+  })
+
+  it("rejects invalid comment mutations", async () => {
+    const { registered, exec } = boot()
+    const addCard = await tool(registered, "kanban_add_card").execute({ title: "Comment target" }, exec)
+    const cardId = addCard.board.cards[0].id
+    const addComment = tool(registered, "kanban_add_comment")
+
+    expect(await addComment.execute({ id: "missing", content: "Hello" }, exec)).toMatchObject({ ok: false, message: expect.stringContaining("Card not found") })
+    expect(await addComment.execute({ id: cardId, content: "   " }, exec)).toMatchObject({ ok: false, message: "Comment content required" })
+    expect(await addComment.execute({ id: cardId, content: "x".repeat(2001) }, exec)).toMatchObject({ ok: false, message: "Comment exceeds 2000 characters" })
   })
 
   it("backs up and writes back a migrated workspace file on first tool access", async () => {
@@ -153,7 +199,7 @@ describe("host board seam", () => {
     expect(result).toMatchObject({ ok: true, board: { cards: [{ id: "k1", title: "Old" }] } })
     expect(result.warnings.some((warning) => warning.includes("automatically upgraded"))).toBe(true)
     expect(existsSync(join(dir, ".dsh-kanban.json.bak-v1"))).toBe(true)
-    expect(JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))).toMatchObject({ schemaVersion: SCHEMA_VERSION, activities: [] })
+    expect(JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))).toMatchObject({ schemaVersion: SCHEMA_VERSION, activities: [], cards: [{ comments: [] }] })
   })
 
   it("serializes concurrent mutations before persisting", async () => {
@@ -179,6 +225,19 @@ describe("host board seam", () => {
     expect(result.ok).toBe(false)
     expect(result.message).toContain("ENOSPC")
     expect(result.board.cards).toEqual([])
+  })
+
+  it("rolls back a comment when persistence fails", async () => {
+    const options = {}
+    const { registered, exec } = boot(undefined, options)
+    const add = await tool(registered, "kanban_add_card").execute({ title: "Must stay clean" }, exec)
+    const cardId = add.board.cards[0].id
+    options.failWrites = true
+
+    const result = await tool(registered, "kanban_add_comment").execute({ id: cardId, content: "Do not retain" }, exec)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("ENOSPC")
+    expect(result.board.cards[0].commentCount).toBe(0)
   })
 
   it("keeps newer-schema files read-only", async () => {
