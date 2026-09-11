@@ -1,4 +1,8 @@
 import { createElement as h } from "react"
+import type { Context } from "@deepseek-ai/cordis"
+import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
+import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
+import type {} from "@deepseek-ai/dsh-client-runtime/client"
 import { KanbanView } from "./KanbanView"
 import { ChatDraftInjector } from "./components/ChatDraftInjector"
 import { installLocale, t } from "./lib/i18n"
@@ -6,7 +10,7 @@ import { installLocale, t } from "./lib/i18n"
 export const KanbanPlugin = {
   name: "dsh-kanban",
   inject: ["slots", "locale"],
-  apply(ctx: any) {
+  apply(ctx: Context) {
     installLocale(ctx)
     const slots = ctx.get("slots")
     if (slots === undefined) return
@@ -17,14 +21,14 @@ export const KanbanPlugin = {
       slots.register(
         // label 用 thunk：每次投影重新读取，跟随 DSH 当前语言
         { name: "conversation.view", id: "kanban", order: 20, label: () => t("boardTab") },
-        (props: any) => h(KanbanView, { ...props, workspaces, sessions }),
+        (props: PropsRuntime<"conversation.view">) => h(KanbanView, { ...props, workspaces, sessions }),
       ),
     )
     // 常驻会话的隐形注入器：把「新建对话」排队好的卡片内容写入新会话输入框。
     slots.inject("conversation.input.dock", () =>
       slots.register(
         { name: "conversation.input.dock", id: "kanban-chat-draft", order: 100 },
-        (props: any) => h(ChatDraftInjector, props),
+        (props: PropsRuntime<"conversation.input.dock">) => h(ChatDraftInjector, props),
       ),
     )
   },
