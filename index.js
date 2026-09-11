@@ -51,6 +51,15 @@ export const LEGACY_VERSION = 0
 // 活动日志：追加式只读记录，随看板一起落盘；超过上限丢弃最旧事件，防止日志无界增长。
 const ACTIVITY_LIMIT = 5000
 
+// 输入长度上限：与工具 schema 描述、客户端编辑器（CardDialog）保持一致。
+// 超长输入在写入前被截断，并通过看板 warnings 通道发出一次性警告（见 clampText），
+// 因此 agent 与用户都能感知到内容被裁剪，而不是静默丢失。
+export const TITLE_LIMIT = 120
+export const NOTE_LIMIT = 2000
+export const LABEL_LIMIT = 20
+export const COLUMN_TITLE_LIMIT = 40
+export const COMMENT_LIMIT = 2000
+
 const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const strField = (v, fb) => (typeof v === 'string' && v ? v : fb)
 const normColor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : '#94a3b8')
@@ -526,6 +535,16 @@ export function apply(ctx) {
 
   // ---- 校验 / 查找 / 序列化 ----
   const str = (v, fb) => (typeof v === 'string' ? v : fb)
+
+  // 截断辅助：把输入裁到 limit 以内；一旦实际发生截断，就经看板 warnings 通道
+  // 发出一次性警告（同时写入宿主日志），避免内容被静默丢弃。
+  const clampText = (value, limit, field, board) => {
+    const s = str(value, '')
+    if (s.length <= limit) return s
+    warn(board, field + ' truncated to ' + limit + ' characters')
+    return s.slice(0, limit)
+  }
+
   const PRIORITIES = ['high', 'medium', 'low']
   const normPriority = (v) => (typeof v === 'string' && PRIORITIES.includes(v) ? v : undefined)
   const normColor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : undefined)
@@ -611,13 +630,13 @@ export function apply(ctx) {
       case 'addCard': {
         const col = findColumn(board, str(a.columnId, '')) || board.columns[0]
         if (!col) return result({ error: 'No list available' })
-        const label = typeof a.label === 'string' ? a.label.slice(0, 20) : undefined
+        const label = typeof a.label === 'string' ? clampText(a.label, LABEL_LIMIT, 'Label', board) : undefined
         if (label && !findLabel(board, label)) return result({ error: 'Label not found: ' + label })
         const card = {
           id: nextId('k'),
           columnId: col.id,
-          title: str(a.title, '').slice(0, 120) || 'Untitled card',
-          note: str(a.note, '').slice(0, 500),
+          title: clampText(a.title, TITLE_LIMIT, 'Title', board) || 'Untitled card',
+          note: clampText(a.note, NOTE_LIMIT, 'Note', board),
           label,
           priority: normPriority(a.priority),
           createdAt: new Date().toISOString(),
@@ -643,7 +662,7 @@ export function apply(ctx) {
       case 'updateCard': {
         const card = findCard(board, str(a.id, ''))
         if (card) {
-          const nextLabel = typeof a.label === 'string' ? a.label.slice(0, 20) : undefined
+          const nextLabel = typeof a.label === 'string' ? clampText(a.label, LABEL_LIMIT, 'Label', board) : undefined
           if (nextLabel && !findLabel(board, nextLabel)) return result({ error: 'Label not found: ' + nextLabel })
           const before = {
             title: card.title,
@@ -651,8 +670,8 @@ export function apply(ctx) {
             label: card.label ?? null,
             priority: card.priority ?? null,
           }
-          if (typeof a.title === 'string') card.title = a.title.slice(0, 120) || card.title
-          if (typeof a.note === 'string') card.note = a.note.slice(0, 500)
+          if (typeof a.title === 'string') card.title = clampText(a.title, TITLE_LIMIT, 'Title', board) || card.title
+          if (typeof a.note === 'string') card.note = clampText(a.note, NOTE_LIMIT, 'Note', board)
           if (typeof a.label === 'string') card.label = nextLabel || undefined
           if (typeof a.priority === 'string') card.priority = normPriority(a.priority)
           const after = {
@@ -685,7 +704,7 @@ export function apply(ctx) {
         if (!card) return result({ error: 'Card not found: ' + str(a.id, '') })
         const content = str(a.content, '').trim()
         if (!content) return result({ error: 'Comment content required' })
-        if (content.length > 2000) return result({ error: 'Comment exceeds 2000 characters' })
+        if (content.length > COMMENT_LIMIT) return result({ error: 'Comment exceeds ' + COMMENT_LIMIT + ' characters' })
         const comment = {
           id: nextId('m'),
           content,
@@ -731,7 +750,7 @@ export function apply(ctx) {
       }
 
       case 'addColumn': {
-        const title = str(a.title, '').slice(0, 40) || 'New list'
+        const title = clampText(a.title, COLUMN_TITLE_LIMIT, 'List title', board) || 'New list'
         board.columns.push({ id: nextId('c'), title })
         record(board, { cardId: null, type: 'column_added', source: actor, meta: { column: title } })
         await save(workspace, session)
@@ -742,7 +761,7 @@ export function apply(ctx) {
         const col = findColumn(board, str(a.id, ''))
         if (col && typeof a.title === 'string') {
           const before = col.title
-          col.title = a.title.slice(0, 40) || col.title
+          col.title = clampText(a.title, COLUMN_TITLE_LIMIT, 'List title', board) || col.title
           if (col.title !== before) {
             record(board, { cardId: null, type: 'column_renamed', source: actor, field: 'title', from: before, to: col.title, meta: { column: col.title } })
           }
@@ -784,7 +803,7 @@ export function apply(ctx) {
       }
 
       case 'addLabel': {
-        const name = str(a.name, '').slice(0, 20)
+        const name = clampText(a.name, LABEL_LIMIT, 'Label name', board)
         if (!name) return result({ error: 'Label name required' })
         if (findLabel(board, name)) return result({ error: 'Label already exists' })
         board.labels.push({ name, color: normColor(a.color) || '#94a3b8' })
@@ -797,7 +816,7 @@ export function apply(ctx) {
         const name = str(a.name, '')
         const label = findLabel(board, name)
         if (!label) return result({ error: 'Label not found' })
-        const newName = str(a.newName, '').slice(0, 20)
+        const newName = clampText(a.newName, LABEL_LIMIT, 'Label name', board)
         if (newName && newName !== name) {
           if (findLabel(board, newName)) return result({ error: 'Label name already exists' })
           label.name = newName
@@ -1186,10 +1205,10 @@ export function apply(ctx) {
       parameters: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: 'Card title (task name, concise and actionable)' },
+          title: { type: 'string', description: `Card title (task name, concise and actionable; max ${TITLE_LIMIT} chars)` },
           columnId: { type: 'string', description: 'Target list id; defaults to the first list (Todo)' },
-          note: { type: 'string', description: 'Note: background, acceptance criteria or breakdown details (optional)' },
-          label: { type: 'string', description: 'Label name (optional): e.g. New Feature, bug, Feedback' },
+          note: { type: 'string', description: `Note: background, acceptance criteria or breakdown details (optional; max ${NOTE_LIMIT} chars)` },
+          label: { type: 'string', description: `Label name (optional; max ${LABEL_LIMIT} chars): e.g. New Feature, bug, Feedback` },
           priority: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Priority (optional): high=P0 / medium=P1 / low=P2' },
         },
         required: ['title'],
@@ -1206,9 +1225,9 @@ export function apply(ctx) {
         type: 'object',
         properties: {
           id: { type: 'string', description: 'Card id' },
-          title: { type: 'string', description: 'New title (optional)' },
-          note: { type: 'string', description: 'New note (optional)' },
-          label: { type: 'string', description: 'New label name (optional); pass empty string to clear' },
+          title: { type: 'string', description: `New title (optional; max ${TITLE_LIMIT} chars)` },
+          note: { type: 'string', description: `New note (optional; max ${NOTE_LIMIT} chars)` },
+          label: { type: 'string', description: `New label name (optional; max ${LABEL_LIMIT} chars); pass empty string to clear` },
           priority: { type: 'string', enum: ['high', 'medium', 'low', ''], description: 'New priority (optional): high=P0 / medium=P1 / low=P2; pass empty string to clear' },
         },
         required: ['id'],
@@ -1253,7 +1272,7 @@ export function apply(ctx) {
       description: 'Add a list (column) to the board. Use when a new workflow stage (e.g. Review, Blocked) is needed.',
       parameters: {
         type: 'object',
-        properties: { title: { type: 'string', description: 'List name' } },
+        properties: { title: { type: 'string', description: `List name (max ${COLUMN_TITLE_LIMIT} chars)` } },
         required: ['title'],
       },
       output: output(renderBoard),
@@ -1268,7 +1287,7 @@ export function apply(ctx) {
         type: 'object',
         properties: {
           id: { type: 'string', description: 'List id' },
-          title: { type: 'string', description: 'New name' },
+          title: { type: 'string', description: `New name (max ${COLUMN_TITLE_LIMIT} chars)` },
         },
         required: ['id', 'title'],
       },
@@ -1312,7 +1331,7 @@ export function apply(ctx) {
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Label name (unique, e.g. Urgent, Refactor)' },
+          name: { type: 'string', description: `Label name (unique, max ${LABEL_LIMIT} chars; e.g. Urgent, Refactor)` },
           color: { type: 'string', description: 'Label color (optional): #rrggbb hex; defaults to gray' },
         },
         required: ['name'],
@@ -1329,7 +1348,7 @@ export function apply(ctx) {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Current label name' },
-          newName: { type: 'string', description: 'New name (optional)' },
+          newName: { type: 'string', description: `New name (optional; max ${LABEL_LIMIT} chars)` },
           color: { type: 'string', description: 'New color (optional): #rrggbb hex' },
         },
         required: ['name'],

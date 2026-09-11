@@ -100,6 +100,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
               id="card-title"
               value={values.title}
               placeholder={t("titlePlaceholder")}
+              maxLength={120}
               onChange={(e) => set({ title: e.target.value })}
             />
           </div>
@@ -146,6 +147,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
               value={values.note}
               placeholder={t("notePlaceholder")}
               rows={5}
+              maxLength={2000}
               onChange={(e) => set({ note: e.target.value })}
             />
           </div>
