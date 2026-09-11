@@ -20,15 +20,13 @@ import { cardToChatText, queueDraft } from "@/lib/chat-bridge"
 import { PRIORITY_META, PRIORITY_OPTIONS } from "@/lib/constants"
 import { useT } from "./lib/i18n"
 import type { Board, Card as CardType, Priority } from "@/lib/types"
+import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
+import type { IWorkspaces, ISessions } from "@deepseek-ai/dsh-client-runtime/client"
+import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
 
-type AnySelectorHook = (selector: (state: any) => any) => any
-
-interface KanbanViewProps {
-  sessionId?: string
-  useWorkspaces?: AnySelectorHook
-  inputActions?: { setDraft: (text: string) => void }
-  workspaces?: { connectWorkspace: (workspaceId: string) => Promise<string> }
-  sessions?: { open: (id: string) => void }
+type KanbanViewProps = PropsRuntime<"conversation.view"> & {
+  workspaces?: IWorkspaces
+  sessions?: ISessions
 }
 
 export function placeCard(

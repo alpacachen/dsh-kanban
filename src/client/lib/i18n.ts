@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react"
+import type { Context } from "@deepseek-ai/cordis"
 
 /**
  * 国际化：跟随 DSH 的 locale 服务切换语言。
@@ -151,7 +152,7 @@ const en: Dict = {
 let localeService: any = null
 let boundT: ((key: string) => string) | null = null
 
-export function installLocale(ctx: any) {
+export function installLocale(ctx: Context) {
   const locale = ctx.get("locale")
   if (locale === undefined) return
   localeService = locale

@@ -1,10 +1,10 @@
 import { useEffect, useSyncExternalStore } from "react"
+import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
+import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
+import type {} from "@deepseek-ai/dsh-client-runtime/client"
 import { consumeDraft, getDraftVersion, subscribeDraft } from "@/lib/chat-bridge"
 
-interface ChatDraftInjectorProps {
-  sessionId?: string
-  inputActions?: { setDraft: (text: string) => void }
-}
+type ChatDraftInjectorProps = PropsRuntime<"conversation.input.dock">
 
 /**
  * 常驻会话的隐形组件：注册在 conversation.input.dock（session 作用域，随当前
