@@ -52,6 +52,7 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
       </button>
       <Input
         value={value}
+        maxLength={40}
         onChange={(e) => onValueChange(e.target.value)}
         onBlur={onCommit}
         onKeyDown={(e) => {
@@ -130,6 +131,7 @@ export function ColumnDialog({ open, columns, onOpenChange, onReorder, onRename,
           <Input
             value={newTitle}
             placeholder={t("newColumnPlaceholder")}
+            maxLength={40}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
