@@ -62,6 +62,7 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
                 />
                 <Input
                   value={d.name}
+                  maxLength={20}
                   onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, name: e.target.value } }))}
                   onBlur={() => commit(label.name)}
                   onKeyDown={(e) => {
@@ -86,6 +87,7 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
             <Input
               value={newName}
               placeholder={t("newLabelPlaceholder")}
+              maxLength={20}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {

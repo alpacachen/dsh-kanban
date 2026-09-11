@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { apply, parseBoardText, SCHEMA_VERSION } from "../index.js"
+import { apply, parseBoardText, SCHEMA_VERSION, NOTE_LIMIT, TITLE_LIMIT, LABEL_LIMIT, COLUMN_TITLE_LIMIT } from "../index.js"
 
 const workspaces = []
 
@@ -138,6 +138,17 @@ describe("host board seam", () => {
     expect(tool(registered, "kanban_move_card").parameters.properties.toIndex).toMatchObject({ type: "integer" })
     expect(tool(registered, "kanban_add_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low"])
     expect(tool(registered, "kanban_update_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low", ""])
+    // 长度上限必须在 schema 中声明，避免 agent 静默触发截断
+    expect(tool(registered, "kanban_add_card").parameters.properties.note.description).toContain(String(NOTE_LIMIT))
+    expect(tool(registered, "kanban_add_card").parameters.properties.title.description).toContain(String(TITLE_LIMIT))
+    expect(tool(registered, "kanban_add_card").parameters.properties.label.description).toContain(String(LABEL_LIMIT))
+    expect(tool(registered, "kanban_update_card").parameters.properties.note.description).toContain(String(NOTE_LIMIT))
+    expect(tool(registered, "kanban_update_card").parameters.properties.title.description).toContain(String(TITLE_LIMIT))
+    expect(tool(registered, "kanban_update_card").parameters.properties.label.description).toContain(String(LABEL_LIMIT))
+    expect(tool(registered, "kanban_add_label").parameters.properties.name.description).toContain(String(LABEL_LIMIT))
+    expect(tool(registered, "kanban_update_label").parameters.properties.newName.description).toContain(String(LABEL_LIMIT))
+    expect(tool(registered, "kanban_add_column").parameters.properties.title.description).toContain(String(COLUMN_TITLE_LIMIT))
+    expect(tool(registered, "kanban_rename_column").parameters.properties.title.description).toContain(String(COLUMN_TITLE_LIMIT))
   })
 
   it("executes CRUD through registered tools and persists activity history", async () => {
@@ -182,6 +193,54 @@ describe("host board seam", () => {
     expect(await addComment.execute({ id: "missing", content: "Hello" }, exec)).toMatchObject({ ok: false, message: expect.stringContaining("Card not found") })
     expect(await addComment.execute({ id: cardId, content: "   " }, exec)).toMatchObject({ ok: false, message: "Comment content required" })
     expect(await addComment.execute({ id: cardId, content: "x".repeat(2001) }, exec)).toMatchObject({ ok: false, message: "Comment exceeds 2000 characters" })
+  })
+
+  it("truncates over-limit card fields and reports a warning instead of silently dropping data", async () => {
+    const { registered, exec } = boot()
+    const addCard = tool(registered, "kanban_add_card")
+    const getCard = tool(registered, "kanban_get_card")
+    const longNote = "x".repeat(NOTE_LIMIT + 250)
+    const longTitle = "y".repeat(TITLE_LIMIT + 40)
+
+    const added = await addCard.execute({ title: longTitle, note: longNote }, exec)
+    expect(added).toMatchObject({ ok: true, message: expect.stringContaining("Card added") })
+    const cardId = added.board.cards[0].id
+    expect(added.board.cards[0].title).toHaveLength(TITLE_LIMIT)
+    expect(added.warnings).toEqual([
+      expect.stringContaining("Title truncated to " + TITLE_LIMIT),
+      expect.stringContaining("Note truncated to " + NOTE_LIMIT),
+    ])
+    // 工具摘要不含 note，完整 note 通过 kanban_get_card 读取
+    const details = await getCard.execute({ id: cardId }, exec)
+    expect(details.card.note).toHaveLength(NOTE_LIMIT)
+
+    // updateCard 同样截断并告警
+    const update = tool(registered, "kanban_update_card")
+    const updated = await update.execute({ id: cardId, note: "z".repeat(NOTE_LIMIT + 10) }, exec)
+    expect(updated).toMatchObject({ ok: true, message: "Card updated" })
+    expect(updated.warnings).toEqual([expect.stringContaining("Note truncated to " + NOTE_LIMIT)])
+    const detailsAfter = await getCard.execute({ id: cardId }, exec)
+    expect(detailsAfter.card.note).toHaveLength(NOTE_LIMIT)
+  })
+
+  it("truncates over-limit column and label fields with warnings", async () => {
+    const { registered, exec } = boot()
+    const added = await tool(registered, "kanban_add_column").execute({ title: "c".repeat(COLUMN_TITLE_LIMIT + 10) }, exec)
+    expect(added.ok).toBe(true)
+    expect(added.board.columns.some((col) => col.title.length === COLUMN_TITLE_LIMIT)).toBe(true)
+    expect(added.warnings).toEqual([expect.stringContaining("List title truncated to " + COLUMN_TITLE_LIMIT)])
+
+    const label = await tool(registered, "kanban_add_label").execute({ name: "l".repeat(LABEL_LIMIT + 5) }, exec)
+    expect(label.ok).toBe(true)
+    expect(label.board.labels.some((l) => l.name.length === LABEL_LIMIT)).toBe(true)
+    expect(label.warnings).toEqual([expect.stringContaining("Label name truncated to " + LABEL_LIMIT)])
+  })
+
+  it("does not warn when input fits within the limits", async () => {
+    const { registered, exec } = boot()
+    const added = await tool(registered, "kanban_add_card").execute({ title: "Short title", note: "A brief note" }, exec)
+    expect(added.ok).toBe(true)
+    expect(added.warnings).toEqual([])
   })
 
   it("backs up and writes back a migrated workspace file on first tool access", async () => {
