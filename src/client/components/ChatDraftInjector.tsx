@@ -7,12 +7,12 @@ import { consumeDraft, getDraftVersion, subscribeDraft } from "@/lib/chat-bridge
 type ChatDraftInjectorProps = PropsRuntime<"conversation.input.dock">
 
 /**
- * 常驻会话的隐形组件：注册在 conversation.input.dock（session 作用域，随当前
- * 会话挂载），从跨会话草稿队列中消费并写入当前会话的输入框。本身不渲染任何 UI。
+ * Invisible session-scoped component mounted in conversation.input.dock. It consumes
+ * queued cross-session drafts and fills the current composer without rendering any UI.
  *
- * 它消费 queueDraft() 排入的 { sessionId -> text }：一旦目标会话成为当前会话
- * （sessionId 变化）或队列更新（version 变化），就把文本 setDraft 进输入框并
- * 清除条目——只填充草稿，不触发 submit，因此不会自动发送。
+ * queueDraft() stores { sessionId -> text }. When the target session becomes active
+ * or the queue version changes, write the text with setDraft and remove the entry.
+ * This only fills a draft; it never submits or sends a message.
  */
 export function ChatDraftInjector({ sessionId, inputActions }: ChatDraftInjectorProps) {
   const version = useSyncExternalStore(subscribeDraft, getDraftVersion)

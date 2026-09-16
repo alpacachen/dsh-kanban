@@ -5,7 +5,7 @@ export interface PriorityMeta {
   color: string
 }
 
-// 优先级：P0 最高、P2 最低
+// Priority: P0 is highest and P2 is lowest.
 export const PRIORITY_META: Record<Priority, PriorityMeta> = {
   high: { label: "P0", color: "#f87171" },
   medium: { label: "P1", color: "#fbbf24" },
@@ -14,10 +14,10 @@ export const PRIORITY_META: Record<Priority, PriorityMeta> = {
 
 export const PRIORITY_OPTIONS: Priority[] = ["high", "medium", "low"]
 
-// 未匹配到已定义标签时的回退颜色
+// Fallback color when no defined label matches.
 export const FALLBACK_LABEL_COLOR = "#94a3b8"
 
-/** 按标签名查找颜色（标签与颜色绑定） */
+/** Find the color bound to a label name. */
 export function labelColor(labels: Label[], name: string | null): string {
   if (!name) return FALLBACK_LABEL_COLOR
   return labels.find((l) => l.name === name)?.color ?? FALLBACK_LABEL_COLOR

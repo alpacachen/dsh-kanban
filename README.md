@@ -11,7 +11,7 @@ A collaborative kanban board where you and your AI agent plan, organize, and shi
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 ![License](https://img.shields.io/badge/license-MIT-22c55e)
 
-[简体中文](README.zh.md) · **English**
+[Simplified Chinese](README.zh.md) · **English**
 
 </div>
 

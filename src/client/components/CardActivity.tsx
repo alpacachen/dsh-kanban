@@ -6,7 +6,7 @@ interface CardActivityProps {
   activities: Activity[]
 }
 
-/** 卡片详情里的紧凑活动列表：最新记录在前，内容与时间保持在同一视觉行。 */
+/** Compact activity list: newest first, with content and timestamp on the same visual row. */
 export function CardActivity({ activities }: CardActivityProps) {
   const t = useT()
 
@@ -14,7 +14,7 @@ export function CardActivity({ activities }: CardActivityProps) {
     return <p className="kanban-muted-small">{t("activityEmpty")}</p>
   }
 
-  // 后端按时间正序追加，倒序后即“最新的在前”。
+  // The backend appends chronologically; reverse to show the newest event first.
   const items = [...activities].reverse()
 
   return (

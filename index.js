@@ -1,59 +1,59 @@
 /**
- * dsh-kanban — DSH bundle 宿主插件（标准 Cordis 函数插件）
+ * dsh-kanban: DSH bundle host plugin (standard Cordis function plugin).
  *
- * 挂载方式：package.json 的 `dsh.bundle.patch` 指向 cordis.patch.yml，
- * 该补丁层把本插件行插入 profile 组合，Loader 按包名 dsh-kanban 解析本文件。
+ * package.json points dsh.bundle.patch to cordis.patch.yml, which inserts this
+ * plugin into the profile composition. The loader resolves its package entry.
  *
- * 职责：
- *  - 按工作区（项目）隔离：boards 以 workspaceId 为键，每个工作区一块独立看板
- *  - 磁盘持久化：经 ctx.fs 写入 <workspace.path>/.dsh-kanban.json
- *  - 模型工具：经 ctx.tools.register 注册 15 个 kanban_* 工具
- *  - 浏览器数据层：经 ctx.get('webServer') 注册 /api/kanban 前缀路由
+ * Responsibilities:
+ * - Workspace isolation: boards are keyed by workspaceId, one board per workspace.
+ * - Persistence: ctx.fs writes <workspace.path>/.dsh-kanban.json.
+ * - Agent tools: ctx.tools.register exposes 15 kanban_* tools.
+ * - Browser API: ctx.get('webServer') registers routes under /api/kanban.
  *
- * 数据模型（每工作区，磁盘文件带 schemaVersion）：
+ * Per-workspace data model (disk files include schemaVersion):
  *   schemaVersion: 3
  *   columns: [{ id, title }]
- *   labels:  [{ name, color }]          —— 标签与颜色绑定，name 为唯一键
+ *   labels: [{ name, color }] // name is the unique key and binds the color
  *   cards:   [{ id, columnId, title, note, label, priority, createdAt, createdBy,
  *               comments: [{ id, content, source, createdAt }] }]
- *   activities: [{ id, ts, cardId, type, source, field?, from?, to?, meta? }]  —— 追加式活动日志
+ *   activities: [{ id, ts, cardId, type, source, field?, from?, to?, meta? }] // append-only log
  *
- * 数据安全：
- *   - 无 schemaVersion 的历史文件按 v0 处理，首次打开自动升级（见 MIGRATIONS）
- *   - 升级/损坏/版本超前均先备份原文件（.bak-vN / .corrupt-<ts> / .unsupported-vN）
- *   - 启动时全量体检所有看板文件，损坏文件备份后不影响看板可用性
+ * Data safety:
+ * - Files without schemaVersion are v0 and migrate on first access (see MIGRATIONS).
+ * - Back up originals before migration or recovery: .bak-vN / .corrupt-<ts> / .unsupported-vN.
+ * - Check all workspace boards at startup; back up corrupt files and keep boards usable.
  */
 export const name = 'dsh-kanban'
 
 export const inject = ['tools']
 
 // ---------------------------------------------------------------------------
-// 持久化格式版本与迁移
+// Persistence format version and migrations.
 //
-// 磁盘文件结构：
+// On-disk structure:
 //   { schemaVersion, columns, labels, cards }
 //
-// 版本约定：
-//   v1 —— 首个带版本声明的格式，等价于 1.0.x ~ 1.2.x 时代无版本声明的三数组格式
-//         （columns/labels/cards），并补齐了卡片的规范字段（note/label/priority）。
-//   LEGACY_VERSION(0) —— 历史文件没有 schemaVersion 字段，一律归入 v0 处理。
+// Version conventions:
+// v1: first versioned format, matching the unversioned columns/labels/cards arrays
+// used in 1.0.x through 1.2.x, with normalized note/label/priority card fields.
+// LEGACY_VERSION (0): files without schemaVersion.
 //
-// 新增/删除字段的流程：
-//   1) SCHEMA_VERSION 自增
-//   2) 在 MIGRATIONS 里以"旧版本号为键"注册 v(n)→v(n+1) 迁移函数
-//   3) 迁移函数是纯函数，输出必须带 schemaVersion: n+1（migrateBoard 会校验）
-// 旧文件在首次打开时自动沿迁移链升级，升级前原文件先备份。
+// Adding or removing fields:
+// 1) Increment SCHEMA_VERSION.
+// 2) Register a v(n) -> v(n+1) function in MIGRATIONS, keyed by the old version.
+// 3) Return schemaVersion: n+1 from the pure migration (checked by migrateBoard).
+// Back up old files before following the migration chain on first access.
 // ---------------------------------------------------------------------------
 
 export const SCHEMA_VERSION = 3
 export const LEGACY_VERSION = 0
 
-// 活动日志：追加式只读记录，随看板一起落盘；超过上限丢弃最旧事件，防止日志无界增长。
+// Append-only activity log persisted with the board; drop oldest events above the limit.
 const ACTIVITY_LIMIT = 5000
 
-// 输入长度上限：与工具 schema 描述、客户端编辑器（CardDialog）保持一致。
-// 超长输入在写入前被截断，并通过看板 warnings 通道发出一次性警告（见 clampText），
-// 因此 agent 与用户都能感知到内容被裁剪，而不是静默丢失。
+// Input limits must match tool schemas and the CardDialog editor.
+// clampText truncates oversized input before writing and emits a one-time board warning
+// so both agents and users know when content was shortened.
 export const TITLE_LIMIT = 120
 export const NOTE_LIMIT = 2000
 export const LABEL_LIMIT = 20
@@ -64,7 +64,7 @@ const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const strField = (v, fb) => (typeof v === 'string' && v ? v : fb)
 const normColor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : '#94a3b8')
 
-// v1 的规范实体形状（仅补缺省值，不改动合法数据）
+// Canonical v1 entity shapes: fill missing defaults without changing valid data.
 const normColumn = (c) =>
   isObj(c) ? { id: strField(c.id, ''), title: strField(c.title, 'Untitled') } : null
 const normLabel = (l) =>
@@ -82,12 +82,12 @@ const normCard = (c) =>
     : null
 
 /**
- * 逐版本迁移注册表：key = 旧版本号，value = (旧数据) => 新数据。
- * 输出必须设置 schemaVersion = key + 1，migrateBoard 会逐级校验。
+ * Migration registry: key = old version, value = (old data) => new data.
+ * Each result must set schemaVersion = key + 1; migrateBoard validates every step.
  */
 export const MIGRATIONS = {
   0: (data) => {
-    // v0 → v1：历史无版本文件 —— 声明版本 + 规范化实体字段
+    // v0 -> v1: declare the version and normalize legacy entity fields.
     const src = isObj(data) ? data : {}
     const pick = (arr) => (Array.isArray(arr) ? arr : [])
     return {
@@ -98,7 +98,7 @@ export const MIGRATIONS = {
     }
   },
   1: (data) => {
-    // v1 → v2：新增追加式活动日志 activities；卡片补 createdAt/createdBy（历史数据为 null）
+    // v1 -> v2: add activities and card createdAt/createdBy (null for legacy cards).
     const src = isObj(data) ? data : {}
     const pick = (arr) => (Array.isArray(arr) ? arr : [])
     return {
@@ -115,7 +115,7 @@ export const MIGRATIONS = {
     }
   },
   2: (data) => {
-    // v2 → v3：卡片新增评论数组；历史卡片默认没有评论
+    // v2 -> v3: add comments; legacy cards start with an empty array.
     const src = isObj(data) ? data : {}
     const pick = (arr) => (Array.isArray(arr) ? arr : [])
     return {
@@ -131,8 +131,8 @@ export const MIGRATIONS = {
 }
 
 /**
- * 沿迁移链把数据从 fromVersion 逐级升级到 SCHEMA_VERSION。
- * 任一步缺失或产出无效都会抛错（由调用方备份并降级处理）。
+ * Migrate from fromVersion to SCHEMA_VERSION one step at a time.
+ * Throw for missing steps or invalid output; the caller handles backup and fallback.
  */
 export function migrateBoard(data, fromVersion) {
   let out = data
@@ -152,8 +152,8 @@ export function migrateBoard(data, fromVersion) {
 }
 
 /**
- * 结构校验（迁移后的最终形态）。
- * 返回 { ok, errors }；errors 非空时文件应视为损坏处理。
+ * Validate the final migrated structure.
+ * Return { ok, errors }; nonempty errors mark the file as invalid.
  */
 export function validateBoard(data) {
   const errors = []
@@ -241,16 +241,16 @@ export function validateBoard(data) {
 }
 
 /**
- * 解析并升级一段看板文件文本（纯函数，不触磁盘）。
+ * Parse and migrate board JSON without accessing disk.
  *
- * 返回：
- *   { ok: true, kind: 'ok', data, migrated, fromVersion, warnings } —— data 为可用的最新版
- *   { ok: false, kind: 'corrupt'|'invalid'|'unsupported', warnings } —— 需要调用方备份原文件
+ * Results:
+ *   { ok: true, kind: 'ok', data, migrated, fromVersion, warnings }: usable current data
+ *   { ok: false, kind: 'corrupt'|'invalid'|'unsupported', warnings }: back up the original
  *
- * kind 语义：
- *   corrupt     —— JSON 无法解析
- *   invalid     —— 结构校验失败 / 迁移失败
- *   unsupported —— schemaVersion 高于当前插件支持（文件来自更新版本插件）
+ * Failure kinds:
+ *   corrupt: JSON parsing failed
+ *   invalid: validation or migration failed
+ *   unsupported: schemaVersion exceeds this plugin version
  */
 export function parseBoardText(text) {
   const warnings = []
@@ -334,12 +334,12 @@ export function apply(ctx) {
   const getWorkspaceRegistry = () => ctx.get('workspaceRegistry')
 
   const boards = new Map() // workspaceId -> { columns, labels, cards }
-  const boardLoads = new Map() // workspaceId -> Promise<board>，防止冷启动发布半初始化状态
-  const workspaceQueues = new Map() // workspaceId -> Promise，串行化完整 mutation 临界区
-  const fileTargets = new Map() // workspaceId -> FsTarget；解析失败不缓存，允许后续重试
-  let seq = 0 // 全局自增，用于生成 cN（列）/ kN（卡）唯一 id
+  const boardLoads = new Map() // workspaceId -> Promise<board>; publish only fully initialized boards
+  const workspaceQueues = new Map() // workspaceId -> Promise; serialize the entire mutation
+  const fileTargets = new Map() // workspaceId -> FsTarget; retry failed resolution instead of caching it
+  let seq = 0 // Global sequence for unique cN (column) and kN (card) ids.
 
-  // ---- id 生成 ----
+  // ---- ID generation ----
   const nextId = (prefix) => prefix + (++seq)
   const bumpSeq = (id) => {
     if (typeof id !== 'string') return
@@ -347,7 +347,7 @@ export function apply(ctx) {
     if (Number.isFinite(n) && n > seq) seq = n
   }
 
-  // ---- 默认看板 ----
+  // ---- Default board ----
   const DEFAULT_COLUMNS = ['Todo', 'In Progress', 'Review', 'Done']
   const DEFAULT_LABELS = [
     { name: 'New Feature', color: '#38bdf8' },
@@ -355,7 +355,7 @@ export function apply(ctx) {
     { name: 'Feedback', color: '#34d399' },
   ]
 
-  // ---- 持久化定位 ----
+  // ---- Persistence target resolution ----
   const BOARD_FILE = '.dsh-kanban.json'
   const workspaceKey = (workspace) => String(workspace.id || workspace.path)
   const writePolicyFor = (workspace, session) => {
@@ -373,7 +373,7 @@ export function apply(ctx) {
       return await fs.resolve(BOARD_FILE, { cwd: workspace.path })
     } catch (err) {
       console.log(
-        'dsh-kanban: 解析工作区看板文件失败 ' + workspaceKey(workspace) + '：' + ((err && err.message) || err),
+        'dsh-kanban: Failed to resolve workspace board file ' + workspaceKey(workspace) + ': ' + ((err && err.message) || err),
       )
       return null
     }
@@ -387,9 +387,9 @@ export function apply(ctx) {
   }
   const persistedFlag = (workspace) => fileTargets.has(workspaceKey(workspace))
 
-  // ---- 看板读写 ----
+  // ---- Board reads and writes ----
 
-  // 备份原文件为 .dsh-kanban.json.<suffix>（复制而非移动，保证原文件在写回前始终存在）
+  // Copy to .dsh-kanban.json.<suffix>, keeping the original until the replacement is written.
   const backupFile = async (workspace, suffix, session) => {
     const fs = getFs()
     const target = await targetOf(workspace)
@@ -401,12 +401,12 @@ export function apply(ctx) {
       await fs.writeText(backupTarget, text, undefined, undefined, writePolicyFor(workspace, session))
       return backupTarget
     } catch (err) {
-      console.log('dsh-kanban: 备份失败 ' + key + ' (' + suffix + ')：' + ((err && err.message) || err))
+      console.log('dsh-kanban: Backup failed ' + key + ' (' + suffix + '): ' + ((err && err.message) || err))
       return null
     }
   }
 
-  // 记录一次性警告：进入看板 warnings 队列 + 写宿主日志
+  // Queue a one-time board warning and write it to the host log.
   const warn = (board, message) => {
     if (Array.isArray(board.warnings)) board.warnings.push(message)
     console.log('dsh-kanban: ' + message)
@@ -420,7 +420,7 @@ export function apply(ctx) {
 
   const isNotFound = (err) => err && (err.code === 'ENOENT' || err.code === 'FS_NOT_FOUND' || err.message === 'ENOENT')
 
-  // 首次访问缓存初始化 Promise；完成读取、迁移和默认值建立后才发布 board。
+  // Cache initialization promises; publish only after reads, migrations and defaults finish.
   const boardOf = async (workspace, session) => {
     const key = workspaceKey(workspace)
     const existing = boards.get(key)
@@ -472,7 +472,7 @@ export function apply(ctx) {
             }
           }
         } catch (err) {
-          console.log('dsh-kanban: 读取看板失败 ' + key + '：' + ((err && err.message) || err))
+          console.log('dsh-kanban: Failed to read board ' + key + ': ' + ((err && err.message) || err))
           if (!isNotFound(err)) {
             board.readOnlyReason = 'Board could not be read; changes are disabled to protect the existing file.'
             warn(board, board.readOnlyReason)
@@ -528,16 +528,16 @@ export function apply(ctx) {
         writePolicyFor(workspace, session),
       )
     } catch (err) {
-      console.log('dsh-kanban: 保存失败 ' + key + '：' + ((err && err.message) || err))
+      console.log('dsh-kanban: Save failed ' + key + ': ' + ((err && err.message) || err))
       throw err
     }
   }
 
-  // ---- 校验 / 查找 / 序列化 ----
+  // ---- Validation, lookup and serialization ----
   const str = (v, fb) => (typeof v === 'string' ? v : fb)
 
-  // 截断辅助：把输入裁到 limit 以内；一旦实际发生截断，就经看板 warnings 通道
-  // 发出一次性警告（同时写入宿主日志），避免内容被静默丢弃。
+  // Clamp input to its limit and warn through the board warnings queue and host log
+  // whenever truncation occurs, so content is never silently discarded.
   const clampText = (value, limit, field, board) => {
     const s = str(value, '')
     if (s.length <= limit) return s
@@ -592,7 +592,7 @@ export function apply(ctx) {
     })),
   })
 
-  // 追加一条活动事件（只读日志，随看板一起落盘）
+  // Append a read-only activity event, persisted with the board.
   const record = (board, ev) => {
     if (!Array.isArray(board.activities)) board.activities = []
     board.activities.push({
@@ -605,7 +605,7 @@ export function apply(ctx) {
     }
   }
 
-  // ---- 核心数据操作：工具与浏览器 HTTP 共用同一份逻辑 ----
+  // ---- Core operations shared by agent tools and browser HTTP ----
   const READ_METHODS = new Set(['get', 'getCard'])
   const dispatchUnlocked = async (workspace, method, args, source, session) => {
     const board = await boardOf(workspace, session)
@@ -881,7 +881,7 @@ export function apply(ctx) {
     return run
   }
 
-  // ---- 工具执行上下文 / 浏览器 workspaceId -> 工作区 ----
+  // ---- Tool execution context and browser workspaceId resolution ----
   const workspaceOfExec = async (exec) => {
     const agent = exec && exec.agent
     const session = agent && agent.session
@@ -893,10 +893,10 @@ export function apply(ctx) {
         const workspace = await registry.resolveByPath(cwd)
         if (workspace) return workspace
       } catch (err) {
-        console.log('dsh-kanban: 解析工作区失败：' + ((err && err.message) || err))
+        console.log('dsh-kanban: Failed to resolve workspace: ' + ((err && err.message) || err))
       }
     }
-    // 未登记到 WorkspaceRegistry 的会话仍以自身 cwd 作为工作区根目录。
+    // Unregistered sessions use their own cwd as the workspace root.
     return { id: 'cwd:' + cwd, path: cwd, title: cwd }
   }
   const workspaceOfId = (id) => {
@@ -934,7 +934,7 @@ export function apply(ctx) {
     }
   }
 
-  // ---- 浏览器数据层：经官方 webServer 扩展点注册 /api/kanban ----
+  // ---- Browser API through the official webServer extension ----
   const MAX_HTTP_BODY = 1024 * 1024
   const sendJson = (res, status, value) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -984,9 +984,9 @@ export function apply(ctx) {
       const dispose = webServer.register({ kind: 'prefix', path: '/api/kanban', handler: httpHandler })
       routeState.dispose = typeof dispose === 'function' ? dispose : null
       routeState.registered = true
-      console.log('dsh-kanban: /api/kanban 路由已注册')
+      console.log('dsh-kanban: /api/kanban route registered')
     } catch (err) {
-      console.log('dsh-kanban: 路由注册失败：' + ((err && err.message) || err))
+      console.log('dsh-kanban: Route registration failed: ' + ((err && err.message) || err))
     }
   }
   registerRoute()
@@ -1005,7 +1005,7 @@ export function apply(ctx) {
     }
   }
 
-  // ---- 启动校验：逐个工作区体检 .dsh-kanban.json（只读 + 备份损坏文件）----
+  // ---- Startup checks: read each workspace board and back up corrupt files ----
   const startupState = { done: false }
   const maybeStartupCheck = () => {
     if (startupState.done) return
@@ -1035,49 +1035,49 @@ export function apply(ctx) {
           if (parsed.ok) {
             if (parsed.migrated) {
               pendingUpgrade++
-              console.log('dsh-kanban: 启动校验 ' + key + '：schemaVersion ' + parsed.fromVersion + '，首次打开时将自动升级')
+              console.log('dsh-kanban: Startup check ' + key + ': schemaVersion ' + parsed.fromVersion + '; will migrate on first access')
             } else {
               ok++
             }
           } else if (parsed.kind === 'unsupported') {
             unsupported++
-            console.log('dsh-kanban: 启动校验 ' + key + '：文件由更新版本插件写入（schemaVersion ' + parsed.version + '）')
+            console.log('dsh-kanban: Startup check ' + key + ': file written by a newer plugin (schemaVersion ' + parsed.version + ')')
           } else {
             corrupt++
             const suffix = 'corrupt-' + timestamp()
             const backupTarget = await fs.resolve(BOARD_FILE + '.' + suffix, { cwd: workspace.path })
             await fs.writeText(backupTarget, text, undefined, undefined, writePolicyFor(workspace))
-            console.log('dsh-kanban: 启动校验 ' + key + '：数据文件损坏（' + parsed.kind + '），已备份为 ' + BOARD_FILE + '.' + suffix)
+            console.log('dsh-kanban: Startup check ' + key + ': corrupt data file (' + parsed.kind + '); backed up to ' + BOARD_FILE + '.' + suffix)
           }
         } catch (err) {
           if (!err || (err.code !== 'ENOENT' && err.message !== 'ENOENT')) {
-            console.log('dsh-kanban: 启动校验 ' + key + '：检查失败 ' + ((err && err.message) || err))
+            console.log('dsh-kanban: Startup check ' + key + ': check failed ' + ((err && err.message) || err))
           }
         }
       }
       if (found === 0) {
-        console.log('dsh-kanban: 启动校验完成，未发现看板数据文件')
+        console.log('dsh-kanban: Startup check complete: no board data files found')
         return
       }
       console.log(
-        'dsh-kanban: 启动校验完成：共 ' +
+        'dsh-kanban: Startup check complete: total ' +
           found +
-          ' 个看板文件，正常 ' +
+          ' board files, valid ' +
           ok +
-          '，损坏并已备份 ' +
+          ', corrupt and backed up ' +
           corrupt +
-          '，待自动升级 ' +
+          ', pending migration ' +
           pendingUpgrade +
-          '，版本超前 ' +
+          ', unsupported version ' +
           unsupported,
       )
     } catch (err) {
-      console.log('dsh-kanban: 启动校验失败：' + ((err && err.message) || err))
+      console.log('dsh-kanban: Startup check failed: ' + ((err && err.message) || err))
     }
   }
   maybeStartupCheck()
 
-  // ---- 工具注册 ----
+  // ---- Tool registration ----
   const resultSchema = {
     type: 'object',
     properties: {

@@ -107,7 +107,7 @@ export function KanbanView(props: KanbanViewProps) {
     if (workspaceIdRef.current !== expectedWorkspace || requestId < appliedRequestRef.current) return
     appliedRequestRef.current = requestId
     if (res && res.board) {
-      // 旧版本主机插件可能不返回 comments/activities；兜底为空数组，避免下游渲染崩溃
+      // Older host plugins may omit comments/activities; default to empty arrays for rendering.
       setBoard({
         ...res.board,
         cards: Array.isArray(res.board.cards)
@@ -166,9 +166,9 @@ export function KanbanView(props: KanbanViewProps) {
     }
   }, [workspaceId, applyBoard, t])
 
-  // 让看板固定在会话滚动容器的可视高度内。DSH 的 conversation.view 槽位在 active
-  // 阶段会让父容器随内容增高（min-height:auto），根节点 h-full(100%) 因此拿不到
-  // 有界高度，长列会把整页撑高。这里实测可用高度并显式设置，让列内滚动生效。
+  // Keep the board within the visible session scroll container. An active conversation.view
+  // grows its parent with min-height:auto, so h-full has no bounded height and long lists
+  // stretch the page. Measure the available height explicitly to enable scrolling within lists.
   useLayoutEffect(() => {
     const findScrollport = (node: HTMLElement | null): HTMLElement | null => {
       let cursor: HTMLElement | null = node
@@ -187,7 +187,7 @@ export function KanbanView(props: KanbanViewProps) {
       const scrollport = findScrollport(el.parentElement)
       let bottom = window.innerHeight
       if (scrollport) {
-        // DSH 底部输入框（sticky 在滚动容器底部）占据一段高度，把看板限制在它上方。
+        // Reserve space for the composer stuck to the bottom of the scroll container.
         const composer = scrollport.querySelector<HTMLElement>("[data-composer-seat]")
         const composerTop = composer ? composer.getBoundingClientRect().top : 0
         if (composer && composer.offsetHeight > 0 && composerTop > top) {
@@ -213,7 +213,7 @@ export function KanbanView(props: KanbanViewProps) {
     }
   }, [board !== null])
 
-  // 碰撞检测：卡片可自由拖到任意列（含空列）。pointerWithin 优先识别空列，再回落 closestCorners 处理卡片排序。
+  // Prefer pointerWithin for empty columns, then closestCorners for sorting cards.
   const collisionDetection: CollisionDetection = useCallback(
     (args) => {
       const pointerIntersections = pointerWithin(args)
@@ -347,7 +347,7 @@ export function KanbanView(props: KanbanViewProps) {
     })
   }
 
-  // 把卡片内容填入对话输入框，但不自动发送。
+  // Fill the conversation draft without sending it.
   const handleChatWithAgent = useCallback(
     (values: CardFormValues, target: ChatTarget) => {
       const text = cardToChatText(values)
@@ -356,7 +356,7 @@ export function KanbanView(props: KanbanViewProps) {
         inputActions?.setDraft(text)
         return
       }
-      // 在 DSH 切换会话前排队草稿；被后续导航取消时不会遗留待写草稿。
+      // Queue before DSH switches sessions; canceled navigation must not leave a pending draft.
       if (!uiWorkspace?.openWorkspace) return
       uiWorkspace
         .openWorkspace(workspaceId, (nextId) => queueDraft(nextId, text))
@@ -415,7 +415,7 @@ export function KanbanView(props: KanbanViewProps) {
         onDragCancel={handleDragCancel}
       >
         <div className="kanban-content">
-          {/* 操作面板：固定在最左侧 */}
+          {/* Actions stay at the far left. */}
           <div className="kanban-toolbar">
             <Button
               variant="ghost"
@@ -479,7 +479,7 @@ export function KanbanView(props: KanbanViewProps) {
             </DropdownMenu>
           </div>
 
-          {/* 看板列（可横向滚动） */}
+          {/* Horizontally scrollable board columns. */}
           <div className="kanban-board-scroll">
             {board.columns.map((col) => {
               const cards = board.cards.filter(

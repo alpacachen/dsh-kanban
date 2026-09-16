@@ -1,15 +1,15 @@
 /**
- * dsh-kanban schema 迁移机制自检脚本（纯逻辑层，不触磁盘/不依赖 DSH 运行时）。
+ * dsh-kanban schema migration checks: pure logic, no disk or DSH runtime.
  *
- * 运行：node scripts/check-schema.mjs
+ * Run: node scripts/check-schema.mjs
  *
- * 覆盖：
- *   - 无 schemaVersion 的历史文件（v0）→ 自动升级为 v1，字段规范化
- *   - v3 文件原样通过，v1/v2 文件自动升级
- *   - 损坏 JSON → corrupt 分诊
- *   - 结构无效 → invalid 分诊
- *   - 版本超前（来自更新版本插件）→ unsupported 分诊且不迁移
- *   - 迁移链缺步 / 迁移输出无效 → 抛错
+ * Coverage:
+ * - Legacy unversioned files (v0): migration and field normalization
+ * - v3 files pass unchanged; v1/v2 files migrate automatically
+ * - Broken JSON is classified as corrupt
+ * - Invalid structures are classified as invalid
+ * - Future versions are unsupported and must not be migrated
+ * - Missing migration steps or invalid migration results throw
  */
 import { SCHEMA_VERSION, LEGACY_VERSION, MIGRATIONS, migrateBoard, validateBoard, parseBoardText } from '../index.js'
 
@@ -25,8 +25,8 @@ const check = (name, cond, detail) => {
 
 console.log('schemaVersion = ' + SCHEMA_VERSION + ', legacy = ' + LEGACY_VERSION)
 
-// ---- 1. v0（历史无版本文件）→ 自动升级 ----
-console.log('\n[1] v0 历史文件自动升级')
+// ---- 1. Migrate unversioned v0 files ----
+console.log('\n[1] Automatically migrate legacy v0 files')
 {
   const legacy = JSON.stringify({
     columns: [{ id: 'c1', title: 'Todo' }],
@@ -35,38 +35,38 @@ console.log('\n[1] v0 历史文件自动升级')
   })
   const r = parseBoardText(legacy)
   check('v0 → ok', r.ok && r.kind === 'ok', JSON.stringify(r))
-  check('标记已迁移', r.ok && r.migrated === true)
+  check('Marked as migrated', r.ok && r.migrated === true)
   check('fromVersion = 0', r.ok && r.fromVersion === LEGACY_VERSION)
-  check('升级到最新版', r.ok && r.data.schemaVersion === SCHEMA_VERSION)
-  check('产生升级警告', r.ok && r.warnings.length >= 1)
-  check('卡片字段规范化', r.ok && r.data.cards[0].label === 'bug' && r.data.cards[0].note === 'x' && r.data.cards[0].priority === 'high')
-  check('颜色规范化', r.ok && r.data.labels[0].color === '#f87171')
-  check('列/卡保留', r.ok && r.data.columns[0].id === 'c1' && r.data.cards[0].id === 'k1')
-  check('新增 activities 空数组', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
-  check('历史卡片补 createdAt/createdBy 为 null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
-  check('历史卡片补 comments 空数组', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
+  check('Upgraded to the latest version', r.ok && r.data.schemaVersion === SCHEMA_VERSION)
+  check('Migration warning emitted', r.ok && r.warnings.length >= 1)
+  check('Card fields normalized', r.ok && r.data.cards[0].label === 'bug' && r.data.cards[0].note === 'x' && r.data.cards[0].priority === 'high')
+  check('Colors normalized', r.ok && r.data.labels[0].color === '#f87171')
+  check('Columns and cards preserved', r.ok && r.data.columns[0].id === 'c1' && r.data.cards[0].id === 'k1')
+  check('Empty activities array added', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
+  check('Legacy cards default createdAt/createdBy to null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
+  check('Legacy cards get empty comments arrays', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
 }
 
-// ---- 2. v0 文件缺可选字段 ----
-console.log('\n[2] v0 文件缺 note/label/priority')
+// ---- 2. Fill optional fields in v0 files ----
+console.log('\n[2] v0 files missing note/label/priority')
 {
   const r = parseBoardText(JSON.stringify({ columns: [{ id: 'c1', title: 'Todo' }], cards: [{ id: 'k1', columnId: 'c1', title: 't' }] }))
-  check('v0(缺字段) → ok', r.ok, JSON.stringify(r))
-  check('note 补空串', r.ok && r.data.cards[0].note === '')
-  check('label 补 null', r.ok && r.data.cards[0].label === null)
-  check('priority 补 null', r.ok && r.data.cards[0].priority === null)
+  check('v0 with missing fields -> ok', r.ok, JSON.stringify(r))
+  check('note defaults to an empty string', r.ok && r.data.cards[0].note === '')
+  check('label defaults to null', r.ok && r.data.cards[0].label === null)
+  check('priority defaults to null', r.ok && r.data.cards[0].priority === null)
 }
 
-// ---- 3. v3 文件原样通过 ----
-console.log('\n[3] v3 文件直接通过')
+// ---- 3. Accept v3 files unchanged ----
+console.log('\n[3] v3 files pass unchanged')
 {
   const r = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: [], activities: [] }))
-  check('v3 → ok 且不迁移', r.ok && r.migrated === false, JSON.stringify(r))
-  check('v3 无警告', r.ok && r.warnings.length === 0)
+  check('v3 -> ok without migration', r.ok && r.migrated === false, JSON.stringify(r))
+  check('v3 has no warnings', r.ok && r.warnings.length === 0)
 }
 
-// ---- 3a. v2 文件 → 自动升级到 v3 ----
-console.log('\n[3a] v2 文件自动升级到 v3')
+// ---- 3a. Migrate v2 to v3 ----
+console.log('\n[3a] Automatically migrate v2 to v3')
 {
   const r = parseBoardText(JSON.stringify({
     schemaVersion: 2,
@@ -75,14 +75,14 @@ console.log('\n[3a] v2 文件自动升级到 v3')
     cards: [{ id: 'k1', columnId: 'c1', title: 'Keep metadata', note: '', label: null, priority: null, createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'human' }],
     activities: [{ id: 'e1', ts: '2026-01-01T00:00:00.000Z', cardId: 'k1', type: 'card_created', source: 'human' }],
   }))
-  check('v2 → ok 且标记迁移', r.ok && r.migrated === true, JSON.stringify(r))
+  check('v2 -> ok and marked as migrated', r.ok && r.migrated === true, JSON.stringify(r))
   check('fromVersion = 2', r.ok && r.fromVersion === 2)
-  check('保留 v2 元数据', r.ok && r.data.cards[0].createdBy === 'human' && r.data.activities.length === 1)
-  check('卡片补 comments 空数组', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
+  check('v2 metadata preserved', r.ok && r.data.cards[0].createdBy === 'human' && r.data.activities.length === 1)
+  check('Cards get empty comments arrays', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
 }
 
-// ---- 3b. v1 文件 → 自动升级到 v3 ----
-console.log('\n[3b] v1 文件自动升级到 v3')
+// ---- 3b. Migrate v1 to v3 ----
+console.log('\n[3b] Automatically migrate v1 to v3')
 {
   const r = parseBoardText(JSON.stringify({
     schemaVersion: 1,
@@ -90,57 +90,57 @@ console.log('\n[3b] v1 文件自动升级到 v3')
     labels: [{ name: 'bug', color: '#f87171' }],
     cards: [{ id: 'k1', columnId: 'c1', title: 'Fix', note: 'n', label: 'bug', priority: 'high' }],
   }))
-  check('v1 → ok 且标记迁移', r.ok && r.migrated === true, JSON.stringify(r))
+  check('v1 -> ok and marked as migrated', r.ok && r.migrated === true, JSON.stringify(r))
   check('fromVersion = 1', r.ok && r.fromVersion === 1)
-  check('升级到 v3', r.ok && r.data.schemaVersion === 3)
-  check('activities 空数组', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
-  check('卡片补 createdAt/createdBy null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
-  check('卡片补 comments 空数组', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
-  check('卡片数据保留', r.ok && r.data.cards[0].title === 'Fix' && r.data.cards[0].label === 'bug')
+  check('Upgraded to v3', r.ok && r.data.schemaVersion === 3)
+  check('Empty activities array', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
+  check('Cards default createdAt/createdBy to null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
+  check('Cards get empty comments arrays', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
+  check('Card data preserved', r.ok && r.data.cards[0].title === 'Fix' && r.data.cards[0].label === 'bug')
 }
 
-// ---- 4. 损坏 JSON ----
-console.log('\n[4] 损坏 JSON')
+// ---- 4. Broken JSON ----
+console.log('\n[4] Broken JSON')
 {
   const r = parseBoardText('{"columns": [broken')
-  check('corrupt 分诊', !r.ok && r.kind === 'corrupt', JSON.stringify(r))
-  check('corrupt 有可读警告', !r.ok && r.warnings.length >= 1)
+  check('Classified as corrupt', !r.ok && r.kind === 'corrupt', JSON.stringify(r))
+  check('Readable corruption warning', !r.ok && r.warnings.length >= 1)
 }
 
-// ---- 5. 结构无效 ----
-console.log('\n[5] 结构无效')
+// ---- 5. Invalid structure ----
+console.log('\n[5] Invalid structure')
 {
   const r = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: 'oops', activities: [] }))
-  check('invalid 分诊', !r.ok && r.kind === 'invalid', JSON.stringify(r))
+  check('Classified as invalid', !r.ok && r.kind === 'invalid', JSON.stringify(r))
   const dup = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', comments: [] }, { id: 'k1', columnId: 'c1', title: 'b', comments: [] }], activities: [] }))
-  check('重复卡 id → invalid', !dup.ok && dup.kind === 'invalid', JSON.stringify(dup))
+  check('Duplicate card ids -> invalid', !dup.ok && dup.kind === 'invalid', JSON.stringify(dup))
   const badComment = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', comments: [{ id: 'm1', content: ' ', source: 'human', createdAt: 'now' }] }], activities: [] }))
-  check('空评论 → invalid', !badComment.ok && badComment.kind === 'invalid', JSON.stringify(badComment))
+  check('Empty comment -> invalid', !badComment.ok && badComment.kind === 'invalid', JSON.stringify(badComment))
   const noAct = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: [] }))
-  check('缺 activities → invalid', !noAct.ok && noAct.kind === 'invalid', JSON.stringify(noAct))
+  check('Missing activities -> invalid', !noAct.ok && noAct.kind === 'invalid', JSON.stringify(noAct))
 }
 
-// ---- 6. 版本超前 ----
-console.log('\n[6] 版本超前（来自更新版本插件）')
+// ---- 6. Unsupported future version ----
+console.log('\n[6] Future schema version from a newer plugin')
 {
   const r = parseBoardText(JSON.stringify({ schemaVersion: 99, columns: [], labels: [], cards: [] }))
-  check('unsupported 分诊', !r.ok && r.kind === 'unsupported', JSON.stringify(r))
-  check('保留 version 信息', !r.ok && r.version === 99)
-  check('不尝试迁移', !r.ok && r.warnings.every((w) => !w.includes('upgraded')))
+  check('Classified as unsupported', !r.ok && r.kind === 'unsupported', JSON.stringify(r))
+  check('Version information preserved', !r.ok && r.version === 99)
+  check('No migration attempted', !r.ok && r.warnings.every((w) => !w.includes('upgraded')))
 }
 
-// ---- 7. 迁移链 ----
-console.log('\n[7] 迁移链契约')
+// ---- 7. Migration chain ----
+console.log('\n[7] Migration chain contract')
 {
   const up = migrateBoard({ schemaVersion: 0, columns: [] }, 0)
-  check('migrateBoard(v0) → 最新版', up.schemaVersion === SCHEMA_VERSION)
-  check('注册表键覆盖 0..SCHEMA_VERSION-1', Object.keys(MIGRATIONS).map(Number).sort((a, b) => a - b).join(',') === Array.from({ length: SCHEMA_VERSION }, (_, i) => i).join(','))
+  check('migrateBoard(v0) -> latest version', up.schemaVersion === SCHEMA_VERSION)
+  check('Registry keys cover 0..SCHEMA_VERSION-1', Object.keys(MIGRATIONS).map(Number).sort((a, b) => a - b).join(',') === Array.from({ length: SCHEMA_VERSION }, (_, i) => i).join(','))
 
-  // 迁移输出缺 schemaVersion → 由 v0→v1 步骤宽松恢复为合法 v1（不抛错），这是预期行为
+  // v0 -> v1 intentionally recovers missing schemaVersion without throwing.
   const lenient = migrateBoard({ columns: [] }, 0)
-  check('v0→v1 宽松恢复缺版本数据', lenient.schemaVersion === SCHEMA_VERSION)
+  check('v0 -> v1 recovers data without a version', lenient.schemaVersion === SCHEMA_VERSION)
 
-  // 迁移输出版本号错误 → 抛错
+  // Throw when a migration returns the wrong version.
   const saved = MIGRATIONS[0]
   MIGRATIONS[0] = () => ({ schemaVersion: 99, columns: [] })
   let threw = false
@@ -150,9 +150,9 @@ console.log('\n[7] 迁移链契约')
     threw = true
   }
   MIGRATIONS[0] = saved
-  check('迁移输出版本号错误会抛错', threw)
+  check('Wrong migration output version throws', threw)
 
-  // 缺迁移步 → 抛错
+  // Throw when a migration step is missing.
   const saved2 = MIGRATIONS[0]
   MIGRATIONS[0] = undefined
   let threw2 = false
@@ -162,17 +162,17 @@ console.log('\n[7] 迁移链契约')
     threw2 = true
   }
   MIGRATIONS[0] = saved2
-  check('缺迁移步会抛错', threw2)
+  check('Missing migration step throws', threw2)
 }
 
 // ---- 8. validateBoard ----
 console.log('\n[8] validateBoard')
 {
-  check('合法 v3 通过', validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [], activities: [] }).ok)
-  check('缺 labels 失败', !validateBoard({ schemaVersion: 3, columns: [], cards: [], activities: [] }).ok)
-  check('缺 activities 失败', !validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [] }).ok)
-  check('非对象失败', !validateBoard(null).ok && !validateBoard('x').ok)
+  check('Valid v3 passes', validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [], activities: [] }).ok)
+  check('Missing labels fails', !validateBoard({ schemaVersion: 3, columns: [], cards: [], activities: [] }).ok)
+  check('Missing activities fails', !validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [] }).ok)
+  check('Non-object data fails', !validateBoard(null).ok && !validateBoard('x').ok)
 }
 
-console.log('\n' + (failed === 0 ? '全部通过 ✓' : failed + ' 项失败 ✗'))
+console.log('\n' + (failed === 0 ? 'All checks passed ✓' : failed + ' checks failed ✗'))
 process.exit(failed === 0 ? 0 : 1)

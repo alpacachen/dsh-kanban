@@ -1,3 +1,4 @@
+import { t } from "../src/client/lib/i18n"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -35,8 +36,8 @@ describe("DSH 0.1.5 workspace navigation", () => {
     } as unknown as React.ComponentProps<typeof KanbanView>} />)
 
     await user.click(await screen.findByText(card.title))
-    await user.click(screen.getByRole("button", { name: /与 agent 聊一聊/ }))
-    await user.click(screen.getByRole("menuitem", { name: "新建对话" }))
+    await user.click(screen.getByRole("button", { name: new RegExp(t("chatWithAgent")) }))
+    await user.click(screen.getByRole("menuitem", { name: t("chatNewSession") }))
     expect(openWorkspace).toHaveBeenCalledWith("ws-1", expect.any(Function))
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).args.workspaceId).toBe("ws-1")
 
@@ -93,9 +94,9 @@ describe("CardDialog user flows", () => {
       />,
     )
 
-    await user.type(screen.getByLabelText("标题"), "Release gate")
-    await user.type(screen.getByLabelText("备注"), "Build, typecheck, pack")
-    await user.click(screen.getByRole("button", { name: "保存" }))
+    await user.type(screen.getByLabelText(t("fieldTitle")), "Release gate")
+    await user.type(screen.getByLabelText(t("fieldNote")), "Build, typecheck, pack")
+    await user.click(screen.getByRole("button", { name: t("save") }))
 
     expect(onSave).toHaveBeenCalledWith(cardValues({ title: "Release gate", note: "Build, typecheck, pack" }))
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -119,9 +120,9 @@ describe("CardDialog user flows", () => {
       />,
     )
 
-    await user.type(screen.getByLabelText("备注"), "Investigate the failing build")
-    await user.click(screen.getByRole("button", { name: /与 agent 聊一聊/ }))
-    await user.click(screen.getByRole("menuitem", { name: "当前对话" }))
+    await user.type(screen.getByLabelText(t("fieldNote")), "Investigate the failing build")
+    await user.click(screen.getByRole("button", { name: new RegExp(t("chatWithAgent")) }))
+    await user.click(screen.getByRole("menuitem", { name: t("chatCurrentSession") }))
 
     expect(onChatWithAgent).toHaveBeenCalledWith(
       cardValues({ note: "Investigate the failing build" }),
@@ -150,9 +151,9 @@ describe("CardDialog user flows", () => {
     )
 
     expect(screen.getByText("Existing feedback")).toBeTruthy()
-    const send = screen.getByRole("button", { name: "发送评论" }) as HTMLButtonElement
+    const send = screen.getByRole("button", { name: t("sendComment") }) as HTMLButtonElement
     expect(send.disabled).toBe(true)
-    const input = screen.getByLabelText(/评论/) as HTMLTextAreaElement
+    const input = screen.getByLabelText(new RegExp(t("commentsTitle"))) as HTMLTextAreaElement
     await user.type(input, "  Ready to merge  ")
     await user.click(send)
 
@@ -178,9 +179,9 @@ describe("CardDialog user flows", () => {
       />,
     )
 
-    const input = screen.getByLabelText(/评论/) as HTMLTextAreaElement
+    const input = screen.getByLabelText(new RegExp(t("commentsTitle"))) as HTMLTextAreaElement
     await user.type(input, "Keep this draft")
-    await user.click(screen.getByRole("button", { name: "发送评论" }))
+    await user.click(screen.getByRole("button", { name: t("sendComment") }))
     expect(input.value).toBe("Keep this draft")
   })
 
@@ -204,7 +205,7 @@ describe("CardDialog user flows", () => {
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "删除" }))
+    await user.click(screen.getByRole("button", { name: t("delete") }))
 
     expect(onDelete).toHaveBeenCalledWith(card)
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -238,9 +239,9 @@ describe("ColumnDialog user flows", () => {
     await user.clear(firstColumn)
     await user.type(firstColumn, "Backlog")
     fireEvent.blur(firstColumn)
-    await user.type(screen.getByPlaceholderText("新列表名称"), "Blocked")
-    await user.click(screen.getByRole("button", { name: /添加/ }))
-    await user.click(screen.getAllByRole("button", { name: "删除" })[0])
+    await user.type(screen.getByPlaceholderText(t("newColumnPlaceholder")), "Blocked")
+    await user.click(screen.getByRole("button", { name: new RegExp(t("add")) }))
+    await user.click(screen.getAllByRole("button", { name: t("delete") })[0])
 
     expect(onRename).toHaveBeenCalledWith("c1", "Backlog")
     expect(onAdd).toHaveBeenCalledWith("Blocked")
