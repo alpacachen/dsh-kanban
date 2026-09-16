@@ -3,12 +3,12 @@ import type { Context } from "@deepseek-ai/cordis"
 import type {} from "@deepseek-ai/dsh-client-locale/client"
 
 /**
- * 国际化：跟随 DSH 的 locale 服务切换语言。
+ * Follow the DSH locale service for language switching.
  *
- *  - installLocale(ctx)：在 apply 阶段注册 zh/en 词典，并绑定 t()（读当前语言）。
- *  - useT()：用 useSyncExternalStore + locale.subscribe 订阅 `locale/change`，
- *    语言切换时触发重渲染；返回的 t 每次调用都读当前语言。
- *  - 词典查找回退链由 DSH 负责：当前语言 → 本命名空间 zh → 公共命名空间 → key 本身。
+ * - installLocale(ctx): register zh/en dictionaries during apply and bind t().
+ * - useT(): subscribe to locale/change through useSyncExternalStore and locale.subscribe;
+ *   rerender on language changes and read the current language on every t() call.
+ * - DSH handles fallback: active locale -> namespace zh -> shared namespace -> key.
  */
 const NS = "dsh-kanban"
 
@@ -161,12 +161,12 @@ export function installLocale(ctx: Context) {
     locale.register(NS, "zh", zh)
     locale.register(NS, "en", en)
   } catch {
-    // 已注册（热重载或重复 apply），忽略重复注册错误
+    // Ignore duplicate registration during hot reload or repeated apply.
   }
   boundT = locale.bind(NS)
 }
 
-/** 非 hook 版翻译（用于 slot 的 label thunk 等 React 之外的场景）。 */
+/** Translation outside React, for example in slot label thunks. */
 export function t(key: string): string {
   if (boundT) return boundT(key)
   return zh[key] ?? key
@@ -185,7 +185,7 @@ const getSnapshot = (): unknown => {
   return null
 }
 
-/** React hook：订阅语言切换，返回读当前语言的 t()。 */
+/** Subscribe to locale changes and return the current translator. */
 export function useT(): (key: string) => string {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   return t

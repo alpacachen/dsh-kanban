@@ -1,6 +1,6 @@
 import type { KanbanResponse } from "./types"
 
-/** 同源 fetch 调宿主注册的 /api/kanban 路由（官方 webServer 扩展点）。 */
+/** Fetch the same-origin /api/kanban route registered through the host webServer extension. */
 export function callKanban(
   method: string,
   args: Record<string, unknown> = {},

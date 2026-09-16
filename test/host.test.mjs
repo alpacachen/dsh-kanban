@@ -138,7 +138,7 @@ describe("host board seam", () => {
     expect(tool(registered, "kanban_move_card").parameters.properties.toIndex).toMatchObject({ type: "integer" })
     expect(tool(registered, "kanban_add_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low"])
     expect(tool(registered, "kanban_update_card").parameters.properties.priority.enum).toEqual(["high", "medium", "low", ""])
-    // 长度上限必须在 schema 中声明，避免 agent 静默触发截断
+    // Declare length limits in the schema so agent input is not silently truncated.
     expect(tool(registered, "kanban_add_card").parameters.properties.note.description).toContain(String(NOTE_LIMIT))
     expect(tool(registered, "kanban_add_card").parameters.properties.title.description).toContain(String(TITLE_LIMIT))
     expect(tool(registered, "kanban_add_card").parameters.properties.label.description).toContain(String(LABEL_LIMIT))
@@ -210,11 +210,11 @@ describe("host board seam", () => {
       expect.stringContaining("Title truncated to " + TITLE_LIMIT),
       expect.stringContaining("Note truncated to " + NOTE_LIMIT),
     ])
-    // 工具摘要不含 note，完整 note 通过 kanban_get_card 读取
+    // Tool summaries omit note; kanban_get_card returns the complete note.
     const details = await getCard.execute({ id: cardId }, exec)
     expect(details.card.note).toHaveLength(NOTE_LIMIT)
 
-    // updateCard 同样截断并告警
+    // updateCard also truncates oversized input and emits a warning.
     const update = tool(registered, "kanban_update_card")
     const updated = await update.execute({ id: cardId, note: "z".repeat(NOTE_LIMIT + 10) }, exec)
     expect(updated).toMatchObject({ ok: true, message: "Card updated" })

@@ -27,7 +27,7 @@ export interface CardFormValues {
   priority: Priority | ""
 }
 
-/** 「与 agent 聊一聊」的目标：当前对话或新建对话。 */
+/** Destination for Chat with agent: the current session or a new session. */
 export type ChatTarget = "current" | "new"
 
 interface CardDialogProps {
@@ -82,7 +82,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* 标题仅保留给屏幕阅读器；可见区域不显示「编辑卡片」等装饰性文案 */}
+        {/* Keep the title for screen readers without adding a redundant visible heading. */}
         <DialogHeader>
           <DialogTitle className="kanban-sr-only">{card ? t("editCard") : t("addCard")}</DialogTitle>
         </DialogHeader>

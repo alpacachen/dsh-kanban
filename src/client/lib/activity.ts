@@ -1,7 +1,7 @@
 import { PRIORITY_META } from "./constants"
 import type { Activity, Priority } from "./types"
 
-/** 把 i18n 模板里的 {key} 占位符替换为值。 */
+/** Replace {key} placeholders in an i18n template. */
 const fill = (template: string, vars: Record<string, string>): string =>
   template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? "")
 
@@ -10,7 +10,7 @@ const priorityLabel = (p: string | null | undefined): string => {
   return ""
 }
 
-/** 把一条活动事件渲染成一句人话（配合 i18n 词典）。 */
+/** Render an activity event as a readable sentence using the i18n dictionary. */
 export function describeActivity(activity: Activity, t: (key: string) => string): string {
   const meta = activity.meta || {}
   const none = t("noValue")
@@ -66,7 +66,7 @@ export function describeActivity(activity: Activity, t: (key: string) => string)
 
 const pad = (n: number) => String(n).padStart(2, "0")
 
-/** 绝对时间：YYYY-MM-DD HH:mm（本地时区）。 */
+/** Absolute timestamp: YYYY-MM-DD HH:mm in the local time zone. */
 export function formatTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso

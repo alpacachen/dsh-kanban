@@ -1,9 +1,9 @@
 /**
- * dsh-kanban 客户端构建脚本
+ * dsh-kanban client build.
  *
- * 用 esbuild 把 React + TSX + dnd-kit + Radix 组件打包成单个 CJS 产物，
- * 再包进官方 client-modules 的 `window.__ModuleLoader__.load({ id, factory })` 闭包。
- * CSS 使用插件自己的 kanban-* 命名空间，以字符串内联并在运行时注入。
+ * Bundle React, TSX, dnd-kit and Radix into one CJS artifact with esbuild,
+ * then wrap it in the official client-modules window.__ModuleLoader__.load({ id, factory }).
+ * Inline namespaced kanban-* CSS as a string and inject it at runtime.
  */
 import esbuild from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
