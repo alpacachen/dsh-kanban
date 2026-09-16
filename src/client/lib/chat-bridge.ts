@@ -4,7 +4,7 @@ import { t } from "@/lib/i18n"
  * 跨会话草稿交接桥：把「新建对话」的卡片内容交给目标会话的输入机。
  *
  * 「当前对话」直接用 inputActions.setDraft 写入即可；但「新建对话」要先
- * 经 workspaces.connectWorkspace 拿到新会话 id、再 sessions.open 切换过去。
+ * 经 uiWorkspace.openWorkspace 在切换前的回调中拿到新会话 id 并排队草稿。
  * 切换后当前会话的 inputActions 会重新解析到新会话，但看板视图（conversation.view
  * 槽位）在空白会话上默认落到 chat 视图而卸载，无法靠看板自身补写草稿。
  *

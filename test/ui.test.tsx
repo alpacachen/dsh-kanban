@@ -1,9 +1,13 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { CardDialog, type CardFormValues } from "../src/client/components/CardDialog"
 import { ColumnDialog } from "../src/client/components/ColumnDialog"
-import { placeCard } from "../src/client/KanbanView"
+import { KanbanView, placeCard } from "../src/client/KanbanView"
+import { ChatDraftInjector } from "../src/client/components/ChatDraftInjector"
+import { cardToChatText, consumeDraft } from "../src/client/lib/chat-bridge"
+
+afterEach(() => vi.restoreAllMocks())
 
 const labels = [{ name: "bug", color: "#f87171" }]
 const activities = []
@@ -11,6 +15,45 @@ const activities = []
 function cardValues(overrides: Partial<CardFormValues> = {}): CardFormValues {
   return { id: "", title: "", note: "", label: "", priority: "", ...overrides }
 }
+
+describe("DSH 0.1.5 workspace navigation", () => {
+  it.each([false, true])("hands off a new-session draft, navigation failure: %s", async (fails) => {
+    const user = userEvent.setup()
+    const card = { id: "k1", columnId: "c1", title: "Upgrade DSH", note: "Check the new API", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [card], labels: [], activities: [] } }),
+    } as Response)
+    const openWorkspace = vi.fn(async (_id: string, beforeOpen: (id: string) => void) => {
+      if (fails) throw new Error("Navigation failed")
+      beforeOpen("next-session")
+    })
+    render(<KanbanView {...{
+      sessionId: "current-session",
+      useWorkspaces: (select: (state: unknown) => unknown) => select({ items: [{ workspaceId: "ws-1", sessionIds: ["current-session"] }] }),
+      uiWorkspace: { openWorkspace },
+    } as unknown as React.ComponentProps<typeof KanbanView>} />)
+
+    await user.click(await screen.findByText(card.title))
+    await user.click(screen.getByRole("button", { name: /与 agent 聊一聊/ }))
+    await user.click(screen.getByRole("menuitem", { name: "新建对话" }))
+    expect(openWorkspace).toHaveBeenCalledWith("ws-1", expect.any(Function))
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).args.workspaceId).toBe("ws-1")
+
+    if (fails) {
+      expect(await screen.findByText(/Navigation failed/)).toBeTruthy()
+      expect(consumeDraft("next-session")).toBeNull()
+      return
+    }
+    const setDraft = vi.fn()
+    const injectorProps = { sessionId: "current-session", inputActions: { setDraft } } as unknown as React.ComponentProps<typeof ChatDraftInjector>
+    const injector = render(<ChatDraftInjector {...injectorProps} />)
+    expect(setDraft).not.toHaveBeenCalled()
+    injector.rerender(<ChatDraftInjector {...injectorProps} sessionId="next-session" />)
+    await waitFor(() => expect(setDraft).toHaveBeenCalledExactlyOnceWith(cardToChatText({ ...card, label: "" })))
+    expect(consumeDraft("next-session")).toBeNull()
+  })
+})
 
 describe("card drag placement", () => {
   const cards = [

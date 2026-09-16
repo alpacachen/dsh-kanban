@@ -21,12 +21,11 @@ import { PRIORITY_META, PRIORITY_OPTIONS } from "@/lib/constants"
 import { useT } from "./lib/i18n"
 import type { Board, Card as CardType, Priority } from "@/lib/types"
 import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
-import type { IWorkspaces, ISessions } from "@deepseek-ai/dsh-client-runtime/client"
+import type { UiWorkspace } from "@deepseek-ai/dsh-client-ui-workspace/client"
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
 
 type KanbanViewProps = PropsRuntime<"conversation.view"> & {
-  workspaces?: IWorkspaces
-  sessions?: ISessions
+  uiWorkspace?: UiWorkspace
 }
 
 export function placeCard(
@@ -71,14 +70,12 @@ export function KanbanView(props: KanbanViewProps) {
   const { sessionId } = props
   const useWorkspaces = props.useWorkspaces
   const inputActions = props.inputActions
-  const workspaces = props.workspaces
-  const sessions = props.sessions
-  const items = useWorkspaces ? useWorkspaces((s: any) => s.items) : []
-  const recentId = useWorkspaces ? useWorkspaces((s: any) => s.recentWorkspaceId) : undefined
+  const uiWorkspace = props.uiWorkspace
+  const items = useWorkspaces ? useWorkspaces((s) => s.items) : []
   const workspace = Array.isArray(items)
-    ? items.find((w: any) => Array.isArray(w.sessionIds) && w.sessionIds.includes(sessionId))
+    ? items.find((w) => Array.isArray(w.sessionIds) && w.sessionIds.includes(sessionId))
     : undefined
-  const workspaceId = workspace ? workspace.workspaceId : recentId || "default"
+  const workspaceId = workspace ? workspace.workspaceId : "default"
   const t = useT()
 
   const [board, setBoard] = useState<Board | null>(null)
@@ -359,18 +356,13 @@ export function KanbanView(props: KanbanViewProps) {
         inputActions?.setDraft(text)
         return
       }
-      // 新建对话：先拿到新会话 id 再切换，并把草稿排队给 ChatDraftInjector 写入。
-      if (!workspaces?.connectWorkspace || !sessions?.open) return
-      workspaces
-        .connectWorkspace(workspaceId)
-        .then((nextId) => {
-          if (!nextId) return
-          queueDraft(nextId, text)
-          sessions.open(nextId)
-        })
+      // 在 DSH 切换会话前排队草稿；被后续导航取消时不会遗留待写草稿。
+      if (!uiWorkspace?.openWorkspace) return
+      uiWorkspace
+        .openWorkspace(workspaceId, (nextId) => queueDraft(nextId, text))
         .catch((e) => setError(t("actionFailed") + String((e && e.message) || e)))
     },
-    [inputActions, workspaces, sessions, workspaceId, t],
+    [inputActions, uiWorkspace, workspaceId, t],
   )
 
   if (!board) {
