@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import type { Context } from "@deepseek-ai/cordis"
+import type {} from "@deepseek-ai/dsh-client-locale/client"
 
 /**
  * 国际化：跟随 DSH 的 locale 服务切换语言。
