@@ -46,11 +46,12 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
         {...attributes}
         {...listeners}
         className="kanban-drag-handle"
-        aria-label={t("dragSort")}
+        aria-label={`${t("dragSort")}: ${column.title}`}
       >
         <GripVertical className="kanban-icon" />
       </button>
       <Input
+        aria-label={`${t("columnName")}: ${column.title}`}
         value={value}
         maxLength={40}
         onChange={(e) => onValueChange(e.target.value)}
@@ -63,7 +64,7 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
         variant="ghost"
         size="icon"
         className="kanban-icon-button kanban-danger-button"
-        aria-label={t("delete")}
+        aria-label={`${t("delete")}: ${column.title}`}
         disabled={!canDelete}
         onClick={onDelete}
       >
@@ -131,6 +132,7 @@ export function ColumnDialog({ open, columns, onOpenChange, onReorder, onRename,
           <Input
             value={newTitle}
             placeholder={t("newColumnPlaceholder")}
+            aria-label={t("newColumnPlaceholder")}
             maxLength={40}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => {

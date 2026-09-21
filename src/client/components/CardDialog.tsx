@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { MessageSquare, Send, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -45,6 +45,8 @@ interface CardDialogProps {
 
 export function CardDialog({ open, card, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
   const t = useT()
+  const formId = useId()
+  const triggerRef = useRef<HTMLElement | null>(null)
   const [values, setValues] = useState<CardFormValues>({
     id: "", title: "", note: "", label: "", priority: "",
   })
@@ -80,7 +82,15 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
       <DialogContent
         className="kanban-dialog-wide"
         aria-describedby={undefined}
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={() => {
+          triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        }}
+        onCloseAutoFocus={(e) => {
+          if (triggerRef.current?.isConnected) {
+            e.preventDefault()
+            triggerRef.current.focus()
+          }
+        }}
       >
         {/* Keep the title for screen readers without adding a redundant visible heading. */}
         <DialogHeader>
@@ -88,7 +98,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
         </DialogHeader>
         <div className="kanban-form-stack">
           <div className="kanban-form-field">
-            <Label htmlFor="card-title" className="kanban-field-label">
+            <Label htmlFor={`${formId}-title`} className="kanban-field-label">
               <span>{t("fieldTitle")}</span>
               {card && (
                 <span className="kanban-field-id">
@@ -97,7 +107,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
               )}
             </Label>
             <Input
-              id="card-title"
+              id={`${formId}-title`}
               value={values.title}
               placeholder={t("titlePlaceholder")}
               maxLength={120}
@@ -105,9 +115,9 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
             />
           </div>
           <div className="kanban-form-field">
-            <Label>{t("fieldLabel")}</Label>
+            <Label htmlFor={`${formId}-label`}>{t("fieldLabel")}</Label>
             <Select value={values.label || "__none__"} onValueChange={(v) => set({ label: v === "__none__" ? "" : v })}>
-              <SelectTrigger>
+              <SelectTrigger id={`${formId}-label`}>
                 <SelectValue placeholder={t("noLabel")} />
               </SelectTrigger>
               <SelectContent>
@@ -119,9 +129,9 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
             </Select>
           </div>
           <div className="kanban-form-field">
-            <Label>{t("fieldPriority")}</Label>
+            <Label htmlFor={`${formId}-priority`}>{t("fieldPriority")}</Label>
             <Select value={values.priority || "__none__"} onValueChange={(v) => set({ priority: v === "__none__" ? "" : (v as Priority) })}>
-              <SelectTrigger>
+              <SelectTrigger id={`${formId}-priority`}>
                 <SelectValue placeholder={t("noPriority")} />
               </SelectTrigger>
               <SelectContent>
@@ -141,9 +151,9 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
             </Select>
           </div>
           <div className="kanban-form-field">
-            <Label htmlFor="card-note">{t("fieldNote")}</Label>
+            <Label htmlFor={`${formId}-note`}>{t("fieldNote")}</Label>
             <Textarea
-              id="card-note"
+              id={`${formId}-note`}
               value={values.note}
               placeholder={t("notePlaceholder")}
               rows={5}
@@ -153,7 +163,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
           </div>
           {card && (
             <div className="kanban-comments-box">
-              <Label htmlFor="card-comment">
+              <Label htmlFor={`${formId}-comment`}>
                 {t("commentsTitle")} <span className="kanban-tabular">({comments.length})</span>
               </Label>
               <div className="kanban-comments-scroll" aria-live="polite">
@@ -182,7 +192,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
               </div>
               <div className="kanban-comment-composer">
                 <Textarea
-                  id="card-comment"
+                  id={`${formId}-comment`}
                   value={comment}
                   placeholder={t("commentPlaceholder")}
                   rows={3}

@@ -183,8 +183,11 @@ export function KanbanView(props: KanbanViewProps) {
     const measure = () => {
       const el = rootRef.current
       if (!el) return
-      const top = el.getBoundingClientRect().top
       const scrollport = findScrollport(el.parentElement)
+      // The Host restores the conversation's scroll offset on tab changes.
+      // Measure the board's unscrolled origin; otherwise a negative viewport top
+      // adds that old offset to the board height and stretches every column.
+      const top = el.getBoundingClientRect().top + (scrollport?.scrollTop ?? 0)
       let bottom = window.innerHeight
       if (scrollport) {
         // Reserve space for the composer stuck to the bottom of the scroll container.
@@ -204,7 +207,11 @@ export function KanbanView(props: KanbanViewProps) {
     const scrollport = findScrollport(rootRef.current?.parentElement ?? null)
     const observer = new ResizeObserver(measure)
     observer.observe(document.documentElement)
-    if (scrollport) observer.observe(scrollport)
+    if (scrollport) {
+      observer.observe(scrollport)
+      const composer = scrollport.querySelector<HTMLElement>("[data-composer-seat]")
+      if (composer) observer.observe(composer)
+    }
     window.addEventListener("resize", measure)
 
     return () => {

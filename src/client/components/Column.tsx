@@ -33,7 +33,7 @@ export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnP
         </span>
       </div>
 
-      <div className="kanban-column-cards kan-scroll">
+      <div className="kanban-column-cards">
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
           {cards.map((card) => (
             <SortableCard
