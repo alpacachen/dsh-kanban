@@ -55,12 +55,14 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
               <div key={label.name} className="kanban-label-row">
                 <input
                   type="color"
+                  aria-label={`${t("labelColor")}: ${label.name}`}
                   value={d.color}
                   className="kanban-color-input"
                   onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, color: e.target.value } }))}
                   onBlur={() => commit(label.name)}
                 />
                 <Input
+                  aria-label={`${t("labelName")}: ${label.name}`}
                   value={d.name}
                   maxLength={20}
                   onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, name: e.target.value } }))}
@@ -69,7 +71,7 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
                     if (e.key === "Enter") (e.target as HTMLInputElement).blur()
                   }}
                 />
-                <Button variant="ghost" size="icon" className="kanban-icon-button kanban-danger-button" onClick={() => onDelete(label.name)}>
+                <Button variant="ghost" size="icon" className="kanban-icon-button kanban-danger-button" aria-label={`${t("deleteLabel")}: ${label.name}`} onClick={() => onDelete(label.name)}>
                   <Trash2 className="kanban-icon" />
                 </Button>
               </div>
@@ -80,6 +82,7 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
           <div className="kanban-label-add-row">
             <input
               type="color"
+              aria-label={t("newLabelColor")}
               value={newColor}
               className="kanban-color-input"
               onChange={(e) => setNewColor(e.target.value)}
@@ -87,6 +90,7 @@ export function LabelDialog({ open, labels, onOpenChange, onAdd, onUpdate, onDel
             <Input
               value={newName}
               placeholder={t("newLabelPlaceholder")}
+              aria-label={t("newLabelPlaceholder")}
               maxLength={20}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {

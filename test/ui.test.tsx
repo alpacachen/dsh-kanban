@@ -56,6 +56,44 @@ describe("DSH 0.1.5 workspace navigation", () => {
   })
 })
 
+describe("board viewport height", () => {
+  it("ignores a restored conversation scroll offset and reserves the composer", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [], labels: [], activities: [] } }),
+    } as Response)
+    const scrollport = document.createElement("div")
+    scrollport.style.overflowY = "auto"
+    scrollport.scrollTop = 3515
+    const container = document.createElement("div")
+    const composer = document.createElement("div")
+    composer.setAttribute("data-composer-seat", "")
+    Object.defineProperty(composer, "offsetHeight", { value: 100 })
+    scrollport.append(container, composer)
+    document.body.append(scrollport)
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+      if (this.classList.contains("kanban-view")) return new DOMRect(0, 76 - scrollport.scrollTop, 1000, 624)
+      if (this === composer) return new DOMRect(0, 700, 1000, 100)
+      if (this === scrollport) return new DOMRect(0, 40, 1000, 760)
+      return new DOMRect()
+    })
+    const observe = vi.spyOn(ResizeObserver.prototype, "observe")
+    const view = render(<KanbanView {...{ sessionId: "height-fixture" } as React.ComponentProps<typeof KanbanView>} />, { container })
+    try {
+      await screen.findByText("Todo")
+      const board = container.querySelector<HTMLElement>(".kanban-view")!
+      expect(board.style.height).toBe("624px") // 700px composer top minus unscrolled 76px board top.
+      expect(observe).toHaveBeenCalledWith(composer)
+      scrollport.scrollTop = 0
+      fireEvent(window, new Event("resize"))
+      expect(board.style.height).toBe("624px")
+    } finally {
+      view.unmount()
+      scrollport.remove()
+    }
+  })
+})
+
 describe("card drag placement", () => {
   const cards = [
     { id: "a", columnId: "c1", title: "A", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
@@ -235,13 +273,13 @@ describe("ColumnDialog user flows", () => {
       />,
     )
 
-    const [firstColumn] = screen.getAllByRole("textbox")
+    const firstColumn = screen.getByRole("textbox", { name: `${t("columnName")}: Todo` })
     await user.clear(firstColumn)
     await user.type(firstColumn, "Backlog")
     fireEvent.blur(firstColumn)
     await user.type(screen.getByPlaceholderText(t("newColumnPlaceholder")), "Blocked")
     await user.click(screen.getByRole("button", { name: new RegExp(t("add")) }))
-    await user.click(screen.getAllByRole("button", { name: t("delete") })[0])
+    await user.click(screen.getByRole("button", { name: `${t("delete")}: Todo` }))
 
     expect(onRename).toHaveBeenCalledWith("c1", "Backlog")
     expect(onAdd).toHaveBeenCalledWith("Blocked")

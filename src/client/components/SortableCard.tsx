@@ -1,3 +1,4 @@
+import { useId } from "react"
 import { MessageSquare } from "lucide-react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
@@ -30,8 +31,8 @@ export function KanbanCard({ card, labels }: KanbanCardProps) {
               <Badge
                 variant="secondary"
                 className="kanban-card-badge"
-                style={{ background: color, color: "#0b1220" }}
               >
+                <span className="kanban-label-dot" style={{ background: color }} aria-hidden="true" />
                 {card.label}
               </Badge>
             )}
@@ -39,8 +40,8 @@ export function KanbanCard({ card, labels }: KanbanCardProps) {
               <Badge
                 variant="secondary"
                 className="kanban-card-badge"
-                style={{ background: priority.color, color: "#0b1220" }}
               >
+                <span className="kanban-label-dot" style={{ background: priority.color }} aria-hidden="true" />
                 {priority.label}
               </Badge>
             )}
@@ -64,6 +65,8 @@ export function KanbanCard({ card, labels }: KanbanCardProps) {
 }
 
 export function SortableCard({ card, labels, onOpen }: SortableCardProps) {
+  const t = useT()
+  const helpId = useId()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
     data: { type: "card", cardId: card.id, columnId: card.columnId },
@@ -75,9 +78,23 @@ export function SortableCard({ card, labels, onOpen }: SortableCardProps) {
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      onClick={() => onOpen(card)}
+      aria-label={card.title}
+      aria-describedby={helpId}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !isDragging) {
+          event.preventDefault()
+          onOpen(card)
+        } else {
+          listeners?.onKeyDown?.(event)
+        }
+      }}
+      onClick={(event) => {
+        event.currentTarget.focus()
+        onOpen(card)
+      }}
       className={`kanban-sortable-card${isDragging ? " is-dragging" : ""}`}
     >
+      <span id={helpId} className="kanban-sr-only">{t("cardKeyboardHelp")}</span>
       <KanbanCard card={card} labels={labels} />
     </div>
   )

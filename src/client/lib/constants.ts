@@ -7,15 +7,15 @@ export interface PriorityMeta {
 
 // Priority: P0 is highest and P2 is lowest.
 export const PRIORITY_META: Record<Priority, PriorityMeta> = {
-  high: { label: "P0", color: "#f87171" },
-  medium: { label: "P1", color: "#fbbf24" },
-  low: { label: "P2", color: "#38bdf8" },
+  high: { label: "P0", color: "var(--dsw-alias-state-error-primary)" },
+  medium: { label: "P1", color: "var(--dsw-alias-state-warn-primary)" },
+  low: { label: "P2", color: "var(--dsw-alias-state-business-primary)" },
 }
 
 export const PRIORITY_OPTIONS: Priority[] = ["high", "medium", "low"]
 
 // Fallback color when no defined label matches.
-export const FALLBACK_LABEL_COLOR = "#94a3b8"
+export const FALLBACK_LABEL_COLOR = "var(--dsw-alias-label-tertiary)"
 
 /** Find the color bound to a label name. */
 export function labelColor(labels: Label[], name: string | null): string {
