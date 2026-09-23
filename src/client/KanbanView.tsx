@@ -87,6 +87,8 @@ export function KanbanView(props: KanbanViewProps) {
   const [labelDialogOpen, setLabelDialogOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [priorityFilter, setPriorityFilter] = useState<Priority | "">("")
+  // null means all labels; an empty string means unlabeled cards.
+  const [labelFilter, setLabelFilter] = useState<string | null>(null)
 
   const rootRef = useRef<HTMLDivElement | null>(null)
   const boardRef = useRef<Board | null>(board)
@@ -150,6 +152,7 @@ export function KanbanView(props: KanbanViewProps) {
     let alive = true
     const requestId = ++issuedRequestRef.current
     setBoard(null)
+    setLabelFilter(null)
     setDialog(null)
     setActiveCard(null)
     setError("")
@@ -165,6 +168,13 @@ export function KanbanView(props: KanbanViewProps) {
       alive = false
     }
   }, [workspaceId, applyBoard, t])
+
+  useEffect(() => {
+    // A removed or renamed label must not leave an invisible, stale filter active.
+    if (board) setLabelFilter((selected) =>
+      selected && !board.labels.some((label) => label.name === selected) ? null : selected,
+    )
+  }, [board?.labels])
 
   // Keep the board within the visible session scroll container. An active conversation.view
   // grows its parent with min-height:auto, so h-full has no bounded height and long lists
@@ -466,6 +476,7 @@ export function KanbanView(props: KanbanViewProps) {
                   size="icon"
                   className="kanban-toolbar-button"
                   title={t("priorityFilter")}
+                  aria-label={t("priorityFilter")}
                 >
                   <Filter className="kanban-icon" />
                 </Button>
@@ -484,13 +495,46 @@ export function KanbanView(props: KanbanViewProps) {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={labelFilter !== null ? "secondary" : "ghost"}
+                  size="icon"
+                  className="kanban-toolbar-button"
+                  title={labelFilter === null ? t("labelFilter") : `${t("labelFilter")}: ${labelFilter || t("noLabel")}`}
+                  aria-label={t("labelFilter")}
+                >
+                  <Tag className="kanban-icon" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem role="menuitemradio" aria-checked={labelFilter === null} onSelect={() => setLabelFilter(null)}>
+                  <span className="kanban-filter-check">{labelFilter === null && <Check className="kanban-icon" />}</span>
+                  {t("all")}
+                </DropdownMenuItem>
+                <DropdownMenuItem role="menuitemradio" aria-checked={labelFilter === ""} onSelect={() => setLabelFilter("")}>
+                  <span className="kanban-filter-check">{labelFilter === "" && <Check className="kanban-icon" />}</span>
+                  {t("noLabel")}
+                </DropdownMenuItem>
+                {board.labels.map((label) => (
+                  <DropdownMenuItem key={label.name} role="menuitemradio" aria-checked={labelFilter === label.name} onSelect={() => setLabelFilter(label.name)}>
+                    <span className="kanban-filter-check">{labelFilter === label.name && <Check className="kanban-icon" />}</span>
+                    <span className="kanban-label-dot" style={{ background: label.color }} />
+                    {label.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Horizontally scrollable board columns. */}
           <div className="kanban-board-scroll">
             {board.columns.map((col) => {
               const cards = board.cards.filter(
-                (c) => c.columnId === col.id && (!priorityFilter || c.priority === priorityFilter),
+                (c) => c.columnId === col.id
+                  && (!priorityFilter || c.priority === priorityFilter)
+                  && (labelFilter === null || (c.label ?? "") === labelFilter),
               )
               return (
                 <Column
