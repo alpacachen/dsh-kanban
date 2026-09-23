@@ -73,7 +73,8 @@ The cards appear directly on your board. Continue in conversation, or switch to 
 - Send any card to the agent in your current conversation or a new one
 - Create, rename, reorder, and remove workflow lists
 - Create color-coded labels for fast visual scanning
-- Filter the entire board by priority, or manually refresh it whenever needed
+- Filter the entire board by priority and label from the left toolbar; combine both filters or show only unlabeled cards
+- Clear either filter with **All**, or manually refresh the board whenever needed
 
 ### Continue any card with your agent
 

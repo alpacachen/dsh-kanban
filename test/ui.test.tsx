@@ -94,6 +94,99 @@ describe("board viewport height", () => {
   })
 })
 
+describe("board label filter", () => {
+  const makeBoard = () => ({
+    columns: [{ id: "c1", title: "Todo" }, { id: "c2", title: "Done" }],
+    labels: [...labels, { name: "feature", color: "#38bdf8" }, { name: "unused", color: "#888888" }],
+    activities: [],
+    cards: [
+      { id: "a", columnId: "c1", title: "Urgent bug", label: "bug", priority: "high" },
+      { id: "b", columnId: "c2", title: "Minor bug", label: "bug", priority: "low" },
+      { id: "c", columnId: "c1", title: "Feature card", label: "feature", priority: "high" },
+      { id: "d", columnId: "c1", title: "Unlabeled card", label: null, priority: null },
+      { id: "e", columnId: "c2", title: "Legacy unlabeled card", priority: null },
+    ].map((card) => ({ ...card, note: "", comments: [] })),
+  })
+  const props = { sessionId: "label-filter-fixture" } as React.ComponentProps<typeof KanbanView>
+  const titles = () => Array.from(document.querySelectorAll(".kanban-card-title"), (node) => node.textContent)
+  const selectLabel = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByRole("button", { name: t("labelFilter") }))
+    await user.click(screen.getByRole("menuitemradio", { name, exact: true }))
+  }
+
+  it("filters across columns, combines priority, and clears each filter independently", async () => {
+    const user = userEvent.setup()
+    const board = makeBoard()
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true, json: async () => ({ board }),
+    } as Response)
+    render(<KanbanView {...props} />)
+    await screen.findByText("Urgent bug")
+    await selectLabel(user, "bug")
+    expect(titles()).toEqual(["Urgent bug", "Minor bug"])
+    const trigger = screen.getByRole("button", { name: t("labelFilter") })
+    expect(trigger.className).toContain("kanban-button--secondary")
+    await user.click(trigger)
+    expect(screen.getByRole("menuitemradio", { name: "bug", checked: true })).toBeTruthy()
+    await user.keyboard("{Escape}")
+    expect(document.activeElement).toBe(trigger)
+
+    await user.click(screen.getByRole("button", { name: t("priorityFilter") }))
+    await user.click(screen.getByRole("menuitem", { name: "P0" }))
+    expect(titles()).toEqual(["Urgent bug"])
+    await selectLabel(user, t("all"))
+    expect(titles()).toEqual(["Urgent bug", "Feature card"])
+    await user.click(screen.getByRole("button", { name: t("priorityFilter") }))
+    await user.click(screen.getByRole("menuitem", { name: t("all") }))
+    expect(titles()).toHaveLength(5)
+
+    await selectLabel(user, "unused")
+    expect(titles()).toEqual([])
+    expect(screen.getAllByText(t("emptyColumn"))).toHaveLength(2)
+    await selectLabel(user, t("noLabel"))
+    expect(titles()).toEqual(["Unlabeled card", "Legacy unlabeled card"])
+    await selectLabel(user, t("all"))
+    expect(titles()).toHaveLength(5)
+    expect(fetchMock).toHaveBeenCalledTimes(1) // Filtering never writes to the board.
+  })
+
+  it("clears a stale label after refresh and works with an empty label list", async () => {
+    const user = userEvent.setup()
+    let board = makeBoard()
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({
+      ok: true, json: async () => ({ board }),
+    } as Response))
+    render(<KanbanView {...props} />)
+    await screen.findByText("Urgent bug")
+    await selectLabel(user, "bug")
+    board = { ...board, labels: [] }
+    await user.click(screen.getByRole("button", { name: t("refresh") }))
+    await waitFor(() => expect(titles()).toHaveLength(5))
+    await user.click(screen.getByRole("button", { name: t("labelFilter") }))
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(2)
+    expect(screen.getByRole("menuitemradio", { name: t("all"), checked: true })).toBeTruthy()
+    await user.keyboard("{End}{Enter}")
+    expect(titles()).toEqual(["Unlabeled card", "Legacy unlabeled card"])
+  })
+
+  it("resets label selection when switching workspaces", async () => {
+    const user = userEvent.setup()
+    const board = makeBoard()
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ board }) } as Response)
+    let workspaceId = "ws-a"
+    const workspaceProps = { ...props, useWorkspaces: (select: (state: unknown) => unknown) =>
+      select({ items: [{ workspaceId, sessionIds: [props.sessionId] }] }),
+    } as React.ComponentProps<typeof KanbanView>
+    const view = render(<KanbanView {...workspaceProps} />)
+    await screen.findByText("Urgent bug")
+    await selectLabel(user, "bug")
+    workspaceId = "ws-b"
+    view.rerender(<KanbanView {...workspaceProps} />)
+    await waitFor(() => expect(titles()).toHaveLength(5))
+    expect(screen.getByRole("button", { name: t("labelFilter") }).className).toContain("kanban-button--ghost")
+  })
+})
+
 describe("card drag placement", () => {
   const cards = [
     { id: "a", columnId: "c1", title: "A", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
