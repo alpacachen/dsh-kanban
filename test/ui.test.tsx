@@ -36,6 +36,7 @@ describe("DSH 0.1.5 workspace navigation", () => {
     } as unknown as React.ComponentProps<typeof KanbanView>} />)
 
     await user.click(await screen.findByText(card.title))
+    if (fails) await user.type(screen.getByLabelText(t("fieldNote")), " Keep this draft")
     await user.click(screen.getByRole("button", { name: new RegExp(t("chatWithAgent")) }))
     await user.click(screen.getByRole("menuitem", { name: t("chatNewSession") }))
     expect(openWorkspace).toHaveBeenCalledWith("ws-1", expect.any(Function))
@@ -43,6 +44,8 @@ describe("DSH 0.1.5 workspace navigation", () => {
 
     if (fails) {
       expect(await screen.findByText(/Navigation failed/)).toBeTruthy()
+      expect(screen.getByRole("dialog")).toBeTruthy()
+      expect((screen.getByLabelText(t("fieldNote")) as HTMLTextAreaElement).value).toBe("Check the new API Keep this draft")
       expect(consumeDraft("next-session")).toBeNull()
       return
     }
@@ -125,24 +128,29 @@ describe("board label filter", () => {
     await selectLabel(user, "bug")
     expect(titles()).toEqual(["Urgent bug", "Minor bug"])
     const trigger = screen.getByRole("button", { name: t("labelFilter") })
-    expect(trigger.className).toContain("kanban-button--secondary")
+    expect(trigger.getAttribute("aria-pressed")).toBe("true")
     await user.click(trigger)
     expect(screen.getByRole("menuitemradio", { name: "bug", checked: true })).toBeTruthy()
     await user.keyboard("{Escape}")
     expect(document.activeElement).toBe(trigger)
 
     await user.click(screen.getByRole("button", { name: t("priorityFilter") }))
-    await user.click(screen.getByRole("menuitem", { name: "P0" }))
+    await user.click(screen.getByRole("menuitemradio", { name: "P0" }))
     expect(titles()).toEqual(["Urgent bug"])
     await selectLabel(user, t("all"))
     expect(titles()).toEqual(["Urgent bug", "Feature card"])
     await user.click(screen.getByRole("button", { name: t("priorityFilter") }))
-    await user.click(screen.getByRole("menuitem", { name: t("all") }))
+    await user.click(screen.getByRole("menuitemradio", { name: t("all") }))
     expect(titles()).toHaveLength(5)
 
     await selectLabel(user, "unused")
     expect(titles()).toEqual([])
-    expect(screen.getAllByText(t("emptyColumn"))).toHaveLength(2)
+    expect(screen.getAllByText(t("noMatchingCards"))).toHaveLength(2)
+    expect(screen.getByText("0 / 3")).toBeTruthy()
+    expect(screen.getByText("0 / 2")).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: `${t("clearFilter")}: unused` }))
+    expect(titles()).toHaveLength(5)
+    expect(trigger.getAttribute("aria-pressed")).toBe("false")
     await selectLabel(user, t("noLabel"))
     expect(titles()).toEqual(["Unlabeled card", "Legacy unlabeled card"])
     await selectLabel(user, t("all"))
@@ -337,6 +345,8 @@ describe("CardDialog user flows", () => {
     )
 
     await user.click(screen.getByRole("button", { name: t("delete") }))
+    expect(onDelete).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: t("confirmDelete") }))
 
     expect(onDelete).toHaveBeenCalledWith(card)
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -369,13 +379,48 @@ describe("ColumnDialog user flows", () => {
     const firstColumn = screen.getByRole("textbox", { name: `${t("columnName")}: Todo` })
     await user.clear(firstColumn)
     await user.type(firstColumn, "Backlog")
-    fireEvent.blur(firstColumn)
+    await user.tab()
+    await waitFor(() => expect((screen.getByPlaceholderText(t("newColumnPlaceholder")) as HTMLInputElement).disabled).toBe(false))
     await user.type(screen.getByPlaceholderText(t("newColumnPlaceholder")), "Blocked")
     await user.click(screen.getByRole("button", { name: new RegExp(t("add")) }))
     await user.click(screen.getByRole("button", { name: `${t("delete")}: Todo` }))
+    await user.click(screen.getByRole("button", { name: t("confirmDelete") }))
 
     expect(onRename).toHaveBeenCalledWith("c1", "Backlog")
     expect(onAdd).toHaveBeenCalledWith("Blocked")
     expect(onDelete).toHaveBeenCalledWith("c1")
+  })
+})
+
+
+describe("saving while a comment draft keeps the editor open", () => {
+  it("compares a second save against the latest saved card without resetting the comment", async () => {
+    const user = userEvent.setup()
+    let savedCard = { id: "k1", columnId: "c1", title: "Original title", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const { method, args } = JSON.parse(String(init?.body))
+      if (method === "updateCard") savedCard = { ...savedCard, ...args }
+      return {
+        ok: true,
+        json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [savedCard], labels: [], activities: [] } }),
+      } as Response
+    })
+    render(<KanbanView {...{ sessionId: "save-comment-draft" } as React.ComponentProps<typeof KanbanView>} />)
+    await user.click(await screen.findByRole("button", { name: "Original title" }))
+    const title = screen.getByLabelText(t("fieldTitle"))
+    const comment = screen.getByLabelText(new RegExp(t("commentsTitle"))) as HTMLTextAreaElement
+    await user.type(comment, "Keep this unsent comment")
+    await user.clear(title)
+    await user.type(title, "Changed title")
+    await user.click(screen.getByRole("button", { name: t("save") }))
+    await waitFor(() => expect(savedCard.title).toBe("Changed title"))
+    expect(comment.value).toBe("Keep this unsent comment")
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    await user.clear(title)
+    await user.type(title, "Original title")
+    await user.click(screen.getByRole("button", { name: t("save") }))
+    await waitFor(() => expect(savedCard.title).toBe("Original title"))
+    expect(JSON.parse(String(fetchMock.mock.lastCall?.[1]?.body)).args.title).toBe("Original title")
+    expect(comment.value).toBe("Keep this unsent comment")
   })
 })
