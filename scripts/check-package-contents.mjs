@@ -21,6 +21,7 @@ const expected = [
   "README.zh.md",
   "cordis.patch.yml",
   "image.png",
+  "docs/screenshots/card-details-dark.png",
   "index.js",
   "lib/client.js",
   "package.json",

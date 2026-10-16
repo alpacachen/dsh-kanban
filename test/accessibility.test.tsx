@@ -32,7 +32,7 @@ describe("card keyboard and focus", () => {
     trigger.focus()
     expect(document.getElementById(trigger.getAttribute("aria-describedby")!)?.textContent).toBe(t("cardKeyboardHelp"))
     await user.keyboard("{Enter}")
-    expect(screen.getByRole("dialog", { name: t("editCard") })).toBeTruthy()
+    expect(screen.getByRole("dialog", { name: t("taskDetails") })).toBeTruthy()
     const title = screen.getByRole("textbox", { name: new RegExp(t("fieldTitle")) })
     await waitFor(() => expect(document.activeElement).toBe(title))
     expect(screen.getByRole("combobox", { name: t("fieldLabel") })).toBeTruthy()

@@ -26,7 +26,7 @@ const board = {
   ].map(card => ({ ...card, note: '', comments: [] })),
 }
 try {
-  const page = await browser.newPage({ viewport: { width: 1100, height: 720 } })
+  const page = await browser.newPage({ viewport: { width: 1100, height: 720 }, reducedMotion: 'reduce' })
   page.on('pageerror', error => { if (!error.message.includes('KANBAN_TEST_BOOT_STOP')) errors.push(error.message) })
   if (process.env.DSH_TEST_COOKIE) {
     const [name, ...value] = process.env.DSH_TEST_COOKIE.split('=')
@@ -81,7 +81,7 @@ try {
       slots: { inject(_name, install) { install() }, register(meta, component) { components[meta.id] = component } },
       uiWorkspace: {},
     }
-    plugin.apply({ get: name => services[name] })
+    plugin.apply({ get: name => services[name], effect: setup => setup() })
     document.body.replaceChildren()
     document.body.removeAttribute('data-ds-dark-theme')
     const root = document.createElement('div')
@@ -141,6 +141,20 @@ try {
   const menu = await page.getByRole('menu').boundingBox()
   assert.ok(menu.x >= 0 && menu.x + menu.width <= 390 && menu.y + menu.height <= 720)
   await page.screenshot({ animations: 'disabled', path: resolve(output, 'narrow.png') })
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Feature card', exact: true }).click()
+  const drawer = page.getByRole('dialog', { name: '任务详情', exact: true })
+  await drawer.waitFor()
+  await drawer.evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => {}))))
+  const drawerBounds = await drawer.boundingBox()
+  assert.ok(Math.abs(drawerBounds.width - 390) <= 1 && Math.abs(drawerBounds.x) <= 1, 'Filtered cards open in the full-width mobile drawer')
+  assert.equal(await drawer.getByRole('region', { name: '描述', exact: true }).count(), 1)
+  await drawer.getByRole('button', { name: '编辑', exact: true }).click()
+  assert.equal(await drawer.getByRole('textbox', { name: '描述', exact: true }).inputValue(), '')
+  await drawer.getByRole('button', { name: '完成编辑', exact: true }).click()
+  await drawer.getByRole('button', { name: '关闭', exact: true }).click()
+  await drawer.waitFor({ state: 'hidden' })
+  assert.deepEqual(await titles(), ['Feature card'], 'Closing task details preserves the active label filter')
   const styles = await page.locator('.kanban-toolbar button').evaluateAll(buttons => buttons.map(button => ({ title: button.title, font: getComputedStyle(button).font, width: button.getBoundingClientRect().width })))
   assert.equal(new Set(styles.map(style => style.font)).size, 1)
   assert.deepEqual(requests, ['get'])

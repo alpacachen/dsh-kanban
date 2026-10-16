@@ -36,7 +36,10 @@ describe("DSH 0.1.5 workspace navigation", () => {
     } as unknown as React.ComponentProps<typeof KanbanView>} />)
 
     await user.click(await screen.findByText(card.title))
-    if (fails) await user.type(screen.getByLabelText(t("fieldNote")), " Keep this draft")
+    if (fails) {
+      await user.click(screen.getByRole("button", { name: t("editNote"), exact: true }))
+      await user.type(screen.getByRole("textbox", { name: t("fieldNote") }), " Keep this draft")
+    }
     await user.click(screen.getByRole("button", { name: new RegExp(t("chatWithAgent")) }))
     await user.click(screen.getByRole("menuitem", { name: t("chatNewSession") }))
     expect(openWorkspace).toHaveBeenCalledWith("ws-1", expect.any(Function))

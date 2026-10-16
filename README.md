@@ -16,7 +16,8 @@ A collaborative kanban board where you and your AI agent plan, organize, and shi
 </div>
 
 <p align="center">
-  <img src="./image.png" alt="dsh-kanban board inside DeepSeek Harness" width="100%">
+  <img src="./image.png" alt="Full dsh-kanban board in light mode with English tasks, labels and priorities" width="100%">
+  <img src="./docs/screenshots/card-details-dark.png" alt="Full dsh-kanban board in dark mode with an open task drawer showing a Markdown description" width="100%">
 </p>
 
 ## ✨ From conversation to action
@@ -66,7 +67,9 @@ The cards appear directly on your board. Continue in conversation, or switch to 
 ### On the Board
 
 - Create, edit, delete, and drag cards between lists
-- Add notes, labels, and P0 / P1 / P2 priorities
+- Read task details in a resizable side drawer that remembers its width and fills narrow screens
+- Write descriptions as Markdown source with **Edit**; **Done editing** previews the result and **Save** applies changes
+- Add labels and P0 / P1 / P2 priorities
 - Exchange persistent card comments with the agent and see comment counts at a glance
 - Open a card's activity timeline to see when it changed, what changed, and whether you or the agent made the change
 - Track card creation, comments, moves, title and note edits, label changes, and priority changes
@@ -90,6 +93,8 @@ The plugin automatically gives the agent these tools in every workspace:
 | **Cards** | `kanban_get_card`, `kanban_add_comment`, `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
 | **Lists** | `kanban_add_column`, `kanban_rename_column`, `kanban_delete_column`, `kanban_move_column` |
 | **Labels** | `kanban_get_label`, `kanban_add_label`, `kanban_update_label`, `kanban_delete_label` |
+
+For `kanban_add_card` and `kanban_update_card`, the task description uses the existing `note` field: send raw Markdown with line breaks, not HTML. Headings, lists, tables and fenced code blocks are rendered in task details. Keep the source within 2,000 characters, including Markdown syntax and newlines; longer input is truncated with a warning. Before editing a description, read `kanban_get_card` for its complete Markdown source (`kanban_get` only returns a summary). Updating `note` replaces the whole description; omit it to preserve the current text, or pass an empty string to clear it. Comments remain plain text.
 
 ## 💡 Things to ask your agent
 

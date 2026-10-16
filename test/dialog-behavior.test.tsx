@@ -54,6 +54,7 @@ describe("dialog draft safety", () => {
     const user = userEvent.setup()
     const props = cardProps()
     render(<CardDialog {...props} />)
+    if (field === "fieldNote") await user.click(screen.getByRole("button", { name: t("editNote"), exact: true }))
     const input = screen.getByLabelText(new RegExp(t(field))) as HTMLInputElement
     await user.type(input, " Keep me")
     const value = input.value

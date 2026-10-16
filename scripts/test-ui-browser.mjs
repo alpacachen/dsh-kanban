@@ -5,22 +5,45 @@
  * DSH_TEST_COOKIE optionally supplies the current GUI cookie as name=value in env.
  */
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright')
 const base = process.env.DSH_TEST_URL ?? 'http://127.0.0.1:3080'
 const output = resolve(process.env.UI_SCREENSHOT_DIR ?? '/tmp/kanban-ui-review')
+const bundleSha256 = createHash('sha256').update(await readFile(new URL('../lib/client.js', import.meta.url))).digest('hex')
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) })
 const errors = []
 const writes = []
 let failSave = false
+const markdown = [
+  '## Task description',
+  '',
+  'A **Markdown** description with `inline code` and a [safe link](https://example.test/docs).',
+  '',
+  '- First item',
+  '- Second item',
+  '',
+  '| Column | Value |',
+  '| --- | --- |',
+  '| Status | Ready |',
+  '',
+  '```js',
+  'const ready = true;',
+  '```',
+  '',
+  '<script>window.__kanbanMdExecuted = true</script>',
+  '<img src="x" onerror="window.__kanbanMdExecuted = true">',
+  '',
+  '[unsafe link](javascript:alert%281%29)',
+].join('\n')
 const board = {
   columns: [{ id: 'todo', title: 'Todo' }, { id: 'doing', title: 'In progress' }, { id: 'review', title: 'Review' }, { id: 'done', title: 'Done' }],
   labels: [{ name: 'Dark label', color: '#000000' }, ...Array.from({ length: 9 }, (_, i) => ({ name: `Label ${i + 1}`, color: '#4176e6' }))],
-  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: 'Read-only browser regression fixture.', label: 'Dark label', priority: 'high', createdAt: null, createdBy: null, comments: Array.from({ length: 12 }, (_, i) => ({ id: `comment-${i}`, source: 'human', createdAt: '2026-10-16T03:00:00Z', content: `Comment ${i + 1}: verify scrolling keeps the header, close control and footer visible.` })) }],
+  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: markdown, label: 'Dark label', priority: 'high', createdAt: null, createdBy: null, comments: Array.from({ length: 12 }, (_, i) => ({ id: `comment-${i}`, source: 'human', createdAt: '2026-10-16T03:00:00Z', content: `Comment ${i + 1}: verify scrolling keeps the header, close control and footer visible.` })) }],
   activities: [],
 }
 
@@ -114,7 +137,7 @@ try {
       },
       uiWorkspace: { async openWorkspace() { throw new Error('Workspace navigation is not part of this fixture') } },
     }
-    mod.apply({ get: (name) => services[name] })
+    mod.apply({ get: (name) => services[name], effect: setup => setup() })
     document.body.replaceChildren()
     document.body.style.margin = '0'
     document.body.style.background = 'var(--dsw-alias-bg-base)'
@@ -156,11 +179,13 @@ try {
   const assertSurface = async locator => {
     await locator.waitFor({ state: 'visible' })
     await locator.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {}))))
-    const css = await styles(locator, ['backgroundColor', 'color', 'borderTopStyle', 'borderTopWidth'])
+    const css = await styles(locator, ['backgroundColor', 'color', 'borderTopStyle', 'borderTopWidth', 'borderLeftStyle', 'borderLeftWidth'])
     assert.match(css.backgroundColor, /^rgb\(/, 'Popup surface is fully opaque')
     assert.equal(css.backgroundColor, await tokenColor('--dsw-alias-bg-layer-2', 'backgroundColor'))
     assert.notEqual(css.color, css.backgroundColor, 'Popup text contrasts with its surface')
-    assert.ok(parseFloat(css.borderTopWidth) > 0 && css.borderTopStyle === 'solid', 'Surface has its own visible border')
+    const drawer = await locator.evaluate(el => el.classList.contains('kanban-drawer-content'))
+    if (drawer && page.viewportSize().width > 600) assert.ok(parseFloat(css.borderLeftWidth) > 0 && css.borderLeftStyle === 'solid', 'Drawer separates from the board with a visible border')
+    else if (!drawer) assert.ok(parseFloat(css.borderTopWidth) > 0 && css.borderTopStyle === 'solid', 'Surface has its own visible border')
     const bounds = await locator.boundingBox()
     const viewport = page.viewportSize()
     assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1, 'Popup stays within the viewport')
@@ -194,6 +219,41 @@ try {
     assert.deepEqual(await footer.boundingBox(), before, 'Scrolling the body does not move the actions')
     await page.locator('.kanban-dialog-body').evaluate(el => { el.scrollTop = 0 })
   }
+  const assertMarkdown = async () => {
+    const preview = page.getByRole('region', { name: 'Description', exact: true })
+    assert.equal(await preview.getByRole('heading', { name: 'Task description', level: 2 }).count(), 1)
+    assert.equal(await preview.locator('ul li').count(), 2)
+    assert.equal(await preview.getByRole('table').count(), 1)
+    assert.match(await preview.locator('pre').innerText(), /const ready = true;/)
+    assert.equal(await preview.locator('strong').innerText(), 'Markdown')
+    const safeLink = preview.getByRole('link', { name: 'safe link', exact: true })
+    assert.equal(await safeLink.getAttribute('href'), 'https://example.test/docs')
+    assert.match(await safeLink.getAttribute('rel'), /noopener/)
+    assert.match(await safeLink.getAttribute('rel'), /noreferrer/)
+    for (const icon of await safeLink.locator('svg').all()) assert.notEqual(await icon.evaluate(el => getComputedStyle(el).display), 'block', 'Official Markdown link icons remain inline with prose')
+    assert.equal(await preview.locator('script, img, [onerror]').count(), 0, 'Raw HTML never enters the rendered DOM')
+    assert.equal(await preview.getByRole('link', { name: 'unsafe link', exact: true }).count(), 0, 'Unsafe protocols stay inert')
+    assert.equal(await page.evaluate(() => window.__kanbanMdExecuted), undefined, 'Markdown cannot execute scripts')
+    assert.equal(await page.getByRole('textbox', { name: 'Description', exact: true }).count(), 0, 'Existing descriptions open in reading mode')
+  }
+  const assertDrawer = async () => {
+    const drawer = page.getByRole('dialog', { name: 'Task details', exact: true })
+    const bounds = await drawer.boundingBox()
+    const viewport = page.viewportSize()
+    assert.ok(Math.abs(bounds.y) <= 1 && Math.abs(bounds.height - viewport.height) <= 1 && Math.abs(bounds.x + bounds.width - viewport.width) <= 1, 'Task details use the full-height right drawer')
+    if (viewport.width <= 600) {
+      assert.ok(Math.abs(bounds.width - viewport.width) <= 1, 'Narrow screens use the full available width')
+      assert.equal(await drawer.getByRole('separator').count(), 0, 'Mobile drawer has no unusable resize handle')
+    }
+  }
+  const assertMarkdownSource = async () => {
+    const source = page.getByRole('textbox', { name: 'Description', exact: true })
+    const css = await styles(source, ['fontFamily', 'fontSize', 'lineHeight', 'minHeight'])
+    assert.match(css.fontFamily, /mono|consolas|courier/i, 'Markdown source uses a monospace font')
+    assert.equal(css.fontFamily, await tokenColor('--ds-font-family-code', 'fontFamily'), 'Markdown source follows the Host code font')
+    assert.ok(parseFloat(css.minHeight) >= 240, 'Markdown source keeps enough editing height')
+    assert.ok(Math.abs(parseFloat(css.lineHeight) / parseFloat(css.fontSize) - 1.6) < 0.01, 'Markdown source preserves its readable line height')
+  }
   const openEditor = async name => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await assertSurface(page.getByRole('menu'))
@@ -201,6 +261,7 @@ try {
     await page.getByRole('dialog', { name, exact: true }).waitFor()
   }
   const assertFocus = async locator => {
+    await page.keyboard.press('Tab')
     await locator.focus()
     assert.equal(await locator.evaluate(el => el.matches(':focus-visible')), true)
     const css = await styles(locator, ['outlineStyle', 'outlineWidth', 'outlineColor'])
@@ -238,9 +299,17 @@ try {
       }
       await page.getByRole('button', { name: 'Keyboard fixture', exact: true }).click()
       await assertDialog()
+      await assertDrawer()
+      await assertMarkdown()
       const save = page.getByRole('button', { name: 'Save', exact: true })
       assert.equal((await styles(save, ['backgroundColor'])).backgroundColor, await tokenColor('--dsw-alias-button-primary-fill', 'backgroundColor'), 'Save is the primary action')
       await shot(`card-${scheme}-${size}`)
+      if (size === 'desktop') {
+        await page.getByRole('button', { name: 'Edit', exact: true }).click()
+        await assertMarkdownSource()
+        await shot(`markdown-source-${scheme}-${size}`)
+        await page.getByRole('button', { name: 'Done editing', exact: true }).click()
+      }
       for (const name of ['Label', 'Priority']) {
         await page.getByRole('combobox', { name, exact: true }).click()
         await assertSurface(page.getByRole('listbox'))
@@ -264,7 +333,7 @@ try {
         await page.keyboard.press('Escape')
       }
       await page.locator('.kanban-dropdown-content').waitFor({ state: 'detached' })
-      checked.push(`${scheme}/${size}: board, three dialogs (including new/edit card), six menus`)
+      checked.push(`${scheme}/${size}: board, task drawer with real Markdown, list/label dialogs, six menus`)
     }
   }
 
@@ -287,6 +356,51 @@ try {
   await closeDialog(true)
   assert.equal(await card.evaluate(el => el === document.activeElement), true, 'Closing restores focus to the card')
 
+  await card.click()
+  const drawer = page.getByRole('dialog', { name: 'Task details', exact: true })
+  const resize = page.getByRole('separator', { name: 'Resize task details', exact: true })
+  const width = async () => (await drawer.boundingBox()).width
+  const assertWidth = async (expected, message) => {
+    await page.waitForFunction(expected => Math.abs(document.querySelector('.kanban-drawer-content').getBoundingClientRect().width - expected) <= 1, expected)
+    assert.equal(await width(), expected, message)
+  }
+  await assertDialog()
+  await resize.focus()
+  assert.equal(await resize.evaluate(el => el.matches(':focus-visible') && getComputedStyle(el).boxShadow !== 'none'), true, 'Resize separator has a visible keyboard focus indicator')
+  const initialWidth = await width()
+  const handle = await resize.boundingBox()
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2 - 96, handle.y + handle.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await assertWidth(initialWidth + 96, 'Dragging the left edge changes drawer width')
+  await resize.press('Home')
+  await assertWidth(420, 'Home clamps to minimum width')
+  await resize.press('ArrowRight')
+  await assertWidth(420, 'Keyboard resize cannot cross minimum width')
+  await resize.press('End')
+  await assertWidth(1000, 'End clamps to maximum width')
+  await resize.press('ArrowLeft')
+  await assertWidth(1000, 'Keyboard resize cannot cross maximum width')
+  await page.setViewportSize(viewports.short)
+  await assertWidth(736, 'Resizing the window keeps space beside the drawer')
+  await page.setViewportSize(viewports.desktop)
+  await assertWidth(1000, 'Window resizing preserves the preferred width')
+  await resize.press('ArrowRight')
+  await assertWidth(968, 'Arrow keys adjust width by 32px')
+  const rememberedWidth = await width()
+  await closeDialog()
+  await card.click()
+  await assertWidth(rememberedWidth, 'Reopening remembers the preferred drawer width')
+  await page.setViewportSize(viewports.narrow)
+  await assertWidth(viewports.narrow.width, 'Mobile width follows the viewport')
+  await assertDrawer()
+  await page.setViewportSize(viewports.desktop)
+  await assertWidth(rememberedWidth, 'Returning from mobile preserves the desktop width')
+  await shot('drawer-resized')
+  await closeDialog()
+  checked.push('drawer resize: pointer drag, keyboard, min/max, window clamp, narrow full width, reopening preference')
+
   await openEditor('Edit lists')
   await assertFocus(page.locator('.kanban-drag-handle').first())
   await page.getByRole('button', { name: 'Delete: Todo', exact: true }).click()
@@ -304,6 +418,18 @@ try {
   await page.getByRole('button', { name: 'Delete', exact: true }).click()
   assert.match(await page.getByRole('alert').innerText(), /cannot be undone/)
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  const source = page.getByRole('textbox', { name: 'Description', exact: true })
+  await assertMarkdownSource()
+  assert.equal(await source.inputValue(), markdown, 'Editing exposes the exact Markdown source')
+  const editedMarkdown = markdown + '\n\n### Draft revision\n\nKeep **all** source formatting.\n'
+  await source.fill(editedMarkdown)
+  await page.getByRole('button', { name: 'Done editing', exact: true }).click()
+  await page.getByRole('region', { name: 'Description', exact: true }).getByRole('heading', { name: 'Draft revision', level: 3 }).waitFor()
+  assert.equal(writes.length, 0, 'Leaving Markdown edit mode does not save the card implicitly')
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  assert.equal(await source.inputValue(), editedMarkdown, 'Previewing and editing preserves exact source bytes')
+  await page.getByRole('button', { name: 'Done editing', exact: true }).click()
   await title.fill('Unsaved fixture')
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Discard changes', exact: true }).waitFor()
@@ -315,14 +441,19 @@ try {
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await page.getByRole('dialog').getByRole('alert').waitFor()
   assert.equal(await title.inputValue(), 'Unsaved fixture', 'Failed save preserves the draft')
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  assert.equal(await source.inputValue(), editedMarkdown, 'Failed save preserves Markdown source')
+  await page.getByRole('button', { name: 'Done editing', exact: true }).click()
   await assertDialog()
   await shot('save-failure-short')
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Unsaved fixture', exact: true }).waitFor()
   assert.equal(writes.length, 2, 'Only the explicit save and retry reach the fixture API')
+  assert.ok(writes.every(write => write.args.note === editedMarkdown), 'Save and retry send the original Markdown, never rendered HTML')
+  checked.push('Markdown source/preview exact roundtrip, explicit save, failed-save draft preservation, safe official rendering')
   assert.deepEqual(errors.filter(message => !message.includes('KANBAN_TEST_BOOT_STOP')), [])
-  const report = { passed: true, checked, writes: writes.length, screenshots: output, fixtureOnly: true }
+  const report = { passed: true, bundleSha256, checked, writes: writes.length, screenshots: output, fixtureOnly: true }
   await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2) + '\n')
   console.log(JSON.stringify(report, null, 2))
 } finally {

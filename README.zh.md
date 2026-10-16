@@ -16,7 +16,8 @@
 </div>
 
 <p align="center">
-  <img src="./image.png" alt="DeepSeek Harness 中的 dsh-kanban 看板界面" width="100%">
+  <img src="./image.png" alt="浅色模式下的完整 dsh-kanban 看板，展示英文任务、标签与优先级" width="100%">
+  <img src="./docs/screenshots/card-details-dark.png" alt="深色模式下的完整 dsh-kanban 看板，打开的任务详情抽屉展示 Markdown 描述" width="100%">
 </p>
 
 ## ✨ 从一句话，到一块能执行的看板
@@ -66,7 +67,9 @@ dsh --profile web --dump-config
 ### 在「看板」标签页中
 
 - 创建、编辑、删除卡片，并将卡片拖到其他列表
-- 为卡片补充备注、标签和 P0 / P1 / P2 优先级
+- 在侧边抽屉中查看任务详情，可拖动调整宽度并记忆，窄屏自动铺满
+- 描述支持 Markdown：点击**「编辑」**修改原文，**「完成编辑」**切回预览，点击**「保存」**后生效
+- 为卡片添加标签和 P0 / P1 / P2 优先级
 - 与 Agent 在卡片下持续评论，并在看板上快速查看评论数量
 - 打开卡片活动时间线，查看变更时间、具体内容，以及操作来自你还是 Agent
 - 追踪卡片创建、评论、移动、标题与备注编辑、标签变化和优先级变化
@@ -90,6 +93,8 @@ dsh --profile web --dump-config
 | **卡片** | `kanban_get_card`、`kanban_add_comment`、`kanban_add_card`、`kanban_update_card`、`kanban_delete_card`、`kanban_move_card` |
 | **列表** | `kanban_add_column`、`kanban_rename_column`、`kanban_delete_column`、`kanban_move_column` |
 | **标签** | `kanban_get_label`、`kanban_add_label`、`kanban_update_label`、`kanban_delete_label` |
+
+`kanban_add_card` 和 `kanban_update_card` 的任务描述仍使用 `note` 字段，传入保留换行的 Markdown 原文，不传 HTML。任务详情会渲染标题、列表、表格和代码块。原文最多 2,000 字符，Markdown 标记和换行也计入长度，超出会截断并返回警告。修改已有描述前，应先调用 `kanban_get_card` 读取完整原文（`kanban_get` 只返回摘要）。传入 `note` 会替换整段描述；省略则保留原文，传空字符串则清空。评论仍为纯文本。
 
 ## 💡 你可以直接这样说
 

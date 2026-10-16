@@ -1136,7 +1136,7 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_get_card',
-      description: "Read one card's full details (title, note, label, priority and comments) by id from the current project (workspace) board. Use kanban_get first to discover card ids, then this tool to read the complete card and comment history.",
+      description: "Read one card's full details (title, raw Markdown description in note, label, priority and comments) by id from the current project (workspace) board. Use kanban_get first to discover card ids; its summary omits note. Read this tool before editing an existing description to preserve its content and Markdown formatting.",
       parameters: {
         type: 'object',
         properties: {
@@ -1205,13 +1205,13 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_add_card',
-      description: 'Add a card to the current project (workspace) kanban board. Write feature breakdowns and plans to the board: one card per task step.',
+      description: 'Add a card to the current project (workspace) kanban board. Write feature breakdowns and plans to the board: one card per task step. Put the task description in note as raw Markdown; the task details drawer renders it.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string', description: `Card title (task name, concise and actionable; max ${TITLE_LIMIT} chars)` },
           columnId: { type: 'string', description: 'Target list id; defaults to the first list (Todo)' },
-          note: { type: 'string', description: `Note: background, acceptance criteria or breakdown details (optional; max ${NOTE_LIMIT} chars)` },
+          note: { type: 'string', description: `Task description as raw Markdown source, not HTML: background, acceptance criteria or breakdown details. Supports headings, lists, tables and fenced code blocks; preserve line breaks. Optional; max ${NOTE_LIMIT} chars including Markdown syntax and newlines. Longer input is truncated with a warning.` },
           label: { type: 'string', description: `Label name (optional; max ${LABEL_LIMIT} chars): e.g. New Feature, bug, Feedback` },
           priority: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Priority (optional): high=P0 / medium=P1 / low=P2' },
         },
@@ -1224,13 +1224,13 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_update_card',
-      description: "Update a card's title, note, label or priority on the board.",
+      description: "Update a card's title, Markdown description (note), label or priority on the board. Read kanban_get_card before editing an existing description; note replaces the whole description, not a patch.",
       parameters: {
         type: 'object',
         properties: {
           id: { type: 'string', description: 'Card id' },
           title: { type: 'string', description: `New title (optional; max ${TITLE_LIMIT} chars)` },
-          note: { type: 'string', description: `New note (optional; max ${NOTE_LIMIT} chars)` },
+          note: { type: 'string', description: `Complete replacement description as raw Markdown source, not HTML; preserve line breaks. Omit to keep the description unchanged; pass an empty string to clear it. Max ${NOTE_LIMIT} chars including Markdown syntax and newlines. Longer input is truncated with a warning.` },
           label: { type: 'string', description: `New label name (optional; max ${LABEL_LIMIT} chars); pass empty string to clear` },
           priority: { type: 'string', enum: ['high', 'medium', 'low', ''], description: 'New priority (optional): high=P0 / medium=P1 / low=P2; pass empty string to clear' },
         },
