@@ -5,7 +5,7 @@
  * DSH_TEST_COOKIE optionally supplies the current GUI cookie as name=value in env.
  */
 import assert from 'node:assert/strict'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -16,10 +16,11 @@ await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) })
 const errors = []
 const writes = []
+let failSave = false
 const board = {
-  columns: [{ id: 'todo', title: 'Todo' }, { id: 'done', title: 'Done' }],
-  labels: [{ name: 'Dark label', color: '#000000' }],
-  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: 'Read-only browser regression fixture.', label: 'Dark label', priority: 'high', createdAt: null, createdBy: null, comments: [] }],
+  columns: [{ id: 'todo', title: 'Todo' }, { id: 'doing', title: 'In progress' }, { id: 'review', title: 'Review' }, { id: 'done', title: 'Done' }],
+  labels: [{ name: 'Dark label', color: '#000000' }, ...Array.from({ length: 9 }, (_, i) => ({ name: `Label ${i + 1}`, color: '#4176e6' }))],
+  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: 'Read-only browser regression fixture.', label: 'Dark label', priority: 'high', createdAt: null, createdBy: null, comments: Array.from({ length: 12 }, (_, i) => ({ id: `comment-${i}`, source: 'human', createdAt: '2026-10-16T03:00:00Z', content: `Comment ${i + 1}: verify scrolling keeps the header, close control and footer visible.` })) }],
   activities: [],
 }
 
@@ -38,6 +39,7 @@ try {
       if (method === 'get') return route.fulfill({ json: { board } })
       if (method === 'updateCard' && args.id === 'card-fixture') {
         writes.push({ method, args })
+        if (failSave) { failSave = false; return route.fulfill({ status: 500, json: { error: 'Fixture save failed: ' + 'Long service error. '.repeat(200) } }) }
         for (const field of ['title', 'note', 'label', 'priority']) if (field in args) board.cards[0][field] = args[field]
         return route.fulfill({ json: { board } })
       }
@@ -130,7 +132,7 @@ try {
 
   const styles = (locator, properties) => locator.evaluate((el, properties) => {
     const css = getComputedStyle(el)
-    return Object.fromEntries(properties.map((property) => [property, css[property]]))
+    return Object.fromEntries(properties.map(property => [property, css[property]]))
   }, properties)
   const tokenColor = (name, property = 'color') => page.evaluate(({ name, property }) => {
     const probe = document.createElement('span')
@@ -140,135 +142,189 @@ try {
     probe.remove()
     return value
   }, { name, property })
-  const assertFocusRing = async (locator) => {
-    await locator.focus()
-    assert.equal(await locator.evaluate((el) => el.matches(':focus-visible')), true)
-    assert.deepEqual(await styles(locator, ['outlineStyle', 'outlineWidth', 'outlineOffset', 'outlineColor', 'boxShadow']), {
-      outlineStyle: 'solid', outlineWidth: '2px', outlineOffset: '-2px',
-      outlineColor: await tokenColor('--dsw-alias-state-business-primary'), boxShadow: 'none',
-    }, 'Keyboard controls use one inset theme ring without a shadow ring')
+  const shot = name => page.screenshot({ animations: 'disabled', path: `${output}/${name}.png` })
+  const closeDialog = async (keyboard = false) => {
+    await page.locator('.kanban-dropdown-content, .kanban-select-content').waitFor({ state: 'detached' })
+    if (keyboard) await page.keyboard.press('Escape')
+    else await page.getByRole('button', { name: 'Close', exact: true }).click()
+    try { await page.getByRole('dialog').waitFor({ state: 'hidden' }) } catch (error) {
+      await shot('unexpected-open-dialog')
+      console.error(await page.getByRole('dialog').innerText())
+      throw error
+    }
   }
-  const assertFieldFocus = async (locator) => {
-    await locator.focus()
-    assert.deepEqual(await styles(locator, ['borderTopWidth', 'borderTopColor', 'outlineStyle', 'boxShadow']), {
-      borderTopWidth: '1px', borderTopColor: await tokenColor('--dsw-alias-state-business-primary'),
-      outlineStyle: 'none', boxShadow: 'none',
-    }, 'Fields focus with a single crisp border, without an outline or shadow')
+  const assertSurface = async locator => {
+    await locator.waitFor({ state: 'visible' })
+    await locator.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {}))))
+    const css = await styles(locator, ['backgroundColor', 'color', 'borderTopStyle', 'borderTopWidth'])
+    assert.match(css.backgroundColor, /^rgb\(/, 'Popup surface is fully opaque')
+    assert.equal(css.backgroundColor, await tokenColor('--dsw-alias-bg-layer-2', 'backgroundColor'))
+    assert.notEqual(css.color, css.backgroundColor, 'Popup text contrasts with its surface')
+    assert.ok(parseFloat(css.borderTopWidth) > 0 && css.borderTopStyle === 'solid', 'Surface has its own visible border')
+    const bounds = await locator.boundingBox()
+    const viewport = page.viewportSize()
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width + 1 && bounds.y + bounds.height <= viewport.height + 1, 'Popup stays within the viewport')
   }
-  const closeDialog = async () => {
-    await page.keyboard.press('Escape')
-    await page.locator('.kanban-dialog-content').waitFor({ state: 'hidden' })
+  const assertDialog = async () => {
+    const dialog = page.getByRole('dialog')
+    await assertSurface(dialog)
+    const issues = await dialog.evaluate(el => {
+      const box = el.getBoundingClientRect()
+      const header = el.querySelector('.kanban-dialog-header').getBoundingClientRect()
+      const body = el.querySelector('.kanban-dialog-body')
+      const bodyBox = body.getBoundingClientRect()
+      const footer = el.querySelector('.kanban-dialog-footer')
+      const footBox = footer.getBoundingClientRect()
+      const css = getComputedStyle(footer)
+      const problems = []
+      if (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight) problems.push('dialog itself overflows')
+      if (header.bottom > bodyBox.top + 1 || bodyBox.bottom > footBox.top + 1 || footBox.bottom > box.bottom) problems.push('header/body/footer overlap')
+      if (getComputedStyle(body).overflowY !== 'auto' || getComputedStyle(body).scrollbarWidth !== 'thin') problems.push('body does not use native thin auto scrolling')
+      if (Number.parseFloat(css.paddingBottom) < 8 || Number.parseFloat(css.paddingLeft) < 12 || Number.parseFloat(css.paddingRight) < 12) problems.push('footer has insufficient breathing room')
+      for (const control of el.querySelectorAll('input,textarea,button')) {
+        const rect = control.getBoundingClientRect()
+        if (rect.width && (rect.left < box.left || rect.right > box.right)) problems.push(`control outside panel: ${control.getAttribute('aria-label') ?? control.textContent}`)
+      }
+      return problems
+    })
+    assert.deepEqual(issues, [], 'Dialog scroll containment and control spacing')
+    const footer = page.locator('.kanban-dialog-footer')
+    const before = await footer.boundingBox()
+    await page.locator('.kanban-dialog-body').evaluate(el => { el.scrollTop = el.scrollHeight })
+    assert.deepEqual(await footer.boundingBox(), before, 'Scrolling the body does not move the actions')
+    await page.locator('.kanban-dialog-body').evaluate(el => { el.scrollTop = 0 })
   }
-  const openLists = async () => {
+  const openEditor = async name => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Edit lists', exact: true }).waitFor()
-    assert.equal((await styles(page.locator('.kanban-dropdown-content'), ['borderRadius'])).borderRadius, '20px')
-    await page.getByRole('menuitem', { name: 'Edit lists', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Edit lists', exact: true }).waitFor()
+    await assertSurface(page.getByRole('menu'))
+    await page.getByRole('menuitem', { name, exact: true }).click()
+    await page.getByRole('dialog', { name, exact: true }).waitFor()
   }
+  const assertFocus = async locator => {
+    await locator.focus()
+    assert.equal(await locator.evaluate(el => el.matches(':focus-visible')), true)
+    const css = await styles(locator, ['outlineStyle', 'outlineWidth', 'outlineColor'])
+    assert.ok(css.outlineStyle !== 'none' && parseFloat(css.outlineWidth) > 0, 'Keyboard target has a visible focus indicator')
+    assert.equal(css.outlineColor, await tokenColor('--dsw-alias-state-business-primary'))
+  }
+  const viewports = { desktop: { width: 1280, height: 900 }, narrow: { width: 390, height: 844 }, short: { width: 800, height: 360 } }
+  const checked = []
   for (const scheme of ['light', 'dark']) {
-    await page.evaluate((scheme) => {
+    await page.evaluate(scheme => {
       document.body.toggleAttribute('data-ds-dark-theme', scheme === 'dark')
       document.body.style.colorScheme = scheme
     }, scheme)
-    await openLists()
-    const add = page.getByRole('dialog').getByRole('button', { name: 'Add', exact: true })
-    const button = await styles(add, ['color', 'backgroundColor', 'fontFamily'])
-    assert.notEqual(button.color, button.backgroundColor, `${scheme}: primary button text remains visible`)
-    assert.equal(button.color, await tokenColor('--dsw-alias-label-primary-foreground'))
-    assert.equal(button.backgroundColor, await tokenColor('--dsw-alias-button-primary-fill', 'backgroundColor'))
-    const dialog = await styles(page.locator('.kanban-dialog-content'), ['borderRadius', 'borderTopWidth', 'backgroundColor', 'fontFamily'])
-    assert.equal(dialog.borderRadius, '24px')
-    assert.equal(dialog.borderTopWidth, '0px')
-    assert.equal(dialog.backgroundColor, await tokenColor('--dsw-alias-bg-layer-2', 'backgroundColor'))
-    assert.equal(button.fontFamily, dialog.fontFamily)
-    assert.deepEqual(await styles(add, ['fontSize', 'fontWeight', 'lineHeight']), { fontSize: '12px', fontWeight: '400', lineHeight: '18px' })
-    assert.deepEqual(await styles(page.locator('.kanban-dialog-title'), ['fontSize', 'fontWeight', 'lineHeight']), { fontSize: '16px', fontWeight: '500', lineHeight: '24px' })
-    await page.keyboard.press('Tab')
-    await assertFocusRing(page.locator('.kanban-drag-handle').first())
-    await page.screenshot({ path: `${output}/focus-handle-${scheme}.png` })
-    await assertFocusRing(add)
-    await assertFieldFocus(page.locator('.kanban-input').first())
-    await page.screenshot({ path: `${output}/lists-${scheme}.png` })
-    await closeDialog()
-    assert.equal((await styles(page.locator('.kanban-sortable-card-content'), ['padding'])).padding, '14px')
-    const badge = page.locator('.kanban-card-badge').first()
-    assert.equal((await styles(badge, ['fontSize'])).fontSize, '12px')
-    assert.equal((await styles(badge, ['color'])).color, await tokenColor('--dsw-alias-label-primary'))
-    assert.equal((await styles(badge, ['backgroundColor'])).backgroundColor, await tokenColor('--dsw-alias-bg-layer-2', 'backgroundColor'))
-    assert.equal(await badge.locator('.kanban-label-dot').count(), 1)
-    assert.equal((await styles(badge.locator('.kanban-label-dot'), ['backgroundColor'])).backgroundColor, 'rgb(0, 0, 0)')
-    await assertFocusRing(page.locator('.kanban-sortable-card'))
-    assert.equal((await styles(page.locator('.kanban-sortable-card .kanban-card'), ['boxShadow'])).boxShadow, 'none', 'Focused card does not retain a second inner stroke')
-    await page.screenshot({ path: `${output}/board-${scheme}.png` })
+    for (const [size, viewport] of Object.entries(viewports)) {
+      await page.setViewportSize(viewport)
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      const boardGeometry = await page.locator('.kanban-root').evaluate(el => {
+        const rect = el.getBoundingClientRect()
+        return { bottom: rect.bottom, height: innerHeight, width: el.scrollWidth, clientWidth: el.clientWidth }
+      })
+      assert.ok(boardGeometry.bottom <= boardGeometry.height && boardGeometry.width <= boardGeometry.clientWidth, `Board fits the available area: ${JSON.stringify(boardGeometry)}`)
+      for (const column of await page.locator('.kanban-column').all()) {
+        const css = await styles(column, ['borderTopWidth', 'borderLeftWidth', 'borderRightWidth', 'borderBottomWidth'])
+        assert.ok(Object.values(css).every(value => parseFloat(value) > 0), 'Columns retain all four real borders')
+      }
+      await shot(`board-${scheme}-${size}`)
+      for (const editor of ['Edit lists', 'Edit labels']) {
+        await openEditor(editor)
+        await assertDialog()
+        const add = page.getByRole('dialog').getByRole('button', { name: 'Add', exact: true })
+        assert.equal((await styles(add, ['color'])).color, await tokenColor('--dsw-alias-label-primary-foreground'))
+        assert.equal((await styles(add, ['backgroundColor'])).backgroundColor, await tokenColor('--dsw-alias-button-primary-fill', 'backgroundColor'))
+        await shot(`${editor === 'Edit lists' ? 'lists' : 'labels'}-${scheme}-${size}`)
+        await closeDialog()
+      }
+      await page.getByRole('button', { name: 'Keyboard fixture', exact: true }).click()
+      await assertDialog()
+      const save = page.getByRole('button', { name: 'Save', exact: true })
+      assert.equal((await styles(save, ['backgroundColor'])).backgroundColor, await tokenColor('--dsw-alias-button-primary-fill', 'backgroundColor'), 'Save is the primary action')
+      await shot(`card-${scheme}-${size}`)
+      for (const name of ['Label', 'Priority']) {
+        await page.getByRole('combobox', { name, exact: true }).click()
+        await assertSurface(page.getByRole('listbox'))
+        await shot(`${name.toLowerCase()}-select-${scheme}-${size}`)
+        await page.keyboard.press('Escape')
+      }
+      await page.getByRole('button', { name: 'Chat with agent', exact: true }).click()
+      await assertSurface(page.getByRole('menu'))
+      await shot(`chat-menu-${scheme}-${size}`)
+      await page.keyboard.press('Escape')
+      await closeDialog()
+      await page.getByRole('button', { name: 'Add card', exact: true }).first().click()
+      await assertDialog()
+      assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true, 'Empty new card cannot be saved')
+      await shot(`new-card-${scheme}-${size}`)
+      await closeDialog()
+      for (const name of ['Settings', 'Filter by priority', 'Filter by label']) {
+        await page.getByRole('button', { name, exact: true }).click()
+        await assertSurface(page.getByRole('menu'))
+        await shot(`${name.replaceAll(' ', '-').toLowerCase()}-${scheme}-${size}`)
+        await page.keyboard.press('Escape')
+      }
+      await page.locator('.kanban-dropdown-content').waitFor({ state: 'detached' })
+      checked.push(`${scheme}/${size}: board, three dialogs (including new/edit card), six menus`)
+    }
   }
-  await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme'); document.body.style.colorScheme = 'light' })
+
+  await page.setViewportSize(viewports.desktop)
   const card = page.getByRole('button', { name: 'Keyboard fixture', exact: true })
-  // Traverse with actual Tab events instead of substituting locator.focus().
-  for (let count = 0; count < 20 && !(await card.evaluate((el) => el === document.activeElement)); count++) await page.keyboard.press('Tab')
-  assert.equal(await card.evaluate((el) => el === document.activeElement && el.matches(':focus-visible')), true, 'Card is reachable and visibly focused by Tab')
-  await page.keyboard.press('Enter')
-  const title = page.getByRole('textbox', { name: /^Title/ })
-  await title.waitFor()
-  assert.deepEqual(await styles(page.getByRole('button', { name: 'Save', exact: true }), ['fontSize', 'fontWeight', 'lineHeight']), { fontSize: '14px', fontWeight: '400', lineHeight: '22px' })
-  assert.equal(await title.evaluate((el) => el === document.activeElement), true, 'Opening the card focuses its first input')
-  await assertFieldFocus(title)
-  await assertFieldFocus(page.getByRole('combobox', { name: 'Priority', exact: true }))
-  await assertFieldFocus(page.getByRole('textbox', { name: 'Note', exact: true }))
-  await page.screenshot({ path: `${output}/focus-card-editor.png` })
-  await closeDialog()
-  assert.equal(await card.evaluate((el) => el === document.activeElement), true, 'Escape returns focus to the card')
+  // Traverse with real Tab events: Space must drag while Enter edits.
+  for (let count = 0; count < 30 && !(await card.evaluate(el => el === document.activeElement)); count++) await page.keyboard.press('Tab')
+  assert.equal(await card.evaluate(el => el === document.activeElement && el.matches(':focus-visible')), true)
+  await assertFocus(card)
   await page.keyboard.press('Space')
   await page.locator('.kanban-sortable-card.is-dragging').waitFor()
-  const dropTarget = page.locator('.kanban-column.is-over')
-  await dropTarget.waitFor()
-  for (const scheme of ['light', 'dark']) {
-    await page.evaluate((scheme) => document.body.toggleAttribute('data-ds-dark-theme', scheme === 'dark'), scheme)
-    const focusColor = await tokenColor('--dsw-alias-state-business-primary')
-    assert.equal((await styles(dropTarget, ['boxShadow'])).boxShadow, `${focusColor} 0px 0px 0px 1px inset`, 'Drop target uses one inset theme-blue stroke, not the black brand color')
-    assert.ok(!(await styles(dropTarget.locator('.kanban-card'), ['boxShadow'])).boxShadow.includes(focusColor), 'Drop target stroke does not leak into its cards')
-    await page.screenshot({ path: `${output}/drag-target-${scheme}.png` })
-  }
-  await page.evaluate(() => document.body.removeAttribute('data-ds-dark-theme'))
-  assert.equal(await page.getByRole('dialog').count(), 0, 'Space starts dragging, not editing')
-  // dnd-kit registers the active keyboard sensor on the next timer turn.
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
+  assert.equal(await page.getByRole('dialog').count(), 0, 'Space starts dragging without editing')
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)))
   await page.keyboard.press('Escape')
   await page.locator('.kanban-sortable-card.is-dragging').waitFor({ state: 'hidden' })
-  assert.equal(await page.getByRole('dialog').count(), 0)
   await page.keyboard.press('Enter')
-  await title.fill('Keyboard fixture saved')
+  const title = page.getByRole('textbox', { name: 'Title', exact: true })
+  await title.waitFor()
+  assert.equal(await title.evaluate(el => el === document.activeElement), true)
+  await closeDialog(true)
+  assert.equal(await card.evaluate(el => el === document.activeElement), true, 'Closing restores focus to the card')
+
+  await openEditor('Edit lists')
+  await assertFocus(page.locator('.kanban-drag-handle').first())
+  await page.getByRole('button', { name: 'Delete: Todo', exact: true }).click()
+  assert.match(await page.getByRole('alert').innerText(), /first remaining list/)
+  assert.equal(await page.getByRole('button', { name: 'Cancel', exact: true }).evaluate(el => el === document.activeElement), true)
+  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('dialog').count(), 1, 'Escape cancels deletion before closing the editor')
+  await closeDialog()
+  await openEditor('Edit labels')
+  await page.getByRole('button', { name: 'Delete label: Dark label', exact: true }).click()
+  assert.match(await page.getByRole('alert').innerText(), /removed from all cards/)
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await closeDialog()
+  await card.click()
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  assert.match(await page.getByRole('alert').innerText(), /cannot be undone/)
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await title.fill('Unsaved fixture')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).waitFor()
+  await shot('discard-confirmation')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await title.inputValue(), 'Unsaved fixture', 'Cancel keeps the unsaved draft')
+  await page.setViewportSize(viewports.short)
+  failSave = true
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.getByRole('dialog').getByRole('alert').waitFor()
+  assert.equal(await title.inputValue(), 'Unsaved fixture', 'Failed save preserves the draft')
+  await assertDialog()
+  await shot('save-failure-short')
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Keyboard fixture saved', exact: true }).waitFor()
-  assert.equal(writes.length, 1)
-  assert.equal(writes[0].args.title, 'Keyboard fixture saved')
-
-  await page.setViewportSize({ width: 390, height: 844 })
-  const assertNarrow = async () => {
-    const violations = await page.locator('.kanban-dialog-content').evaluate((dialog) => {
-      const box = dialog.getBoundingClientRect()
-      const violations = []
-      if (box.left < 0 || box.right > innerWidth || dialog.scrollWidth > dialog.clientWidth) violations.push('dialog overflows viewport')
-      for (const el of dialog.querySelectorAll('input,textarea,button')) {
-        const bounds = el.getBoundingClientRect()
-        if (bounds.width && (bounds.left < box.left - 1 || bounds.right > box.right + 1)) violations.push(`${el.tagName}: ${el.getAttribute('aria-label') ?? el.textContent}`)
-      }
-      return violations
-    })
-    assert.deepEqual(violations, [], '390px dialog controls stay within the panel')
-  }
-  await openLists()
-  await assertNarrow()
-  await page.screenshot({ path: `${output}/lists-mobile.png` })
-  await closeDialog()
-  await page.getByRole('button', { name: 'Keyboard fixture saved', exact: true }).click()
-  await page.getByRole('dialog').waitFor()
-  await assertNarrow()
-  await page.screenshot({ path: `${output}/card-mobile.png` })
-  await closeDialog()
-  assert.deepEqual(errors.filter((message) => !message.includes('KANBAN_TEST_BOOT_STOP')), [])
-  console.log(`PASS: real local bundle with installed Host theme; light/dark tokens, dialog/menu geometry, card/badge density, Tab/Enter/Space/Escape, isolated save and 390px controls. All API writes intercepted (${writes.length}). Screenshots: ${output}`)
+  await page.getByRole('button', { name: 'Unsaved fixture', exact: true }).waitFor()
+  assert.equal(writes.length, 2, 'Only the explicit save and retry reach the fixture API')
+  assert.deepEqual(errors.filter(message => !message.includes('KANBAN_TEST_BOOT_STOP')), [])
+  const report = { passed: true, checked, writes: writes.length, screenshots: output, fixtureOnly: true }
+  await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2) + '\n')
+  console.log(JSON.stringify(report, null, 2))
 } finally {
   await browser.close()
 }

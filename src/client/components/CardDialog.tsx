@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react"
 import { MessageSquare, Send, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -32,18 +32,19 @@ export type ChatTarget = "current" | "new"
 
 interface CardDialogProps {
   open: boolean
+  error?: string | null
   card: Card | null
   labels: LabelType[]
   comments: Comment[]
   activities: Activity[]
   onOpenChange: (open: boolean) => void
-  onSave: (values: CardFormValues) => Promise<boolean>
-  onAddComment: (cardId: string, content: string) => Promise<boolean>
-  onDelete?: (card: Card) => Promise<boolean>
-  onChatWithAgent: (values: CardFormValues, target: ChatTarget) => void
+  onSave: (values: CardFormValues) => boolean | void | Promise<boolean | void>
+  onAddComment: (cardId: string, content: string) => boolean | void | Promise<boolean | void>
+  onDelete?: (card: Card) => boolean | void | Promise<boolean | void>
+  onChatWithAgent: (values: CardFormValues, target: ChatTarget) => boolean | void | Promise<boolean | void>
 }
 
-export function CardDialog({ open, card, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
+export function CardDialog({ open, error, card, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
   const t = useT()
   const formId = useId()
   const triggerRef = useRef<HTMLElement | null>(null)
@@ -51,34 +52,70 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
     id: "", title: "", note: "", label: "", priority: "",
   })
   const [comment, setComment] = useState("")
-  const [saving, setSaving] = useState(false)
-  const [commenting, setCommenting] = useState(false)
+  const [pending, setPending] = useState(false)
+  const pendingRef = useRef(false)
+  const [failure, setFailure] = useState("")
+  const [confirm, setConfirm] = useState<"discard" | "delete" | ChatTarget | null>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const initialValues = useRef(values)
 
   useEffect(() => {
     if (open) {
-      setValues({
+      const next: CardFormValues = {
         id: card?.id ?? "",
         title: card?.title ?? "",
         note: card?.note ?? "",
         label: card?.label ?? "",
         priority: card?.priority ?? "",
-      })
+      }
+      initialValues.current = next
+      setValues(next)
       setComment("")
+      setFailure("")
+      setConfirm(null)
     }
   }, [open, card])
 
+  useEffect(() => { if (confirm) cancelRef.current?.focus() }, [confirm])
+
+  const dirty = Boolean(comment.trim()) || (Object.keys(values) as (keyof CardFormValues)[])
+    .some((key) => values[key] !== initialValues.current[key])
+  const changeOpen = (next: boolean) => {
+    if (pendingRef.current) return
+    if (!next && confirm) { setConfirm(null); return }
+    if (!next && dirty) { setConfirm("discard"); return }
+    onOpenChange(next)
+  }
+  const run = async (action: () => boolean | void | Promise<boolean | void>) => {
+    if (pendingRef.current) return false
+    pendingRef.current = true
+    setPending(true)
+    setFailure("")
+    try {
+      const ok = await action()
+      if (ok === false) setFailure(t("actionRetry"))
+      return ok !== false
+    } catch (cause) {
+      setFailure(t("actionFailed") + String(cause instanceof Error ? cause.message : cause))
+      return false
+    } finally {
+      pendingRef.current = false
+      setPending(false)
+    }
+  }
+  const chat = async (target: ChatTarget) => {
+    if (comment.trim()) { setConfirm(target); return }
+    if (await run(() => onChatWithAgent(values, target))) onOpenChange(false)
+  }
   const set = (patch: Partial<CardFormValues>) => setValues((v) => ({ ...v, ...patch }))
   const submitComment = async () => {
     const content = comment.trim()
-    if (!card || !content || content.length > 2000 || commenting) return
-    setCommenting(true)
-    const ok = await onAddComment(card.id, content)
-    setCommenting(false)
-    if (ok !== false) setComment("")
+    if (!card || !content || content.length > 2000) return
+    if (await run(() => onAddComment(card.id, content))) setComment("")
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
         className="kanban-dialog-wide"
         aria-describedby={undefined}
@@ -92,63 +129,62 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
           }
         }}
       >
-        {/* Keep the title for screen readers without adding a redundant visible heading. */}
         <DialogHeader>
-          <DialogTitle className="kanban-sr-only">{card ? t("editCard") : t("addCard")}</DialogTitle>
+          <DialogTitle>{card ? t("editCard") : t("addCard")}</DialogTitle>
+          {card && <span className="kanban-field-id">{t("fieldId")}: {card.id}</span>}
         </DialogHeader>
-        <div className="kanban-form-stack">
+        <DialogBody className="kanban-form-stack">
+          {(error || failure) && <p className="kanban-dialog-error" role="alert">{error || failure}</p>}
           <div className="kanban-form-field">
             <Label htmlFor={`${formId}-title`} className="kanban-field-label">
-              <span>{t("fieldTitle")}</span>
-              {card && (
-                <span className="kanban-field-id">
-                  {t("fieldId")}: {card.id}
-                </span>
-              )}
+              {t("fieldTitle")}
             </Label>
             <Input
               id={`${formId}-title`}
               value={values.title}
               placeholder={t("titlePlaceholder")}
               maxLength={120}
+              disabled={pending || Boolean(confirm)}
               onChange={(e) => set({ title: e.target.value })}
             />
           </div>
-          <div className="kanban-form-field">
-            <Label htmlFor={`${formId}-label`}>{t("fieldLabel")}</Label>
-            <Select value={values.label || "__none__"} onValueChange={(v) => set({ label: v === "__none__" ? "" : v })}>
-              <SelectTrigger id={`${formId}-label`}>
-                <SelectValue placeholder={t("noLabel")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">{t("noLabel")}</SelectItem>
-                {labels.map((l) => (
-                  <SelectItem key={l.name} value={l.name}>{l.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="kanban-form-field">
-            <Label htmlFor={`${formId}-priority`}>{t("fieldPriority")}</Label>
-            <Select value={values.priority || "__none__"} onValueChange={(v) => set({ priority: v === "__none__" ? "" : (v as Priority) })}>
-              <SelectTrigger id={`${formId}-priority`}>
-                <SelectValue placeholder={t("noPriority")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">{t("noPriority")}</SelectItem>
-                {PRIORITY_OPTIONS.map((p) => {
-                  const meta = PRIORITY_META[p]
-                  return (
-                    <SelectItem key={p} value={p}>
-                      <span className="kanban-inline-priority">
-                        <span className="kanban-priority-dot" style={{ background: meta.color }} />
-                        {meta.label}
-                      </span>
-                    </SelectItem>
-                  )
-                })}
-              </SelectContent>
-            </Select>
+          <div className="kanban-form-row">
+            <div className="kanban-form-field">
+              <Label htmlFor={`${formId}-label`}>{t("fieldLabel")}</Label>
+              <Select disabled={pending || Boolean(confirm)} value={values.label || "__none__"} onValueChange={(v) => set({ label: v === "__none__" ? "" : v })}>
+                <SelectTrigger id={`${formId}-label`}>
+                  <SelectValue placeholder={t("noLabel")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t("noLabel")}</SelectItem>
+                  {labels.map((l) => (
+                    <SelectItem key={l.name} value={l.name}>{l.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="kanban-form-field">
+              <Label htmlFor={`${formId}-priority`}>{t("fieldPriority")}</Label>
+              <Select disabled={pending || Boolean(confirm)} value={values.priority || "__none__"} onValueChange={(v) => set({ priority: v === "__none__" ? "" : (v as Priority) })}>
+                <SelectTrigger id={`${formId}-priority`}>
+                  <SelectValue placeholder={t("noPriority")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t("noPriority")}</SelectItem>
+                  {PRIORITY_OPTIONS.map((p) => {
+                    const meta = PRIORITY_META[p]
+                    return (
+                      <SelectItem key={p} value={p}>
+                        <span className="kanban-inline-priority">
+                          <span className="kanban-priority-dot" style={{ background: meta.color }} />
+                          {meta.label}
+                        </span>
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="kanban-form-field">
             <Label htmlFor={`${formId}-note`}>{t("fieldNote")}</Label>
@@ -158,6 +194,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
               placeholder={t("notePlaceholder")}
               rows={5}
               maxLength={2000}
+              disabled={pending || Boolean(confirm)}
               onChange={(e) => set({ note: e.target.value })}
             />
           </div>
@@ -197,7 +234,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
                   placeholder={t("commentPlaceholder")}
                   rows={3}
                   maxLength={2000}
-                  disabled={commenting}
+                  disabled={pending || Boolean(confirm)}
                   onChange={(e) => setComment(e.target.value)}
                   onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -209,7 +246,7 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={commenting || !comment.trim()}
+                  disabled={pending || Boolean(confirm) || !comment.trim()}
                   onClick={() => void submitComment()}
                 >
                   <Send className="kanban-icon" />
@@ -226,65 +263,70 @@ export function CardDialog({ open, card, labels, comments, activities, onOpenCha
               </div>
             </div>
           )}
-        </div>
+        </DialogBody>
         <DialogFooter>
-          {card && onDelete && (
+          {confirm ? (
+            <div className="kanban-dialog-confirm">
+              <p role="alert">{t(confirm === "discard" ? "discardChangesDesc" : confirm === "delete" ? "deleteCardDesc" : "discardCommentDesc")}</p>
+              <div className="kanban-confirm-actions">
+                <Button ref={cancelRef} variant="outline" disabled={pending} onClick={() => setConfirm(null)}>{t("cancel")}</Button>
+                <Button variant="destructive" disabled={pending} onClick={async () => {
+                  if (confirm === "discard") { onOpenChange(false); return }
+                  if (confirm === "delete") {
+                    if (card && onDelete && await run(() => onDelete(card))) onOpenChange(false)
+                    return
+                  }
+                  if (await run(() => onChatWithAgent(values, confirm))) onOpenChange(false)
+                }}>{t(confirm === "discard" ? "discardChanges" : confirm === "delete" ? "confirmDelete" : "discardAndContinue")}</Button>
+              </div>
+            </div>
+          ) : <>
+            {card && onDelete && (
+              <Button
+                variant="ghost"
+                className="kanban-dialog-delete"
+                disabled={pending}
+                onClick={() => setConfirm("delete")}
+              >
+                <Trash2 className="kanban-icon" />
+                {t("delete")}
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  disabled={pending || (!values.title.trim() && !values.note.trim())}
+                >
+                  <MessageSquare className="kanban-icon" />
+                  {t("chatWithAgent")}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => void chat("current")}
+                >
+                  {t("chatCurrentSession")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => void chat("new")}
+                >
+                  {t("chatNewSession")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
-              variant="outline"
-              className="kanban-dialog-delete"
-              disabled={saving}
+              disabled={pending || !values.title.trim()}
               onClick={async () => {
-                setSaving(true)
-                const ok = await onDelete(card)
-                setSaving(false)
-                if (ok !== false) onOpenChange(false)
+                if (await run(() => onSave(values))) {
+                  initialValues.current = values
+                  if (!comment.trim()) onOpenChange(false)
+                }
               }}
             >
-              <Trash2 className="kanban-icon" />
-              {t("delete")}
+              {t("save")}
             </Button>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                disabled={!values.title.trim() && !values.note.trim()}
-              >
-                <MessageSquare className="kanban-icon" />
-                {t("chatWithAgent")}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => {
-                  onChatWithAgent(values, "current")
-                  onOpenChange(false)
-                }}
-              >
-                {t("chatCurrentSession")}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  onChatWithAgent(values, "new")
-                  onOpenChange(false)
-                }}
-              >
-                {t("chatNewSession")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            variant="outline"
-            disabled={saving || !values.title.trim()}
-            onClick={async () => {
-              setSaving(true)
-              const ok = await onSave(values)
-              setSaving(false)
-              if (ok !== false) onOpenChange(false)
-            }}
-          >
-            {t("save")}
-          </Button>
+          </>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

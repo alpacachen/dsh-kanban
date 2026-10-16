@@ -89,6 +89,8 @@ describe("label control names", () => {
     expect(screen.getByLabelText(t("newLabelColor"))).toBeTruthy()
     expect(screen.getByRole("textbox", { name: t("newLabelPlaceholder") })).toBeTruthy()
     await user.click(screen.getByRole("button", { name: `${t("deleteLabel")}: Dark label` }))
+    expect(onDelete).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: t("confirmDelete") }))
     expect(onDelete).toHaveBeenCalledExactlyOnceWith("Dark label")
   })
 })

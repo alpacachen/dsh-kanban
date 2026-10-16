@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
-  DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCorners,
+  DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, closestCorners,
   getFirstCollision, pointerWithin, rectIntersection,
   useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
-import { Check, Filter, List, RefreshCw, Settings2, Tag } from "lucide-react"
+import { Check, Filter, List, RefreshCw, Settings2, Tag, X } from "lucide-react"
 import { CardDialog, type CardFormValues, type ChatTarget } from "./components/CardDialog"
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
@@ -101,7 +101,8 @@ export function KanbanView(props: KanbanViewProps) {
   const [viewHeight, setViewHeight] = useState<number | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -127,6 +128,7 @@ export function KanbanView(props: KanbanViewProps) {
   const act = useCallback(
     async (method: string, args: Record<string, unknown> = {}) => {
       const requestId = ++issuedRequestRef.current
+      setError("")
       try {
         const res = await callKanban(method, args, workspaceId)
         applyBoard(res, workspaceId, requestId)
@@ -153,6 +155,7 @@ export function KanbanView(props: KanbanViewProps) {
     const requestId = ++issuedRequestRef.current
     setBoard(null)
     setLabelFilter(null)
+    setPriorityFilter("")
     setDialog(null)
     setActiveCard(null)
     setError("")
@@ -348,11 +351,12 @@ export function KanbanView(props: KanbanViewProps) {
   const saveCard = (values: CardFormValues): Promise<boolean> => {
     if (!dialog) return Promise.resolve(false)
     if (dialog.card) {
-      const payload: Record<string, unknown> = { id: dialog.card.id }
-      if (values.title !== dialog.card.title) payload.title = values.title
-      if (values.note !== dialog.card.note) payload.note = values.note
-      if (values.label !== (dialog.card.label ?? "")) payload.label = values.label
-      if (values.priority !== (dialog.card.priority ?? "")) payload.priority = values.priority
+      const saved = boardRef.current?.cards.find((card) => card.id === dialog.card!.id) ?? dialog.card
+      const payload: Record<string, unknown> = { id: saved.id }
+      if (values.title !== saved.title) payload.title = values.title
+      if (values.note !== saved.note) payload.note = values.note
+      if (values.label !== (saved.label ?? "")) payload.label = values.label
+      if (values.priority !== (saved.priority ?? "")) payload.priority = values.priority
       return act("updateCard", payload)
     }
     return act("addCard", {
@@ -366,18 +370,24 @@ export function KanbanView(props: KanbanViewProps) {
 
   // Fill the conversation draft without sending it.
   const handleChatWithAgent = useCallback(
-    (values: CardFormValues, target: ChatTarget) => {
+    async (values: CardFormValues, target: ChatTarget): Promise<boolean> => {
       const text = cardToChatText(values)
-      if (!text) return
-      if (target === "current") {
-        inputActions?.setDraft(text)
-        return
+      if (!text) return false
+      setError("")
+      try {
+        if (target === "current") {
+          if (!inputActions) return false
+          await inputActions.setDraft(text)
+          return true
+        }
+        // Queue before DSH switches sessions; canceled navigation must not leave a pending draft.
+        if (!uiWorkspace?.openWorkspace) return false
+        await uiWorkspace.openWorkspace(workspaceId, (nextId) => queueDraft(nextId, text))
+        return true
+      } catch (e: any) {
+        setError(t("actionFailed") + String((e && e.message) || e))
+        return false
       }
-      // Queue before DSH switches sessions; canceled navigation must not leave a pending draft.
-      if (!uiWorkspace?.openWorkspace) return
-      uiWorkspace
-        .openWorkspace(workspaceId, (nextId) => queueDraft(nextId, text))
-        .catch((e) => setError(t("actionFailed") + String((e && e.message) || e)))
     },
     [inputActions, uiWorkspace, workspaceId, t],
   )
@@ -400,7 +410,26 @@ export function KanbanView(props: KanbanViewProps) {
       className="kanban-root kanban-view"
       style={viewHeight != null ? { height: viewHeight } : undefined}
     >
-      {error && <p className="kanban-error">{error}</p>}
+      {error && !dialog && !columnDialogOpen && !labelDialogOpen && <p className="kanban-error" role="alert">{error}</p>}
+
+      {(priorityFilter || labelFilter !== null) && (
+        <div className="kanban-filter-summary" aria-label={t("clearFilter")}>
+          {priorityFilter && (
+            <Button variant="ghost" size="sm" className="kanban-filter-chip"
+              aria-label={`${t("clearFilter")}: ${PRIORITY_META[priorityFilter].label}`}
+              onClick={() => setPriorityFilter("")}>
+              {t("fieldPriority")}: {PRIORITY_META[priorityFilter].label}<X className="kanban-tiny-icon" aria-hidden="true" />
+            </Button>
+          )}
+          {labelFilter !== null && (
+            <Button variant="ghost" size="sm" className="kanban-filter-chip"
+              aria-label={`${t("clearFilter")}: ${labelFilter || t("noLabel")}`}
+              onClick={() => setLabelFilter(null)}>
+              {t("fieldLabel")}: {labelFilter || t("noLabel")}<X className="kanban-tiny-icon" aria-hidden="true" />
+            </Button>
+          )}
+        </div>
+      )}
 
       {warnings.length > 0 && (
         <div className="kanban-warning">
@@ -458,11 +487,11 @@ export function KanbanView(props: KanbanViewProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => setColumnDialogOpen(true)}>
+                <DropdownMenuItem onClick={() => { setError(""); setColumnDialogOpen(true) }}>
                   <List className="kanban-icon" />
                   {t("columnEdit")}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setLabelDialogOpen(true)}>
+                <DropdownMenuItem onClick={() => { setError(""); setLabelDialogOpen(true) }}>
                   <Tag className="kanban-icon" />
                   {t("labelEdit")}
                 </DropdownMenuItem>
@@ -472,22 +501,23 @@ export function KanbanView(props: KanbanViewProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={priorityFilter ? "secondary" : "ghost"}
+                  variant="ghost"
                   size="icon"
-                  className="kanban-toolbar-button"
+                  className={`kanban-toolbar-button${priorityFilter ? " is-active" : ""}`}
                   title={t("priorityFilter")}
                   aria-label={t("priorityFilter")}
+                  aria-pressed={Boolean(priorityFilter)}
                 >
                   <Filter className="kanban-icon" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => setPriorityFilter("")}>
+                <DropdownMenuItem role="menuitemradio" aria-checked={!priorityFilter} onSelect={() => setPriorityFilter("")}>
                   <span className="kanban-filter-check">{!priorityFilter && <Check className="kanban-icon" />}</span>
                   {t("all")}
                 </DropdownMenuItem>
                 {PRIORITY_OPTIONS.map((p) => (
-                  <DropdownMenuItem key={p} onClick={() => setPriorityFilter(p)}>
+                  <DropdownMenuItem key={p} role="menuitemradio" aria-checked={priorityFilter === p} onSelect={() => setPriorityFilter(p)}>
                     <span className="kanban-filter-check">{priorityFilter === p && <Check className="kanban-icon" />}</span>
                     <span className="kanban-priority-dot" style={{ background: PRIORITY_META[p].color }} />
                     {PRIORITY_META[p].label}
@@ -499,11 +529,12 @@ export function KanbanView(props: KanbanViewProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={labelFilter !== null ? "secondary" : "ghost"}
+                  variant="ghost"
                   size="icon"
-                  className="kanban-toolbar-button"
+                  className={`kanban-toolbar-button${labelFilter !== null ? " is-active" : ""}`}
                   title={labelFilter === null ? t("labelFilter") : `${t("labelFilter")}: ${labelFilter || t("noLabel")}`}
                   aria-label={t("labelFilter")}
+                  aria-pressed={labelFilter !== null}
                 >
                   <Tag className="kanban-icon" />
                 </Button>
@@ -541,9 +572,11 @@ export function KanbanView(props: KanbanViewProps) {
                   key={col.id}
                   column={col}
                   cards={cards}
+                  totalCount={board.cards.filter((card) => card.columnId === col.id).length}
+                  filtered={Boolean(priorityFilter) || labelFilter !== null}
                   labels={board.labels}
-                  onAddCard={(c) => setDialog({ card: null, columnId: c.id })}
-                  onOpenCard={(c) => setDialog({ card: c, columnId: c.columnId })}
+                  onAddCard={(c) => { setError(""); setDialog({ card: null, columnId: c.id }) }}
+                  onOpenCard={(c) => { setError(""); setDialog({ card: c, columnId: c.columnId }) }}
                 />
               )
             })}
@@ -560,6 +593,7 @@ export function KanbanView(props: KanbanViewProps) {
       </DndContext>
 
       <CardDialog
+        error={error}
         open={dialog !== null}
         card={dialog?.card ?? null}
         labels={board.labels}
@@ -575,12 +609,13 @@ export function KanbanView(props: KanbanViewProps) {
       />
 
       <ColumnDialog
+        error={error}
         open={columnDialogOpen}
         columns={board.columns}
         onOpenChange={setColumnDialogOpen}
         onReorder={(activeId, overId) => {
           const toIndex = board.columns.findIndex((c) => c.id === overId)
-          if (toIndex >= 0) act("moveColumn", { id: activeId, toIndex })
+          return toIndex >= 0 ? act("moveColumn", { id: activeId, toIndex }) : Promise.resolve(false)
         }}
         onRename={(id, title) => act("renameColumn", { id, title })}
         onDelete={(id) => act("deleteColumn", { id })}
@@ -588,6 +623,7 @@ export function KanbanView(props: KanbanViewProps) {
       />
 
       <LabelDialog
+        error={error}
         open={labelDialogOpen}
         labels={board.labels}
         onOpenChange={setLabelDialogOpen}

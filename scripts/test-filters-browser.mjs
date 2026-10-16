@@ -1,7 +1,7 @@
 // Real built client + Host theme, isolated fixture data. No live board writes.
 // Build first; PLAYWRIGHT_MODULE may point to an existing Playwright installation.
 import assert from 'node:assert/strict'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -32,7 +32,9 @@ try {
     const [name, ...value] = process.env.DSH_TEST_COOKIE.split('=')
     await page.context().addCookies([{ name, value: value.join('='), url: base }])
   }
-  await page.route('**/api/**', route => {
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url())
+    if (!url.pathname.startsWith('/api/') && ['GET', 'HEAD'].includes(route.request().method())) return route.continue()
     if (new URL(route.request().url()).pathname !== '/api/kanban') return route.fulfill({ status: 503, json: { error: 'Non-fixture API disabled' } })
     const request = route.request().postDataJSON()
     requests.push(request.method)
@@ -83,8 +85,10 @@ try {
     document.body.replaceChildren()
     document.body.removeAttribute('data-ds-dark-theme')
     const root = document.createElement('div')
+    root.style.height = '100dvh'
+    document.body.style.margin = '0'
     document.body.append(root)
-    window.__testSeeds['react-dom/client'].createRoot(root).render(components.kanban({ sessionId: 'fixture' }))
+    window.__testSeeds['react-dom/client'].createRoot(root).render(window.__testSeeds.react.createElement(components.kanban, { sessionId: 'fixture' }))
   })
   const titles = () => page.locator('.kanban-card-title').allTextContents()
   const chooseLabel = async name => {
@@ -94,19 +98,32 @@ try {
   await page.getByText('Urgent bug', { exact: true }).waitFor()
   await chooseLabel('bug')
   assert.deepEqual(await titles(), ['Urgent bug', 'Minor bug'])
+  assert.equal(await page.getByRole('button', { name: '按标签筛选', exact: true }).getAttribute('aria-pressed'), 'true')
+  assert.match(await page.locator('.kanban-filter-summary').innerText(), /bug/)
+  assert.equal(await page.getByRole('button', { name: /^清除筛选:/ }).count(), 1)
   await page.getByRole('button', { name: '按优先级筛选', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'P0', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'P0', exact: true }).click()
   assert.deepEqual(await titles(), ['Urgent bug'])
+  assert.equal(await page.getByRole('button', { name: '按优先级筛选', exact: true }).getAttribute('aria-pressed'), 'true')
+  await chooseLabel('无标签')
+  assert.deepEqual(await titles(), [])
+  assert.equal(await page.getByText('无匹配卡片', { exact: true }).count(), 2)
+  await chooseLabel('bug')
   await chooseLabel('全部')
   assert.deepEqual(await titles(), ['Urgent bug', 'Feature card'])
   await page.getByRole('button', { name: '按优先级筛选', exact: true }).click()
-  await page.getByRole('menuitem', { name: '全部', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: '全部', exact: true }).click()
   await chooseLabel('无标签')
   assert.deepEqual(await titles(), ['Unlabeled card'])
-  await chooseLabel('全部')
+  await page.getByRole('button', { name: /^清除筛选:/ }).click()
+  assert.equal((await titles()).length, 4)
+  assert.equal(await page.getByRole('button', { name: '按标签筛选', exact: true }).getAttribute('aria-pressed'), 'false')
+  assert.equal(await page.getByRole('button', { name: '按优先级筛选', exact: true }).getAttribute('aria-pressed'), 'false')
   for (const dark of [false, true]) {
     await page.evaluate(dark => document.body.toggleAttribute('data-ds-dark-theme', dark), dark)
     await page.getByRole('button', { name: '按标签筛选', exact: true }).click()
+    assert.match(await page.getByRole('menu').evaluate(el => getComputedStyle(el).backgroundColor), /^rgb\(/, 'Filter menu is opaque in both themes')
+    assert.equal(await page.getByRole('menuitemradio', { name: '全部', exact: true }).getAttribute('aria-checked'), 'true')
     await page.screenshot({ animations: 'disabled', path: resolve(output, dark ? 'dark.png' : 'light.png') })
     await page.keyboard.press('Escape')
   }
@@ -128,7 +145,9 @@ try {
   assert.equal(new Set(styles.map(style => style.font)).size, 1)
   assert.deepEqual(requests, ['get'])
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ passed: true, styles, screenshots: output }, null, 2))
+  const report = { passed: true, styles, screenshots: output, requests, fixtureOnly: true }
+  await writeFile(resolve(output, 'verification.json'), JSON.stringify(report, null, 2) + '\n')
+  console.log(JSON.stringify(report, null, 2))
 } finally {
   await browser.close()
 }

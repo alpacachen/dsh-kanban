@@ -9,12 +9,14 @@ import type { Card as CardType, Column as ColumnType, Label } from "@/lib/types"
 interface ColumnProps {
   column: ColumnType
   cards: CardType[]
+  totalCount: number
+  filtered: boolean
   labels: Label[]
   onAddCard: (column: ColumnType) => void
   onOpenCard: (card: CardType) => void
 }
 
-export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnProps) {
+export function Column({ column, cards, totalCount, filtered, labels, onAddCard, onOpenCard }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { type: "column" } })
   const { active, over } = useDndContext()
   const t = useT()
@@ -29,7 +31,7 @@ export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnP
       <div className="kanban-column-header">
         <h3 className="kanban-column-title">{column.title}</h3>
         <span className="kanban-column-count">
-          {cards.length}
+          {filtered ? `${cards.length} / ${totalCount}` : cards.length}
         </span>
       </div>
 
@@ -45,7 +47,7 @@ export function Column({ column, cards, labels, onAddCard, onOpenCard }: ColumnP
           ))}
         </SortableContext>
         {cards.length === 0 && (
-          <p className="kanban-column-empty">{t("emptyColumn")}</p>
+          <p className="kanban-column-empty">{t(filtered ? "noMatchingCards" : "emptyColumn")}</p>
         )}
       </div>
 
