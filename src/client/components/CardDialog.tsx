@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react"
-import { MessageSquare, Send, Trash2 } from "lucide-react"
+import { Check, MessageSquare, Pencil, Send, Trash2 } from "lucide-react"
+import { MarkdownText } from "@deepseek-ai/dsh-client-ui-primitives"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
+import { DrawerContent } from "@/components/ui/drawer"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -48,6 +50,9 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
   const t = useT()
   const formId = useId()
   const triggerRef = useRef<HTMLElement | null>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
+  const noteRef = useRef<HTMLTextAreaElement>(null)
+  const [editingNote, setEditingNote] = useState(!card)
   const [values, setValues] = useState<CardFormValues>({
     id: "", title: "", note: "", label: "", priority: "",
   })
@@ -73,6 +78,7 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
       setComment("")
       setFailure("")
       setConfirm(null)
+      setEditingNote(!card)
     }
   }, [open, card])
 
@@ -116,11 +122,12 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent
-        className="kanban-dialog-wide"
+      <DrawerContent
         aria-describedby={undefined}
-        onOpenAutoFocus={() => {
+        onOpenAutoFocus={(event) => {
           triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+          event.preventDefault()
+          titleRef.current?.focus()
         }}
         onCloseAutoFocus={(e) => {
           if (triggerRef.current?.isConnected) {
@@ -130,7 +137,7 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
         }}
       >
         <DialogHeader>
-          <DialogTitle>{card ? t("editCard") : t("addCard")}</DialogTitle>
+          <DialogTitle>{card ? t("taskDetails") : t("addCard")}</DialogTitle>
           {card && <span className="kanban-field-id">{t("fieldId")}: {card.id}</span>}
         </DialogHeader>
         <DialogBody className="kanban-form-stack">
@@ -140,6 +147,7 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
               {t("fieldTitle")}
             </Label>
             <Input
+              ref={titleRef}
               id={`${formId}-title`}
               value={values.title}
               placeholder={t("titlePlaceholder")}
@@ -187,16 +195,45 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
             </div>
           </div>
           <div className="kanban-form-field">
-            <Label htmlFor={`${formId}-note`}>{t("fieldNote")}</Label>
-            <Textarea
-              id={`${formId}-note`}
-              value={values.note}
-              placeholder={t("notePlaceholder")}
-              rows={5}
-              maxLength={2000}
-              disabled={pending || Boolean(confirm)}
-              onChange={(e) => set({ note: e.target.value })}
-            />
+            <div className="kanban-field-label">
+              <Label id={`${formId}-note-label`} htmlFor={editingNote ? `${formId}-note` : undefined}>{t("fieldNote")}</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pending || Boolean(confirm)}
+                aria-controls={`${formId}-description`}
+                onClick={() => {
+                  setEditingNote(!editingNote)
+                  if (!editingNote) requestAnimationFrame(() => noteRef.current?.focus())
+                }}
+              >
+                {editingNote ? <Check /> : <Pencil />}
+                {t(editingNote ? "finishEditingNote" : "editNote")}
+              </Button>
+            </div>
+            <div id={`${formId}-description`}>
+              {editingNote ? <>
+                <Textarea
+                  ref={noteRef}
+                  id={`${formId}-note`}
+                  className="kanban-markdown-source"
+                  value={values.note}
+                  placeholder={t("notePlaceholder")}
+                  rows={12}
+                  maxLength={2000}
+                  disabled={pending || Boolean(confirm)}
+                  onChange={(e) => set({ note: e.target.value })}
+                />
+                <p className="kanban-note-hint">{t("markdownEditHint")} <span className="kanban-tabular">{values.note.length}/2000</span></p>
+              </> : (
+                <div className="kanban-markdown-preview" role="region" aria-labelledby={`${formId}-note-label`}>
+                  {values.note.trim() ? <MarkdownText
+                    text={values.note}
+                    labels={{ code: { copyLabel: t("copyCode"), copiedLabel: t("copiedCode") }, footnotes: t("footnotes") }}
+                  /> : <p className="kanban-muted-small">{t("emptyNote")}</p>}
+                </div>
+              )}
+            </div>
           </div>
           {card && (
             <div className="kanban-comments-box">
@@ -328,7 +365,7 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
             </Button>
           </>}
         </DialogFooter>
-      </DialogContent>
+      </DrawerContent>
     </Dialog>
   )
 }

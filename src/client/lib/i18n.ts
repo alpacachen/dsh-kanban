@@ -44,6 +44,9 @@ const zh: Dict = {
   newLabelColor: "新标签颜色",
   deleteLabel: "删除标签",
   editCard: "编辑卡片",
+  taskDetails: "任务详情",
+  resizeTaskDetails: "调整任务详情宽度",
+  resizeTaskDetailsHint: "拖动或使用左右方向键调整宽度，Home 最窄，End 最宽。",
   fieldTitle: "标题",
   fieldId: "任务 ID",
   titlePlaceholder: "卡片标题",
@@ -51,8 +54,15 @@ const zh: Dict = {
   noLabel: "无标签",
   fieldPriority: "优先级",
   noPriority: "无优先级",
-  fieldNote: "备注",
-  notePlaceholder: "备注（可选）",
+  fieldNote: "描述",
+  notePlaceholder: "使用 Markdown 描述任务…",
+  editNote: "编辑",
+  finishEditingNote: "完成编辑",
+  markdownEditHint: "Markdown 原文 · 点击保存后生效",
+  emptyNote: "暂无描述，点击编辑添加。",
+  copyCode: "复制代码",
+  copiedCode: "已复制",
+  footnotes: "脚注",
   commentsTitle: "评论",
   commentEmpty: "暂无评论",
   commentPlaceholder: "添加评论…",
@@ -130,6 +140,9 @@ const en: Dict = {
   newLabelColor: "New label color",
   deleteLabel: "Delete label",
   editCard: "Edit card",
+  taskDetails: "Task details",
+  resizeTaskDetails: "Resize task details",
+  resizeTaskDetailsHint: "Drag or use Left/Right to resize; Home for minimum, End for maximum.",
   fieldTitle: "Title",
   fieldId: "Task ID",
   titlePlaceholder: "Card title",
@@ -137,8 +150,15 @@ const en: Dict = {
   noLabel: "No label",
   fieldPriority: "Priority",
   noPriority: "No priority",
-  fieldNote: "Note",
-  notePlaceholder: "Note (optional)",
+  fieldNote: "Description",
+  notePlaceholder: "Describe the task in Markdown…",
+  editNote: "Edit",
+  finishEditingNote: "Done editing",
+  markdownEditHint: "Markdown source · Apply changes with Save",
+  emptyNote: "No description yet. Select Edit to add one.",
+  copyCode: "Copy code",
+  copiedCode: "Copied",
+  footnotes: "Footnotes",
   commentsTitle: "Comments",
   commentEmpty: "No comments yet",
   commentPlaceholder: "Add a comment…",
@@ -193,12 +213,8 @@ export function installLocale(ctx: Context) {
   const locale = ctx.get("locale")
   if (locale === undefined) return
   localeService = locale
-  try {
-    locale.register(NS, "zh", zh)
-    locale.register(NS, "en", en)
-  } catch {
-    // Ignore duplicate registration during hot reload or repeated apply.
-  }
+  ctx.effect(() => locale.register(NS, "zh", zh), "dsh-kanban: Chinese dictionary")
+  ctx.effect(() => locale.register(NS, "en", en), "dsh-kanban: English dictionary")
   boundT = locale.bind(NS)
 }
 

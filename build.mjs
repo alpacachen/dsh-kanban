@@ -31,7 +31,7 @@ const result = await esbuild.build({
   sourcemap: false,
   minify,
   logLevel: 'info',
-  external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom/client'],
+  external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom/client', '@deepseek-ai/dsh-client-ui-primitives'],
   alias: { '@': resolve(root, 'src/client') },
   plugins: [
     {
