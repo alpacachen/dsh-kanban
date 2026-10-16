@@ -15,10 +15,12 @@
 
 </div>
 
-<p align="center">
-  <img src="./image.png" alt="浅色模式下的完整 dsh-kanban 看板，展示英文任务、标签与优先级" width="100%">
-  <img src="./docs/screenshots/card-details-dark.png" alt="深色模式下的完整 dsh-kanban 看板，打开的任务详情抽屉展示 Markdown 描述" width="100%">
-</p>
+<table>
+  <tr>
+    <td width="50%"><img src="./image.png" alt="浅色模式下的完整 dsh-kanban 看板，展示英文任务、标签与优先级" width="100%"></td>
+    <td width="50%"><img src="./docs/screenshots/card-details-dark.png" alt="深色模式下的完整 dsh-kanban 看板，打开的任务详情抽屉展示 Markdown 描述" width="100%"></td>
+  </tr>
+</table>
 
 ## ✨ 从一句话，到一块能执行的看板
 

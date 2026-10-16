@@ -15,10 +15,12 @@ A collaborative kanban board where you and your AI agent plan, organize, and shi
 
 </div>
 
-<p align="center">
-  <img src="./image.png" alt="Full dsh-kanban board in light mode with English tasks, labels and priorities" width="100%">
-  <img src="./docs/screenshots/card-details-dark.png" alt="Full dsh-kanban board in dark mode with an open task drawer showing a Markdown description" width="100%">
-</p>
+<table>
+  <tr>
+    <td width="50%"><img src="./image.png" alt="Full dsh-kanban board in light mode with English tasks, labels and priorities" width="100%"></td>
+    <td width="50%"><img src="./docs/screenshots/card-details-dark.png" alt="Full dsh-kanban board in dark mode with an open task drawer showing a Markdown description" width="100%"></td>
+  </tr>
+</table>
 
 ## ✨ From conversation to action
 
