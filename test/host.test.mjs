@@ -36,6 +36,8 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
   }
   const ctx = {
     get(name) {
+      if (name === "connection") return options.connection
+      if (name === "webServer") throw new Error("Browser routes must use authenticated Connection")
       if (name === "fs") return fs
       if (name === "sandboxPolicy") return { defaultMode: "workspace-write", resolve: () => ({ mode: "workspace-write" }) }
       if (name === "workspaceRegistry") return {
@@ -49,9 +51,9 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
       register(tool) { registered.push(tool) },
     },
   }
-  apply(ctx)
+  const dispose = apply(ctx)
   const exec = { agent: { session: { header: { cwd: dir } } } }
-  return { dir, workspace, registered, exec }
+  return { dir, workspace, registered, exec, dispose }
 }
 
 const tool = (registered, name) => {
@@ -310,5 +312,49 @@ describe("host board seam", () => {
     expect(result.ok).toBe(false)
     expect(result.message).toContain("newer plugin version")
     expect(readFileSync(join(dir, ".dsh-kanban.json"), "utf8")).toBe(original)
+  })
+})
+
+
+describe("authenticated Connection route", () => {
+  const request = (body, headers = {}, method = "POST") => new Request("http://dsh.internal/api/kanban", {
+    method,
+    headers: { "content-type": "application/json", host: "localhost", ...headers },
+    ...(method === "POST" ? { body } : {}),
+  })
+
+  it("persists browser changes through the shared route and disposes it", async () => {
+    let route
+    let removed = false
+    const host = boot(undefined, { connection: { fetch: { register(value) {
+      route = value
+      return async () => { removed = true }
+    } } } })
+    expect(route).toMatchObject({ path: "/api/kanban", methods: ["POST"], requestBody: "streaming" })
+    const response = await route.fetch(request(JSON.stringify({
+      method: "addCard", args: { workspaceId: host.workspace.id, title: "Browser card" },
+    }), { origin: "http://localhost" }))
+    expect(response.status).toBe(200)
+    expect((await response.json()).board.cards[0].title).toBe("Browser card")
+    expect(JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json"), "utf8")).cards[0].createdBy).toBe("human")
+    await host.dispose()
+    expect(removed).toBe(true)
+  })
+
+  it("rejects malformed, cross-origin and oversized requests without writing", async () => {
+    let route
+    const host = boot(undefined, { connection: { fetch: { register(value) { route = value } } } })
+    const cases = [
+      [request("", {}, "GET"), 405],
+      [request("{}", { "content-type": "text/plain" }), 415],
+      [request("{}", { "origin": "https://untrusted.example" }), 403],
+      [request("{broken"), 400],
+      [request("null"), 400],
+      [request(JSON.stringify({ args: { workspaceId: "unknown" } })), 400],
+      [request(" ".repeat(1024 * 1024 + 1)), 413],
+    ]
+    for (const [input, status] of cases) expect((await route.fetch(input)).status).toBe(status)
+    expect(existsSync(join(host.dir, ".dsh-kanban.json"))).toBe(false)
+    await host.dispose()
   })
 })
