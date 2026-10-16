@@ -1,6 +1,6 @@
 import type { KanbanResponse } from "./types"
 
-/** Fetch the same-origin /api/kanban route registered through the host webServer extension. */
+/** Fetch the same-origin /api/kanban route registered through the authenticated host Connection extension. */
 export function callKanban(
   method: string,
   args: Record<string, unknown> = {},

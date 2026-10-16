@@ -8,7 +8,7 @@
  * - Workspace isolation: boards are keyed by workspaceId, one board per workspace.
  * - Persistence: ctx.fs writes <workspace.path>/.dsh-kanban.json.
  * - Agent tools: ctx.tools.register exposes 15 kanban_* tools.
- * - Browser API: ctx.get('webServer') registers routes under /api/kanban.
+ * - Browser API: ctx.get('connection') registers the authenticated /api/kanban route.
  *
  * Per-workspace data model (disk files include schemaVersion):
  *   schemaVersion: 3
@@ -934,54 +934,58 @@ export function apply(ctx) {
     }
   }
 
-  // ---- Browser API through the official webServer extension ----
+  // ---- Browser API through the authenticated Connection extension ----
   const MAX_HTTP_BODY = 1024 * 1024
-  const sendJson = (res, status, value) => {
-    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
-    res.end(JSON.stringify(value))
-  }
-  const httpHandler = async (req, res) => {
+  const sendJson = (status, value) => Response.json(value, { status })
+  const httpHandler = async (req) => {
     try {
-      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' })
-      const contentType = String(req.headers && req.headers['content-type'] || '').toLowerCase()
-      if (!contentType.startsWith('application/json')) return sendJson(res, 415, { error: 'Expected application/json' })
-      const origin = req.headers && req.headers.origin
-      const host = req.headers && req.headers.host
+      if (req.method !== 'POST') return sendJson(405, { error: 'Method not allowed' })
+      const chunks = []
+      let size = 0
+      for await (const chunk of req.body || []) {
+        size += chunk.length
+        // Drain rejected uploads without buffering them so Connection can send the error response.
+        if (size <= MAX_HTTP_BODY) chunks.push(chunk)
+      }
+      if (size > MAX_HTTP_BODY) return sendJson(413, { error: 'Request body too large' })
+      const contentType = (req.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase()
+      if (contentType !== 'application/json') return sendJson(415, { error: 'Expected application/json' })
+      const origin = req.headers.get('origin')
+      const host = req.headers.get('host') || new URL(req.url).host
       if (origin && host) {
         let originHost = ''
         try { originHost = new URL(origin).host } catch {}
-        if (originHost !== host) return sendJson(res, 403, { error: 'Cross-origin request denied' })
+        if (originHost !== host) return sendJson(403, { error: 'Cross-origin request denied' })
       }
 
-      const chunks = []
-      let size = 0
-      for await (const chunk of req) {
-        size += chunk.length
-        if (size > MAX_HTTP_BODY) return sendJson(res, 413, { error: 'Request body too large' })
-        chunks.push(chunk)
-      }
       const raw = Buffer.concat(chunks).toString('utf8')
       const body = raw ? JSON.parse(raw) : {}
+      if (!isObj(body)) return sendJson(400, { error: 'Expected a JSON object' })
       const method = typeof body.method === 'string' ? body.method : 'get'
       const args = isObj(body.args) ? body.args : {}
       const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId : ''
       const workspace = workspaceId ? workspaceOfId(workspaceId) : undefined
-      if (!workspace) return sendJson(res, 400, { error: 'Unknown workspace: ' + (workspaceId || '(missing)') })
+      if (!workspace) return sendJson(400, { error: 'Unknown workspace: ' + (workspaceId || '(missing)') })
       const result = await dispatch(workspace, method, args, 'human')
-      return sendJson(res, result.error ? 400 : 200, result)
+      return sendJson(result.error ? 400 : 200, result)
     } catch (err) {
       const status = err instanceof SyntaxError ? 400 : 500
-      return sendJson(res, status, { error: String((err && err.message) || err) })
+      return sendJson(status, { error: String((err && err.message) || err) })
     }
   }
 
   const routeState = { registered: false, timer: null, dispose: null, disposed: false, attempts: 0 }
   const registerRoute = () => {
     if (routeState.registered || routeState.disposed) return
-    const webServer = ctx.get('webServer')
-    if (webServer === undefined) return
+    const connection = ctx.get('connection')
+    if (connection === undefined) return
     try {
-      const dispose = webServer.register({ kind: 'prefix', path: '/api/kanban', handler: httpHandler })
+      const dispose = connection.fetch.register({
+        path: '/api/kanban',
+        methods: ['POST'],
+        requestBody: 'streaming',
+        fetch: httpHandler,
+      })
       routeState.dispose = typeof dispose === 'function' ? dispose : null
       routeState.registered = true
       console.log('dsh-kanban: /api/kanban route registered')
@@ -1418,11 +1422,11 @@ export function apply(ctx) {
 
   for (const tool of tools) ctx.tools.register(tool)
 
-  return () => {
+  return async () => {
     routeState.disposed = true
     if (routeState.timer) routeState.timer()
     routeState.timer = null
-    if (routeState.dispose) routeState.dispose()
+    if (routeState.dispose) await routeState.dispose()
     routeState.dispose = null
     boards.clear()
     boardLoads.clear()
