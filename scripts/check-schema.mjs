@@ -5,7 +5,7 @@
  *
  * Coverage:
  * - Legacy unversioned files (v0): migration and field normalization
- * - v3 files pass unchanged; v1/v2 files migrate automatically
+ * - v4 files pass unchanged; v1/v2/v3 files migrate automatically
  * - Broken JSON is classified as corrupt
  * - Invalid structures are classified as invalid
  * - Future versions are unsupported and must not be migrated
@@ -57,16 +57,16 @@ console.log('\n[2] v0 files missing note/label/priority')
   check('priority defaults to null', r.ok && r.data.cards[0].priority === null)
 }
 
-// ---- 3. Accept v3 files unchanged ----
-console.log('\n[3] v3 files pass unchanged')
+// ---- 3. Accept v4 files unchanged ----
+console.log('\n[3] v4 files pass unchanged')
 {
-  const r = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: [], activities: [] }))
-  check('v3 -> ok without migration', r.ok && r.migrated === false, JSON.stringify(r))
-  check('v3 has no warnings', r.ok && r.warnings.length === 0)
+  const r = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: [], activities: [] }))
+  check('v4 -> ok without migration', r.ok && r.migrated === false, JSON.stringify(r))
+  check('v4 has no warnings', r.ok && r.warnings.length === 0)
 }
 
-// ---- 3a. Migrate v2 to v3 ----
-console.log('\n[3a] Automatically migrate v2 to v3')
+// ---- 3a. Migrate v2 to v4 ----
+console.log('\n[3a] Automatically migrate v2 to v4')
 {
   const r = parseBoardText(JSON.stringify({
     schemaVersion: 2,
@@ -81,8 +81,8 @@ console.log('\n[3a] Automatically migrate v2 to v3')
   check('Cards get empty comments arrays', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
 }
 
-// ---- 3b. Migrate v1 to v3 ----
-console.log('\n[3b] Automatically migrate v1 to v3')
+// ---- 3b. Migrate v1 to v4 ----
+console.log('\n[3b] Automatically migrate v1 to v4')
 {
   const r = parseBoardText(JSON.stringify({
     schemaVersion: 1,
@@ -92,11 +92,26 @@ console.log('\n[3b] Automatically migrate v1 to v3')
   }))
   check('v1 -> ok and marked as migrated', r.ok && r.migrated === true, JSON.stringify(r))
   check('fromVersion = 1', r.ok && r.fromVersion === 1)
-  check('Upgraded to v3', r.ok && r.data.schemaVersion === 3)
+  check('Upgraded to latest version', r.ok && r.data.schemaVersion === SCHEMA_VERSION)
   check('Empty activities array', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
   check('Cards default createdAt/createdBy to null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
   check('Cards get empty comments arrays', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
   check('Card data preserved', r.ok && r.data.cards[0].title === 'Fix' && r.data.cards[0].label === 'bug')
+}
+
+// ---- 3c. Migrate v3 without inferring a completion column ----
+console.log('\n[3c] Automatically migrate v3 to v4')
+{
+  const original = {
+    schemaVersion: 3, columns: [{ id: 'c1', title: 'Done' }], labels: [],
+    cards: [{ id: 'k1', columnId: 'c1', title: 'Keep', comments: [] }], activities: [],
+  }
+  const r = parseBoardText(JSON.stringify(original))
+  check('v3 -> ok and marked as migrated', r.ok && r.migrated && r.fromVersion === 3)
+  check('Existing boards have no implicit completion column', r.ok && r.data.completedColumnId === null)
+  check('Existing cards have no due date', r.ok && r.data.cards[0].dueDate === null)
+  check('Original input is unchanged', !('dueDate' in original.cards[0]))
+  check('Current data round-trips without migrating', r.ok && parseBoardText(JSON.stringify(r.data)).migrated === false)
 }
 
 // ---- 4. Broken JSON ----
@@ -110,13 +125,13 @@ console.log('\n[4] Broken JSON')
 // ---- 5. Invalid structure ----
 console.log('\n[5] Invalid structure')
 {
-  const r = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: 'oops', activities: [] }))
+  const r = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: 'oops', activities: [] }))
   check('Classified as invalid', !r.ok && r.kind === 'invalid', JSON.stringify(r))
-  const dup = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', comments: [] }, { id: 'k1', columnId: 'c1', title: 'b', comments: [] }], activities: [] }))
+  const dup = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', dueDate: null, comments: [] }, { id: 'k1', columnId: 'c1', title: 'b', dueDate: null, comments: [] }], activities: [] }))
   check('Duplicate card ids -> invalid', !dup.ok && dup.kind === 'invalid', JSON.stringify(dup))
-  const badComment = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', comments: [{ id: 'm1', content: ' ', source: 'human', createdAt: 'now' }] }], activities: [] }))
+  const badComment = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', dueDate: null, comments: [{ id: 'm1', content: ' ', source: 'human', createdAt: 'now' }] }], activities: [] }))
   check('Empty comment -> invalid', !badComment.ok && badComment.kind === 'invalid', JSON.stringify(badComment))
-  const noAct = parseBoardText(JSON.stringify({ schemaVersion: 3, columns: [], labels: [], cards: [] }))
+  const noAct = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: [] }))
   check('Missing activities -> invalid', !noAct.ok && noAct.kind === 'invalid', JSON.stringify(noAct))
 }
 
@@ -168,9 +183,9 @@ console.log('\n[7] Migration chain contract')
 // ---- 8. validateBoard ----
 console.log('\n[8] validateBoard')
 {
-  check('Valid v3 passes', validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [], activities: [] }).ok)
-  check('Missing labels fails', !validateBoard({ schemaVersion: 3, columns: [], cards: [], activities: [] }).ok)
-  check('Missing activities fails', !validateBoard({ schemaVersion: 3, columns: [], labels: [], cards: [] }).ok)
+  check('Valid current schema passes', validateBoard({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: [], activities: [] }).ok)
+  check('Missing labels fails', !validateBoard({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], cards: [], activities: [] }).ok)
+  check('Missing activities fails', !validateBoard({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: [] }).ok)
   check('Non-object data fails', !validateBoard(null).ok && !validateBoard('x').ok)
 }
 

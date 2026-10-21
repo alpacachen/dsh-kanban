@@ -31,3 +31,9 @@ if (typeof window !== "undefined" && !window.matchMedia) {
     dispatchEvent() { return false },
   }) as MediaQueryList
 }
+
+// JSDOM lacks the native pointer/scroll APIs used by Radix Select.
+if (typeof HTMLElement !== "undefined") {
+  if (!HTMLElement.prototype.hasPointerCapture) HTMLElement.prototype.hasPointerCapture = () => false
+  if (!HTMLElement.prototype.scrollIntoView) HTMLElement.prototype.scrollIntoView = () => {}
+}

@@ -41,9 +41,10 @@ const markdown = [
   '[unsafe link](javascript:alert%281%29)',
 ].join('\n')
 const board = {
+  completedColumnId: 'done',
   columns: [{ id: 'todo', title: 'Todo' }, { id: 'doing', title: 'In progress' }, { id: 'review', title: 'Review' }, { id: 'done', title: 'Done' }],
   labels: [{ name: 'Dark label', color: '#000000' }, ...Array.from({ length: 9 }, (_, i) => ({ name: `Label ${i + 1}`, color: '#4176e6' }))],
-  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: markdown, label: 'Dark label', priority: 'high', createdAt: null, createdBy: null, comments: Array.from({ length: 12 }, (_, i) => ({ id: `comment-${i}`, source: 'human', createdAt: '2026-10-16T03:00:00Z', content: `Comment ${i + 1}: verify scrolling keeps the header, close control and footer visible.` })) }],
+  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: markdown, label: 'Dark label', priority: 'high', dueDate: null, createdAt: null, createdBy: null, comments: Array.from({ length: 12 }, (_, i) => ({ id: `comment-${i}`, source: 'human', createdAt: '2026-10-16T03:00:00Z', content: `Comment ${i + 1}: verify scrolling keeps the header, close control and footer visible.` })) }],
   activities: [],
 }
 
@@ -63,7 +64,7 @@ try {
       if (method === 'updateCard' && args.id === 'card-fixture') {
         writes.push({ method, args })
         if (failSave) { failSave = false; return route.fulfill({ status: 500, json: { error: 'Fixture save failed: ' + 'Long service error. '.repeat(200) } }) }
-        for (const field of ['title', 'note', 'label', 'priority']) if (field in args) board.cards[0][field] = args[field]
+        for (const field of ['title', 'note', 'label', 'priority', 'dueDate']) if (field in args) board.cards[0][field] = args[field]
         return route.fulfill({ json: { board } })
       }
       return route.fulfill({ status: 400, json: { error: `Unimplemented fixture method: ${method}` } })

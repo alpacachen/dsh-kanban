@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { PRIORITY_OPTIONS, PRIORITY_META } from "@/lib/constants"
+import { localDate } from "@/lib/due-date"
 import { formatTime } from "@/lib/activity"
 import { useT } from "@/lib/i18n"
 import type { Activity, Card, Comment, Label as LabelType, Priority } from "@/lib/types"
@@ -27,6 +28,7 @@ export interface CardFormValues {
   note: string
   label: string
   priority: Priority | ""
+  dueDate: string
 }
 
 /** Destination for Chat with agent: the current session or a new session. */
@@ -51,10 +53,11 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
   const formId = useId()
   const triggerRef = useRef<HTMLElement | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
+  const dueDateRef = useRef<HTMLInputElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const [editingNote, setEditingNote] = useState(!card)
   const [values, setValues] = useState<CardFormValues>({
-    id: "", title: "", note: "", label: "", priority: "",
+    id: "", title: "", note: "", label: "", priority: "", dueDate: "",
   })
   const [comment, setComment] = useState("")
   const [pending, setPending] = useState(false)
@@ -72,6 +75,7 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
         note: card?.note ?? "",
         label: card?.label ?? "",
         priority: card?.priority ?? "",
+        dueDate: card?.dueDate ?? "",
       }
       initialValues.current = next
       setValues(next)
@@ -110,6 +114,7 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
     }
   }
   const chat = async (target: ChatTarget) => {
+    if (!dueDateRef.current?.reportValidity()) return
     if (comment.trim()) { setConfirm(target); return }
     if (await run(() => onChatWithAgent(values, target))) onOpenChange(false)
   }
@@ -192,6 +197,22 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
                   })}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="kanban-form-field">
+            <Label htmlFor={`${formId}-due-date`}>{t("fieldDueDate")}</Label>
+            <div className="kanban-due-date-controls">
+              <Input ref={dueDateRef} id={`${formId}-due-date`} type="date" min="0001-01-01" max="9999-12-31"
+                value={values.dueDate} disabled={pending || Boolean(confirm)}
+                onChange={(e) => set({ dueDate: e.target.value })} />
+              <div className="kanban-date-shortcuts">
+                {([["today", 0], ["tomorrow", 1], ["nextWeek", 7]] as const).map(([key, offset]) => (
+                  <Button key={key} type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm)}
+                    onClick={() => set({ dueDate: localDate(new Date(), offset) })}>{t(key)}</Button>
+                ))}
+                <Button type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm) || !values.dueDate}
+                  onClick={() => set({ dueDate: "" })}>{t("clearDate")}</Button>
+              </div>
             </div>
           </div>
           <div className="kanban-form-field">
@@ -355,6 +376,7 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
             <Button
               disabled={pending || !values.title.trim()}
               onClick={async () => {
+                if (!dueDateRef.current?.reportValidity()) return
                 if (await run(() => onSave(values))) {
                   initialValues.current = values
                   if (!comment.trim()) onOpenChange(false)

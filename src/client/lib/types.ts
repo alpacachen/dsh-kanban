@@ -7,6 +7,8 @@ export type ActivityType =
   | "card_moved"
   | "card_label_changed"
   | "card_priority_changed"
+  | "card_due_date_changed"
+  | "board_completed_column_changed"
   | "card_title_changed"
   | "card_note_changed"
   | "card_comment_added"
@@ -33,6 +35,8 @@ export interface Activity {
     column?: string
     label?: string
     priority?: string
+    fromColumn?: string | null
+    toColumn?: string | null
   }
 }
 
@@ -60,6 +64,7 @@ export interface Card {
   note: string
   label: string | null
   priority: Priority | null
+  dueDate: string | null
   createdAt: string | null
   createdBy: ActivitySource | null
   comments: Comment[]
@@ -67,6 +72,7 @@ export interface Card {
 
 export interface Board {
   schemaVersion?: number
+  completedColumnId: string | null
   columns: Column[]
   labels: Label[]
   cards: Card[]

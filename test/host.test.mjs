@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it } from "vitest"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { apply, parseBoardText, SCHEMA_VERSION, NOTE_LIMIT, TITLE_LIMIT, LABEL_LIMIT, COLUMN_TITLE_LIMIT } from "../index.js"
+import { Context } from "@deepseek-ai/cordis"
+import { assertSupportedJsonSchema } from "@deepseek-ai/dsh-tools"
+import * as plugin from "../index.js"
+const { apply, parseBoardText, SCHEMA_VERSION, NOTE_LIMIT, TITLE_LIMIT, LABEL_LIMIT, COLUMN_TITLE_LIMIT } = plugin
 
 const workspaces = []
 
@@ -15,6 +18,7 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
   workspaces.push(dir)
   const workspace = { id: "ws-test", path: dir, title: "Test" }
   const registered = []
+  const childDisposers = []
   const fs = {
     async resolve(path, options = {}) {
       return join(options.cwd || dir, path)
@@ -35,6 +39,12 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
     },
   }
   const ctx = {
+    inject(dependencies, callback) {
+      if (!dependencies.every((name) => ctx.get(name))) return
+      const child = Object.assign({}, ctx, Object.fromEntries(dependencies.map((name) => [name, ctx.get(name)])))
+      const dispose = callback(child)
+      if (typeof dispose === "function") childDisposers.push(dispose)
+    },
     get(name) {
       if (name === "connection") return options.connection
       if (name === "webServer") throw new Error("Browser routes must use authenticated Connection")
@@ -51,7 +61,11 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
       register(tool) { registered.push(tool) },
     },
   }
-  const dispose = apply(ctx)
+  const cleanup = apply(ctx)
+  const dispose = async () => {
+    for (const disposeChild of childDisposers) await disposeChild()
+    await cleanup()
+  }
   const exec = { agent: { session: { header: { cwd: dir } } } }
   return { dir, workspace, registered, exec, dispose }
 }
@@ -72,12 +86,13 @@ describe("host board seam", () => {
     expect(parsed.ok).toBe(true)
     expect(parsed.data.schemaVersion).toBe(SCHEMA_VERSION)
     expect(parsed.data.activities).toEqual([])
-    expect(parsed.data.cards[0]).toMatchObject({ note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] })
+    expect(parsed.data.cards[0]).toMatchObject({ note: "", label: null, priority: null, createdAt: null, createdBy: null, dueDate: null, comments: [] })
   })
 
   it("rejects malformed entities and dangling references", () => {
     const malformed = parseBoardText(JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
+      completedColumnId: null,
       columns: [null],
       labels: [],
       cards: [],
@@ -87,22 +102,24 @@ describe("host board seam", () => {
 
     const dangling = parseBoardText(JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
+      completedColumnId: null,
       columns: [{ id: "c1", title: "Todo" }],
       labels: [],
-      cards: [{ id: "k1", columnId: "missing", title: "Broken", note: "", label: null, priority: null, comments: [] }],
+      cards: [{ id: "k1", columnId: "missing", title: "Broken", note: "", label: null, priority: null, dueDate: null, comments: [] }],
       activities: [],
     }))
     expect(dangling).toMatchObject({ ok: false, kind: "invalid" })
 
     const invalidComments = parseBoardText(JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
+      completedColumnId: null,
       columns: [{ id: "c1", title: "Todo" }],
       labels: [],
       cards: [{
         id: "k1",
         columnId: "c1",
         title: "Broken comments",
-        comments: [{ id: "m1", content: "  ", source: "human", createdAt: "now" }],
+        dueDate: null, comments: [{ id: "m1", content: "  ", source: "human", createdAt: "now" }],
       }],
       activities: [],
     }))
@@ -110,26 +127,119 @@ describe("host board seam", () => {
 
     const duplicateComments = parseBoardText(JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
+      completedColumnId: null,
       columns: [{ id: "c1", title: "Todo" }],
       labels: [],
       cards: [
-        { id: "k1", columnId: "c1", title: "One", comments: [{ id: "m1", content: "A", source: "human", createdAt: "now" }] },
-        { id: "k2", columnId: "c1", title: "Two", comments: [{ id: "m1", content: "B", source: "agent", createdAt: "now" }] },
+        { id: "k1", columnId: "c1", title: "One", dueDate: null, comments: [{ id: "m1", content: "A", source: "human", createdAt: "now" }] },
+        { id: "k2", columnId: "c1", title: "Two", dueDate: null, comments: [{ id: "m1", content: "B", source: "agent", createdAt: "now" }] },
       ],
       activities: [],
     }))
     expect(duplicateComments).toMatchObject({ ok: false, kind: "invalid" })
   })
 
+  it("migrates v3 dates without guessing completion, backs up once and reloads v4", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-kanban-v3-"))
+    workspaces.push(dir)
+    const original = {
+      schemaVersion: 3,
+      columns: [{ id: "c1", title: "Done" }], labels: [{ name: "Release", color: "#94a3b8" }],
+      cards: [{ id: "k1", columnId: "c1", title: "Keep me", note: "# Markdown", comments: [{ id: "m1", content: "Preserve", source: "human", createdAt: "2026-01-01" }] }],
+      activities: [{ id: "e1", ts: "2026-01-01", type: "card_created", source: "human" }],
+    }
+    writeFileSync(join(dir, ".dsh-kanban.json"), JSON.stringify(original))
+    const first = boot(dir)
+    const loaded = await tool(first.registered, "kanban_get").execute({}, first.exec)
+    expect(loaded.board).toMatchObject({ completedColumnId: null, cards: [{ dueDate: null }] })
+    expect(JSON.parse(readFileSync(join(dir, ".dsh-kanban.json.bak-v3"), "utf8"))).toEqual(original)
+    const saved = JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))
+    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, completedColumnId: null, cards: [{ ...original.cards[0], dueDate: null }] })
+    expect(parseBoardText(JSON.stringify(saved))).toMatchObject({ ok: true, migrated: false })
+    const second = boot(dir)
+    expect(await tool(second.registered, "kanban_get").execute({}, second.exec)).toMatchObject({ ok: true, warnings: [], board: loaded.board })
+  })
+
+  it("validates, exposes, updates and clears calendar dates without losing other fields", async () => {
+    const { dir, registered, exec } = boot()
+    const add = tool(registered, "kanban_add_card")
+    const update = tool(registered, "kanban_update_card")
+    const invalidDates = ["2026-02-29", "1900-02-29", "2026-04-31", "2026-13-01", "2026-01-00", "0000-01-01", "2026-2-01", "2026-10-21T00:00:00Z", "tomorrow", 1, false]
+    for (const dueDate of invalidDates) {
+      expect(await add.execute({ title: "Invalid", dueDate }, exec)).toMatchObject({ ok: false, board: { cards: [] } })
+    }
+    expect(existsSync(join(dir, ".dsh-kanban.json"))).toBe(false)
+    const added = await add.execute({ title: "Leap release", note: "Keep this", dueDate: "2028-02-29" }, exec)
+    const id = added.board.cards[0].id
+    expect(added.board.cards[0].dueDate).toBe("2028-02-29")
+    expect(tool(registered, "kanban_get").output.render({}, added)[0].text).toContain("due 2028-02-29")
+    const getCard = tool(registered, "kanban_get_card")
+    const detail = await getCard.execute({ id }, exec)
+    expect(detail).toMatchObject({ completedColumnId: added.board.completedColumnId, card: { dueDate: "2028-02-29" } })
+    expect(getCard.output.render({}, detail)[0].text).toContain("Due date: 2028-02-29")
+    for (const dueDate of invalidDates) {
+      expect(await update.execute({ id, title: "Must not change", dueDate }, exec)).toMatchObject({ ok: false, board: { cards: [{ title: "Leap release", dueDate: "2028-02-29" }] } })
+    }
+    expect((await update.execute({ id, priority: "high" }, exec)).board.cards[0].dueDate).toBe("2028-02-29")
+    expect((await update.execute({ id, dueDate: "" }, exec)).board.cards[0].dueDate).toBeNull()
+    expect((await update.execute({ id, dueDate: "2000-02-29" }, exec)).board.cards[0].dueDate).toBe("2000-02-29")
+    expect((await update.execute({ id, dueDate: null }, exec)).board.cards[0].dueDate).toBeNull()
+    expect((await getCard.execute({ id }, exec)).card.note).toBe("Keep this")
+    const saved = JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))
+    expect(saved.activities.filter(({ type }) => type === "card_due_date_changed")).toEqual([
+      expect.objectContaining({ from: "2028-02-29", to: null, source: "agent", field: "dueDate" }),
+      expect.objectContaining({ from: null, to: "2000-02-29" }),
+      expect.objectContaining({ from: "2000-02-29", to: null }),
+    ])
+    expect(parseBoardText(JSON.stringify({ ...saved, cards: [{ ...saved.cards[0], dueDate: "2026-02-29" }] }))).toMatchObject({ ok: false, kind: "invalid" })
+    expect(parseBoardText(JSON.stringify({ ...saved, completedColumnId: "missing" }))).toMatchObject({ ok: false, kind: "invalid" })
+  })
+
+  it("binds completion to a stable column id and clears it when that column is deleted", async () => {
+    const { dir, registered, exec } = boot()
+    const added = await tool(registered, "kanban_add_card").execute({ title: "Deadline", dueDate: "2026-01-01" }, exec)
+    const done = added.board.columns.find(({ title }) => title === "Done")
+    expect(added.board.completedColumnId).toBe(done.id)
+    const set = tool(registered, "kanban_set_completed_column")
+    for (const columnId of ["missing", "", 42, undefined]) {
+      expect(await set.execute({ columnId }, exec)).toMatchObject({ ok: false, board: { completedColumnId: done.id } })
+    }
+    expect((await tool(registered, "kanban_rename_column").execute({ id: done.id, title: "Shipped" }, exec)).board.completedColumnId).toBe(done.id)
+    expect((await tool(registered, "kanban_move_column").execute({ id: done.id, toIndex: 0 }, exec)).board.completedColumnId).toBe(done.id)
+    const moved = await tool(registered, "kanban_move_card").execute({ id: added.board.cards[0].id, columnId: done.id }, exec)
+    expect(tool(registered, "kanban_get").output.render({}, moved)[0].text).toContain("Deadline (due 2026-01-01) [completed]")
+    expect((await set.execute({ columnId: null }, exec)).board.completedColumnId).toBeNull()
+    expect((await set.execute({ columnId: done.id }, exec)).board.completedColumnId).toBe(done.id)
+    const reloaded = boot(dir)
+    expect((await tool(reloaded.registered, "kanban_get").execute({}, reloaded.exec)).board.completedColumnId).toBe(done.id)
+    const deleted = await tool(registered, "kanban_delete_column").execute({ id: done.id }, exec)
+    expect(deleted.board.completedColumnId).toBeNull()
+    expect(deleted.board.cards[0]).toMatchObject({ columnId: deleted.board.columns[0].id, dueDate: "2026-01-01" })
+    const saved = JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))
+    expect(saved.activities.filter(({ type }) => type === "board_completed_column_changed").at(-1)).toMatchObject({ from: done.id, to: null, meta: { fromColumn: "Shipped", toColumn: null } })
+  })
+
+  it("rolls back due dates and completion settings if persistence fails", async () => {
+    const options = {}
+    const { registered, exec } = boot(undefined, options)
+    const added = await tool(registered, "kanban_add_card").execute({ title: "Keep", dueDate: "2026-10-21" }, exec)
+    options.failWrites = true
+    expect(await tool(registered, "kanban_update_card").execute({ id: added.board.cards[0].id, dueDate: null }, exec)).toMatchObject({ ok: false, board: { cards: [{ dueDate: "2026-10-21" }] } })
+    expect(await tool(registered, "kanban_set_completed_column").execute({ columnId: null }, exec)).toMatchObject({ ok: false, board: { completedColumnId: added.board.completedColumnId } })
+  })
+
   it("registers every model tool with a usable schema", () => {
     const { registered } = boot()
     const names = registered.map(({ name }) => name)
 
-    expect(names).toHaveLength(15)
-    expect(new Set(names).size).toBe(15)
+    expect(names).toHaveLength(16)
+    expect(new Set(names).size).toBe(16)
     for (const registeredTool of registered) {
       expect(registeredTool.name).toMatch(/^kanban_/)
       expect(registeredTool.parameters).toMatchObject({ type: "object" })
+      // DSH supports oneOf for nullable values, but rejects JSON Schema type arrays.
+      expect(() => assertSupportedJsonSchema(registeredTool.parameters)).not.toThrow()
+      expect(() => assertSupportedJsonSchema(registeredTool.output.schema)).not.toThrow()
       expect(typeof registeredTool.execute).toBe("function")
       expect(registeredTool.output.schema).toMatchObject({ type: "object", required: ["ok", "message"] })
     }
@@ -332,11 +442,19 @@ describe("authenticated Connection route", () => {
     } } } })
     expect(route).toMatchObject({ path: "/api/kanban", methods: ["POST"], requestBody: "streaming" })
     const response = await route.fetch(request(JSON.stringify({
-      method: "addCard", args: { workspaceId: host.workspace.id, title: "Browser card" },
+      method: "addCard", args: { workspaceId: host.workspace.id, title: "Browser card", dueDate: "2026-10-21" },
     }), { origin: "http://localhost" }))
     expect(response.status).toBe(200)
-    expect((await response.json()).board.cards[0].title).toBe("Browser card")
-    expect(JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json"), "utf8")).cards[0].createdBy).toBe("human")
+    const created = await response.json()
+    expect(created.board.cards[0]).toMatchObject({ title: "Browser card", dueDate: "2026-10-21", createdBy: "human" })
+    const completed = await route.fetch(request(JSON.stringify({
+      method: "setCompletedColumn", args: { workspaceId: host.workspace.id, columnId: null },
+    })))
+    expect(completed.status).toBe(200)
+    expect((await completed.json()).board.completedColumnId).toBeNull()
+    const saved = JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json"), "utf8"))
+    expect(saved.cards[0]).toMatchObject({ dueDate: "2026-10-21", createdBy: "human" })
+    expect(saved.activities.at(-1)).toMatchObject({ type: "board_completed_column_changed", source: "human", to: null })
     await host.dispose()
     expect(removed).toBe(true)
   })
@@ -356,5 +474,66 @@ describe("authenticated Connection route", () => {
     for (const [input, status] of cases) expect((await route.fetch(input)).status).toBe(status)
     expect(existsSync(join(host.dir, ".dsh-kanban.json"))).toBe(false)
     await host.dispose()
+  })
+})
+
+
+describe("Cordis service lifecycle", () => {
+  it("mounts a late Connection without a timer, remounts replacements, and disposes routes", async () => {
+    const root = new Context()
+    const registered = []
+    const routes = new Map()
+    const errors = []
+    root.on("internal/error", (error) => errors.push(error))
+    try {
+      await root.plugin({ apply(ctx) { ctx.provide("tools", { register(tool) { registered.push(tool) } }) } })
+      const fiber = root.plugin(plugin)
+      await fiber
+      expect(root.get("timer")).toBeUndefined()
+      expect(registered).toHaveLength(16)
+      expect(routes.size).toBe(0)
+      const provideConnection = () => root.plugin({ apply(ctx) {
+        ctx.provide("connection", { fetch: { register(route) {
+          if (routes.has(route.path)) throw new Error("Duplicate route")
+          routes.set(route.path, route)
+          return () => routes.delete(route.path)
+        } } })
+      } })
+      let provider = provideConnection()
+      await provider
+      expect(routes.has("/api/kanban")).toBe(true)
+      expect((await routes.get("/api/kanban").fetch(new Request("http://localhost/api/kanban", {
+        method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+      }))).status).toBe(400)
+      await provider.dispose()
+      expect(routes.size).toBe(0)
+      provider = provideConnection()
+      await provider
+      expect(routes.has("/api/kanban")).toBe(true)
+      await fiber.dispose()
+      expect(routes.size).toBe(0)
+      expect(errors).toEqual([])
+    } finally {
+      await root.fiber.dispose()
+    }
+  })
+
+  it("runs startup checks when fs and workspaceRegistry become available later", async () => {
+    const root = new Context()
+    const reads = []
+    try {
+      await root.plugin({ apply(ctx) { ctx.provide("tools", { register() {} }) } })
+      await root.plugin(plugin)
+      await root.plugin({ apply(ctx) {
+        ctx.provide("fs", {
+          async resolve(path) { return path },
+          async readText(path) { reads.push(path); throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }) },
+        })
+        ctx.provide("workspaceRegistry", { list: () => [{ id: "startup-only", path: "/unused" }] })
+      } })
+      expect(reads).toEqual([".dsh-kanban.json"])
+    } finally {
+      await root.fiber.dispose()
+    }
   })
 })

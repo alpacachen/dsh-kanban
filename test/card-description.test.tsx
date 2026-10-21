@@ -8,7 +8,7 @@ import type { Card } from "../src/client/lib/types"
 const note = "# Release\n\n- [ ] Verify **both themes**\n\n```ts\nconst ok = true\n```\n"
 const card: Card = {
   id: "k1", columnId: "todo", title: "Release", note, label: null,
-  priority: null, comments: [], createdAt: null, createdBy: null,
+  priority: null, dueDate: null, comments: [], createdAt: null, createdBy: null,
 }
 const props = () => ({
   open: true, card, labels: [], comments: [], activities: [],

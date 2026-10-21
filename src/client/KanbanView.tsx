@@ -5,7 +5,7 @@ import {
   useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
-import { Check, Filter, List, RefreshCw, Settings2, Tag, X } from "lucide-react"
+import { CalendarDays, Check, Filter, List, MessageSquare, RefreshCw, Settings2, Tag, X } from "lucide-react"
 import { CardDialog, type CardFormValues, type ChatTarget } from "./components/CardDialog"
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { matchesDueDate, useLocalDate, type DueDateFilter } from "@/lib/due-date"
 import { callKanban } from "@/lib/api"
 import { cardToChatText, queueDraft } from "@/lib/chat-bridge"
 import { PRIORITY_META, PRIORITY_OPTIONS } from "@/lib/constants"
@@ -86,6 +88,8 @@ export function KanbanView(props: KanbanViewProps) {
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const [labelDialogOpen, setLabelDialogOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const today = useLocalDate()
+  const [dueDateFilter, setDueDateFilter] = useState<DueDateFilter>("")
   const [priorityFilter, setPriorityFilter] = useState<Priority | "">("")
   // null means all labels; an empty string means unlabeled cards.
   const [labelFilter, setLabelFilter] = useState<string | null>(null)
@@ -113,8 +117,9 @@ export function KanbanView(props: KanbanViewProps) {
       // Older host plugins may omit comments/activities; default to empty arrays for rendering.
       setBoard({
         ...res.board,
+        completedColumnId: res.board.completedColumnId ?? null,
         cards: Array.isArray(res.board.cards)
-          ? res.board.cards.map((card: CardType) => ({ ...card, comments: Array.isArray(card.comments) ? card.comments : [] }))
+          ? res.board.cards.map((card: CardType) => ({ ...card, dueDate: card.dueDate ?? null, comments: Array.isArray(card.comments) ? card.comments : [] }))
           : [],
         activities: Array.isArray(res.board.activities) ? res.board.activities : [],
       })
@@ -156,6 +161,7 @@ export function KanbanView(props: KanbanViewProps) {
     setBoard(null)
     setLabelFilter(null)
     setPriorityFilter("")
+    setDueDateFilter("")
     setDialog(null)
     setActiveCard(null)
     setError("")
@@ -357,6 +363,7 @@ export function KanbanView(props: KanbanViewProps) {
       if (values.note !== saved.note) payload.note = values.note
       if (values.label !== (saved.label ?? "")) payload.label = values.label
       if (values.priority !== (saved.priority ?? "")) payload.priority = values.priority
+      if (values.dueDate !== (saved.dueDate ?? "")) payload.dueDate = values.dueDate || null
       return act("updateCard", payload)
     }
     return act("addCard", {
@@ -365,13 +372,18 @@ export function KanbanView(props: KanbanViewProps) {
       note: values.note,
       label: values.label || undefined,
       priority: values.priority || undefined,
+      dueDate: values.dueDate || null,
     })
   }
 
   // Fill the conversation draft without sending it.
   const handleChatWithAgent = useCallback(
     async (values: CardFormValues, target: ChatTarget): Promise<boolean> => {
-      const text = cardToChatText(values)
+      const current = boardRef.current
+      const card = current?.cards.find((item) => item.id === values.id)
+      const text = cardToChatText({ ...values,
+        completed: card && current?.completedColumnId ? card.columnId === current.completedColumnId : undefined,
+      })
       if (!text) return false
       setError("")
       try {
@@ -412,8 +424,15 @@ export function KanbanView(props: KanbanViewProps) {
     >
       {error && !dialog && !columnDialogOpen && !labelDialogOpen && <p className="kanban-error" role="alert">{error}</p>}
 
-      {(priorityFilter || labelFilter !== null) && (
+      {(priorityFilter || labelFilter !== null || dueDateFilter) && (
         <div className="kanban-filter-summary" aria-label={t("clearFilter")}>
+          {dueDateFilter && (
+            <Button variant="ghost" size="sm" className="kanban-filter-chip"
+              aria-label={`${t("clearFilter")}: ${t(dueDateFilter === "today" ? "dueToday" : "overdue")}`}
+              onClick={() => setDueDateFilter("")}>
+              {t(dueDateFilter === "today" ? "dueToday" : "overdue")}<X className="kanban-tiny-icon" aria-hidden="true" />
+            </Button>
+          )}
           {priorityFilter && (
             <Button variant="ghost" size="sm" className="kanban-filter-chip"
               aria-label={`${t("clearFilter")}: ${PRIORITY_META[priorityFilter].label}`}
@@ -557,6 +576,35 @@ export function KanbanView(props: KanbanViewProps) {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className={`kanban-toolbar-button${dueDateFilter ? " is-active" : ""}`}
+                  title={t("dueDateFilter")} aria-label={t("dueDateFilter")} aria-pressed={Boolean(dueDateFilter)}>
+                  <CalendarDays className="kanban-icon" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {(["", "today", "overdue"] as const).map((value) => (
+                  <DropdownMenuItem key={value} role="menuitemradio" aria-checked={dueDateFilter === value} onSelect={() => setDueDateFilter(value)}>
+                    <span className="kanban-filter-check">{dueDateFilter === value && <Check className="kanban-icon" />}</span>
+                    {t(value === "today" ? "dueToday" : value === "overdue" ? "overdue" : "all")}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="kanban-toolbar-divider" role="separator" />
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost" size="icon" className="kanban-toolbar-button">
+                    <a href="https://github.com/alpacachen/dsh-kanban/issues/new/choose" target="_blank" rel="noopener noreferrer" aria-label={t("feedback")}>
+                      <MessageSquare className="kanban-icon" />
+                    </a>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{t("feedback")}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           {/* Horizontally scrollable board columns. */}
@@ -565,7 +613,9 @@ export function KanbanView(props: KanbanViewProps) {
               const cards = board.cards.filter(
                 (c) => c.columnId === col.id
                   && (!priorityFilter || c.priority === priorityFilter)
-                  && (labelFilter === null || (c.label ?? "") === labelFilter),
+                  && (labelFilter === null || (c.label ?? "") === labelFilter)
+                  // Keep the draggable mounted until drop, even when it enters the completed column.
+                  && (c.id === activeCard?.id || matchesDueDate(c, dueDateFilter, board.completedColumnId, today)),
               )
               return (
                 <Column
@@ -573,7 +623,9 @@ export function KanbanView(props: KanbanViewProps) {
                   column={col}
                   cards={cards}
                   totalCount={board.cards.filter((card) => card.columnId === col.id).length}
-                  filtered={Boolean(priorityFilter) || labelFilter !== null}
+                  filtered={Boolean(priorityFilter || dueDateFilter) || labelFilter !== null}
+                  completed={col.id === board.completedColumnId}
+                  today={today}
                   labels={board.labels}
                   onAddCard={(c) => { setError(""); setDialog({ card: null, columnId: c.id }) }}
                   onOpenCard={(c) => { setError(""); setDialog({ card: c, columnId: c.columnId }) }}
@@ -586,7 +638,7 @@ export function KanbanView(props: KanbanViewProps) {
         <DragOverlay>
           {activeCard ? (
             <div className="kanban-drag-preview">
-              <KanbanCard card={activeCard} labels={board.labels} />
+              <KanbanCard card={activeCard} labels={board.labels} completed={activeCard.columnId === board.completedColumnId} today={today} />
             </div>
           ) : null}
         </DragOverlay>
@@ -612,6 +664,8 @@ export function KanbanView(props: KanbanViewProps) {
         error={error}
         open={columnDialogOpen}
         columns={board.columns}
+        completedColumnId={board.completedColumnId}
+        onSetCompletedColumn={(columnId) => act("setCompletedColumn", { columnId })}
         onOpenChange={setColumnDialogOpen}
         onReorder={(activeId, overId) => {
           const toIndex = board.columns.findIndex((c) => c.id === overId)

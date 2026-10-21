@@ -9,7 +9,7 @@ import type { Card } from "../src/client/lib/types"
 
 const card: Card = {
   id: "card-1", columnId: "todo", title: "Review this", note: "Existing note",
-  label: null, priority: null, comments: [], createdAt: null, createdBy: null,
+  label: null, priority: null, dueDate: null, comments: [], createdAt: null, createdBy: null,
 }
 const cardProps = () => ({
   open: true, card, labels: [], comments: [], activities: [],
@@ -130,7 +130,7 @@ describe.each(["columns", "labels"])("%s editor", (kind) => {
   const mount = (onAdd: ReturnType<typeof vi.fn>, onDelete = vi.fn().mockResolvedValue(true)) => {
     const onOpenChange = vi.fn()
     if (kind === "columns") {
-      render(<ColumnDialog open columns={[{ id: "todo", title: "Todo" }, { id: "done", title: "Done" }]} onOpenChange={onOpenChange} onReorder={vi.fn()} onRename={vi.fn()} onDelete={onDelete} onAdd={onAdd} />)
+      render(<ColumnDialog open completedColumnId={null} onSetCompletedColumn={vi.fn()} columns={[{ id: "todo", title: "Todo" }, { id: "done", title: "Done" }]} onOpenChange={onOpenChange} onReorder={vi.fn()} onRename={vi.fn()} onDelete={onDelete} onAdd={onAdd} />)
     } else {
       render(<LabelDialog open labels={[{ name: "Bug", color: "#ff0000" }]} onOpenChange={onOpenChange} onUpdate={vi.fn()} onDelete={onDelete} onAdd={onAdd} />)
     }
