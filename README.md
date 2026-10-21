@@ -54,7 +54,7 @@ You can take over at any time—drag a card, refine a note, reorder a list—and
 
 | 💬 Plan naturally | 🧭 Stay in control | ⚡ Start instantly |
 | --- | --- | --- |
-| Manage the board with 15 built-in `kanban_*` tools. | Edit, comment, drag, prioritize, label, and filter from the UI. | Install the prebuilt plugin—no frontend setup required. |
+| Manage the board with 16 built-in `kanban_*` tools. | Edit, comment, drag, prioritize, label, and filter from the UI. | Install the prebuilt plugin—no frontend setup required. |
 | **🗂️ Keep work separate** | **🌓 Feel at home** | **🤝 Share one source of truth** |
 | Every DSH workspace gets its own board. | Follows your DSH language, theme, and dark mode. | You and the agent always see the same tasks and status. |
 
@@ -96,18 +96,20 @@ The cards appear directly on your board. Continue in conversation, or switch to 
 - Read task details in a resizable side drawer that remembers its width and fills narrow screens
 - Write descriptions as Markdown source with **Edit**; **Done editing** previews the result and **Save** applies changes
 - Add labels and P0 / P1 / P2 priorities
+- Set an optional due date; spot tasks due today or overdue, and choose a completion column in the column editor so finished tasks stop showing alerts
 - Exchange persistent card comments with the agent and see comment counts at a glance
 - Open a card's activity timeline to see when it changed, what changed, and whether you or the agent made the change
-- Track card creation, comments, moves, title and note edits, label changes, and priority changes
+- Track card creation, comments, moves, title and note edits, label changes, priority changes, and due date changes
 - Send any card to the agent in your current conversation or a new one
 - Create, rename, reorder, and remove workflow lists
 - Create color-coded labels for fast visual scanning
-- Filter the entire board by priority and label from the left toolbar; combine both filters or show only unlabeled cards
-- Clear either filter with **All**, or manually refresh the board whenever needed
+- Filter the entire board by priority, label, and due date from the toolbar; combine filters or show only unlabeled cards
+- Clear any filter with **All**, or manually refresh the board whenever needed
+- Use **Feedback · GitHub** at the bottom of the toolbar to report an issue or suggest an improvement
 
 ### Continue any card with your agent
 
-Open a card and choose **Chat with agent**. dsh-kanban carries its ID, title, label, and notes into either the current conversation or a fresh one, so the agent has the context it needs immediately. The content is inserted as an editable draft—it is never sent until you choose to send it.
+Open a card and choose **Chat with agent**. dsh-kanban carries its ID, title, label, due date, and notes into either the current conversation or a fresh one, so the agent has the context it needs immediately. The content is inserted as an editable draft—it is never sent until you choose to send it.
 
 ### In conversation
 
@@ -115,12 +117,18 @@ The plugin automatically gives the agent these tools in every workspace:
 
 | Area | Tools |
 | --- | --- |
-| **Board** | `kanban_get` |
+| **Board** | `kanban_get`, `kanban_set_completed_column` |
 | **Cards** | `kanban_get_card`, `kanban_add_comment`, `kanban_add_card`, `kanban_update_card`, `kanban_delete_card`, `kanban_move_card` |
 | **Lists** | `kanban_add_column`, `kanban_rename_column`, `kanban_delete_column`, `kanban_move_column` |
 | **Labels** | `kanban_get_label`, `kanban_add_label`, `kanban_update_label`, `kanban_delete_label` |
 
 For `kanban_add_card` and `kanban_update_card`, the task description uses the existing `note` field: send raw Markdown with line breaks, not HTML. Headings, lists, tables and fenced code blocks are rendered in task details. Keep the source within 2,000 characters, including Markdown syntax and newlines; longer input is truncated with a warning. Before editing a description, read `kanban_get_card` for its complete Markdown source (`kanban_get` only returns a summary). Updating `note` replaces the whole description; omit it to preserve the current text, or pass an empty string to clear it. Comments remain plain text.
+
+For due dates, `kanban_add_card` and `kanban_update_card` accept `dueDate` as a real calendar date in `YYYY-MM-DD` format. Omit it to keep the current date (new cards default to none); use `null` or an empty string to clear it. Dates have no time or timezone: a task due today becomes overdue the next local calendar day. Resolve phrases such as “this Friday” against the user's local date and confirm the concrete date instead of sending relative text or a UTC timestamp. Both `kanban_get` and `kanban_get_card` return the date and the board's `completedColumnId`.
+
+Use `kanban_set_completed_column` with an existing `columnId` to designate the finished stage, or `null` to clear it. New boards use their default Done column; existing boards need an explicit choice. Completion follows the column ID through renames and reordering, and deleting that column clears the setting. Cards in the completion column keep their dates but are excluded from **Due today** and **Overdue** filters; moving them out resumes date checks. There are no automatic reminders or date-based reordering.
+
+> Set the payment integration task's due date to this Friday, then show me unfinished tasks that are due today or overdue so I can decide what to tackle first.
 
 ## License
 

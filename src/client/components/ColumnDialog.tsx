@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter,
   useSensor, useSensors, type DragEndEvent,
@@ -13,6 +13,8 @@ import {
   Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useT } from "@/lib/i18n"
 import type { Column } from "@/lib/types"
 
@@ -20,6 +22,8 @@ interface ColumnDialogProps {
   open: boolean
   error?: string | null
   columns: Column[]
+  completedColumnId: string | null
+  onSetCompletedColumn: (id: string | null) => boolean | void | Promise<boolean | void>
   onOpenChange: (open: boolean) => void
   onReorder: (activeId: string, overId: string) => boolean | void | Promise<boolean | void>
   onRename: (id: string, title: string) => boolean | void | Promise<boolean | void>
@@ -36,13 +40,14 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
   canDelete: boolean
   disabled: boolean
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: column.id, disabled })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: column.id, disabled })
   const t = useT()
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="kanban-sortable-row"
+      className="kanban-editor-row"
+      data-dragging={isDragging || undefined}
     >
       <button
         {...attributes}
@@ -54,6 +59,7 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
         <GripVertical className="kanban-icon" />
       </button>
       <Input
+        className="kanban-editor-name"
         aria-label={`${t("columnName")}: ${column.title}`}
         value={value}
         disabled={disabled}
@@ -67,7 +73,7 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
       <Button
         variant="ghost"
         size="icon"
-        className="kanban-icon-button kanban-danger-button"
+        className="kanban-icon-button kanban-editor-delete"
         aria-label={`${t("delete")}: ${column.title}`}
         disabled={disabled || !canDelete}
         onClick={onDelete}
@@ -78,8 +84,10 @@ function SortableRow({ column, value, onValueChange, onCommit, onDelete, canDele
   )
 }
 
-export function ColumnDialog({ open, error, columns, onOpenChange, onReorder, onRename, onDelete, onAdd }: ColumnDialogProps) {
+export function ColumnDialog({ open, error, columns, completedColumnId, onSetCompletedColumn, onOpenChange, onReorder, onRename, onDelete, onAdd }: ColumnDialogProps) {
   const t = useT()
+  const completedId = useId()
+  const newTitleId = useId()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [newTitle, setNewTitle] = useState("")
   const [pending, setPending] = useState(false)
@@ -146,31 +154,48 @@ export function ColumnDialog({ open, error, columns, onOpenChange, onReorder, on
       if (!next && deleting) { setDeleting(null); return }
       onOpenChange(next)
     }}>
-      <DialogContent className="kanban-dialog-medium">
+      <DialogContent className="kanban-dialog-medium kanban-editor-dialog">
         <DialogHeader>
           <DialogTitle>{t("columnEdit")}</DialogTitle>
           <DialogDescription>{t("columnEditDesc")}</DialogDescription>
         </DialogHeader>
-        <DialogBody>
+        <DialogBody className="kanban-editor-body">
           {(error || failure) && <p className="kanban-dialog-error" role="alert">{error || failure}</p>}
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={columns.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-              <div className="kanban-sortable-list">
-                {columns.map((col) => (
-                  <SortableRow
-                    key={col.id}
-                    column={col}
-                    value={drafts[col.id] ?? col.title}
-                    onValueChange={(v) => setDrafts((d) => ({ ...d, [col.id]: v }))}
-                    onCommit={() => commit(col.id)}
-                    onDelete={() => setDeleting(col)}
-                    disabled={pending || Boolean(deleting)}
-                    canDelete={columns.length > 1}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+          <section className="kanban-editor-section" aria-label={t("boardLists")}>
+            <h3 className="kanban-editor-caption">{t("boardLists")} <span>{columns.length}</span></h3>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={columns.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                <div className="kanban-editor-list">
+                  {columns.map((col) => (
+                    <SortableRow
+                      key={col.id}
+                      column={col}
+                      value={drafts[col.id] ?? col.title}
+                      onValueChange={(v) => setDrafts((d) => ({ ...d, [col.id]: v }))}
+                      onCommit={() => commit(col.id)}
+                      onDelete={() => setDeleting(col)}
+                      disabled={pending || Boolean(deleting)}
+                      canDelete={columns.length > 1}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </section>
+          <div className="kanban-editor-setting">
+            <div className="kanban-editor-setting-copy">
+              <Label htmlFor={completedId}>{t("completedColumn")}</Label>
+              <p id={`${completedId}-hint`} className="kanban-muted-small">{t("completedColumnHint")}</p>
+            </div>
+            <Select value={completedColumnId || "__none__"} disabled={pending || Boolean(deleting)}
+              onValueChange={(id) => void run(() => onSetCompletedColumn(id === "__none__" ? null : id))}>
+              <SelectTrigger id={completedId} aria-describedby={`${completedId}-hint`}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">{t("noCompletedColumn")}</SelectItem>
+                {columns.map((column) => <SelectItem key={column.id} value={column.id}>{column.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </DialogBody>
         <DialogFooter>
           {deleting ? <div className="kanban-dialog-confirm">
@@ -181,22 +206,26 @@ export function ColumnDialog({ open, error, columns, onOpenChange, onReorder, on
                 if (await run(() => onDelete(deleting.id))) setDeleting(null)
               }}>{t("confirmDelete")}</Button>
             </div>
-          </div> : <div className="kanban-sortable-row">
-            <Input
-              value={newTitle}
-              disabled={pending}
-              placeholder={t("newColumnPlaceholder")}
-              aria-label={t("newColumnPlaceholder")}
-              maxLength={40}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); void add() }
-              }}
-            />
-            <Button size="sm" disabled={pending || !newTitle.trim()} onClick={() => void add()}>
-              <Plus className="kanban-icon" />
-              {t("add")}
-            </Button>
+          </div> : <div className="kanban-editor-add">
+            <Label htmlFor={newTitleId}>{t("newColumnPlaceholder")}</Label>
+            <div className="kanban-editor-add-row">
+              <span className="kanban-editor-add-icon" aria-hidden="true"><Plus className="kanban-icon" /></span>
+              <Input
+                id={newTitleId}
+                value={newTitle}
+                disabled={pending}
+                placeholder={t("newColumnPlaceholder")}
+                aria-label={t("newColumnPlaceholder")}
+                maxLength={40}
+                onChange={(e) => setNewTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void add() }
+                }}
+              />
+              <Button size="sm" className="kanban-editor-add-button" disabled={pending || !newTitle.trim()} onClick={() => void add()}>
+                {t("add")}
+              </Button>
+            </div>
           </div>}
         </DialogFooter>
       </DialogContent>

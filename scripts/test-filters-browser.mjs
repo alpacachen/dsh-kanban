@@ -15,6 +15,7 @@ const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_P
 const errors = []
 const requests = []
 const board = {
+  completedColumnId: 'c2',
   columns: [{ id: 'c1', title: 'Todo' }, { id: 'c2', title: 'Done' }],
   labels: [{ name: 'bug', color: '#f87171' }, { name: 'New Feature', color: '#38bdf8' }],
   activities: [],
@@ -23,7 +24,7 @@ const board = {
     { id: 'b', columnId: 'c2', title: 'Minor bug', label: 'bug', priority: 'low' },
     { id: 'c', columnId: 'c1', title: 'Feature card', label: 'New Feature', priority: 'high' },
     { id: 'd', columnId: 'c2', title: 'Unlabeled card', label: null, priority: null },
-  ].map(card => ({ ...card, note: '', comments: [] })),
+  ].map(card => ({ ...card, note: '', dueDate: null, comments: [] })),
 }
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 720 }, reducedMotion: 'reduce' })

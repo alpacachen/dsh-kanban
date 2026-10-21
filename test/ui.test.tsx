@@ -14,13 +14,13 @@ const labels = [{ name: "bug", color: "#f87171" }]
 const activities = []
 
 function cardValues(overrides: Partial<CardFormValues> = {}): CardFormValues {
-  return { id: "", title: "", note: "", label: "", priority: "", ...overrides }
+  return { id: "", title: "", note: "", label: "", priority: "", dueDate: "", ...overrides }
 }
 
 describe("DSH 0.1.5 workspace navigation", () => {
   it.each([false, true])("hands off a new-session draft, navigation failure: %s", async (fails) => {
     const user = userEvent.setup()
-    const card = { id: "k1", columnId: "c1", title: "Upgrade DSH", note: "Check the new API", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    const card = { id: "k1", columnId: "c1", title: "Upgrade DSH", note: "Check the new API", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] }
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [card], labels: [], activities: [] } }),
@@ -106,11 +106,11 @@ describe("board label filter", () => {
     labels: [...labels, { name: "feature", color: "#38bdf8" }, { name: "unused", color: "#888888" }],
     activities: [],
     cards: [
-      { id: "a", columnId: "c1", title: "Urgent bug", label: "bug", priority: "high" },
-      { id: "b", columnId: "c2", title: "Minor bug", label: "bug", priority: "low" },
-      { id: "c", columnId: "c1", title: "Feature card", label: "feature", priority: "high" },
-      { id: "d", columnId: "c1", title: "Unlabeled card", label: null, priority: null },
-      { id: "e", columnId: "c2", title: "Legacy unlabeled card", priority: null },
+      { id: "a", columnId: "c1", title: "Urgent bug", label: "bug", priority: "high", dueDate: null },
+      { id: "b", columnId: "c2", title: "Minor bug", label: "bug", priority: "low", dueDate: null },
+      { id: "c", columnId: "c1", title: "Feature card", label: "feature", priority: "high", dueDate: null },
+      { id: "d", columnId: "c1", title: "Unlabeled card", label: null, priority: null, dueDate: null },
+      { id: "e", columnId: "c2", title: "Legacy unlabeled card", priority: null, dueDate: null },
     ].map((card) => ({ ...card, note: "", comments: [] })),
   })
   const props = { sessionId: "label-filter-fixture" } as React.ComponentProps<typeof KanbanView>
@@ -200,10 +200,10 @@ describe("board label filter", () => {
 
 describe("card drag placement", () => {
   const cards = [
-    { id: "a", columnId: "c1", title: "A", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
-    { id: "b", columnId: "c1", title: "B", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
-    { id: "c", columnId: "c2", title: "C", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
-    { id: "d", columnId: "c2", title: "D", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] },
+    { id: "a", columnId: "c1", title: "A", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] },
+    { id: "b", columnId: "c1", title: "B", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] },
+    { id: "c", columnId: "c2", title: "C", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] },
+    { id: "d", columnId: "c2", title: "D", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] },
   ]
 
   it("places a cross-column card before or after the hovered card", () => {
@@ -275,7 +275,7 @@ describe("CardDialog user flows", () => {
 
   it("renders and submits comments without closing the dialog", async () => {
     const user = userEvent.setup()
-    const card = { id: "k1", columnId: "c1", title: "Discuss me", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    const card = { id: "k1", columnId: "c1", title: "Discuss me", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] }
     const onAddComment = vi.fn().mockResolvedValue(true)
     const onOpenChange = vi.fn()
     render(
@@ -306,7 +306,7 @@ describe("CardDialog user flows", () => {
 
   it("keeps a failed comment draft", async () => {
     const user = userEvent.setup()
-    const card = { id: "k1", columnId: "c1", title: "Discuss me", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    const card = { id: "k1", columnId: "c1", title: "Discuss me", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] }
     render(
       <CardDialog
         open
@@ -329,7 +329,7 @@ describe("CardDialog user flows", () => {
 
   it("deletes an existing card and closes the dialog", async () => {
     const user = userEvent.setup()
-    const card = { id: "k1", columnId: "c1", title: "Remove me", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    const card = { id: "k1", columnId: "c1", title: "Remove me", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] }
     const onDelete = vi.fn()
     const onOpenChange = vi.fn()
     render(
@@ -369,6 +369,8 @@ describe("ColumnDialog user flows", () => {
     const onDelete = vi.fn()
     render(
       <ColumnDialog
+        completedColumnId={null}
+        onSetCompletedColumn={vi.fn()}
         open
         columns={columns}
         onOpenChange={vi.fn()}
@@ -399,7 +401,7 @@ describe("ColumnDialog user flows", () => {
 describe("saving while a comment draft keeps the editor open", () => {
   it("compares a second save against the latest saved card without resetting the comment", async () => {
     const user = userEvent.setup()
-    let savedCard = { id: "k1", columnId: "c1", title: "Original title", note: "", label: null, priority: null, createdAt: null, createdBy: null, comments: [] }
+    let savedCard = { id: "k1", columnId: "c1", title: "Original title", note: "", label: null, priority: null, dueDate: null, createdAt: null, createdBy: null, comments: [] }
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
       const { method, args } = JSON.parse(String(init?.body))
       if (method === "updateCard") savedCard = { ...savedCard, ...args }

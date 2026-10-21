@@ -37,6 +37,10 @@ export function describeActivity(activity: Activity, t: (key: string) => string)
       if (from != null && to == null) return fill(t("actPriorityCleared"), { from: fromText })
       return fill(t("actPriority"), { from: fromText, to: toText })
     }
+    case "card_due_date_changed":
+      return fill(t("actDueDate"), { from: from ?? none, to: to ?? none })
+    case "board_completed_column_changed":
+      return fill(t("actCompletedColumn"), { from: meta.fromColumn ?? from ?? none, to: meta.toColumn ?? to ?? none })
     case "card_title_changed":
       return fill(t("actTitle"), { from: from ?? none, to: to ?? none })
     case "card_note_changed":

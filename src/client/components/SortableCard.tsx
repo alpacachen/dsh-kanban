@@ -1,26 +1,33 @@
 import { useId } from "react"
-import { MessageSquare } from "lucide-react"
+import { CalendarDays, MessageSquare } from "lucide-react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { PRIORITY_META, labelColor } from "@/lib/constants"
+import { dateLabel, localDate, overdueDays } from "@/lib/due-date"
 import { useT } from "@/lib/i18n"
 import type { Card as CardType, Label } from "@/lib/types"
 
 interface KanbanCardProps {
   card: CardType
   labels: Label[]
+  completed?: boolean
+  today?: string
 }
 
 interface SortableCardProps extends KanbanCardProps {
   onOpen: (card: CardType) => void
 }
 
-export function KanbanCard({ card, labels }: KanbanCardProps) {
+export function KanbanCard({ card, labels, completed = false, today = localDate() }: KanbanCardProps) {
   const t = useT()
   const priority = card.priority ? PRIORITY_META[card.priority] : null
   const color = labelColor(labels, card.label)
+  const dueState = completed ? "completed" : card.dueDate === today ? "today" : card.dueDate && card.dueDate < today ? "overdue" : "future"
+  const dueText = card.dueDate ? dueState === "today" ? t("dueToday")
+    : dueState === "overdue" ? t("overdueDays").replace("{days}", String(overdueDays(card.dueDate, today)))
+    : dateLabel(card.dueDate, today, t) : ""
 
   return (
     <Card className="kanban-card">
@@ -49,22 +56,26 @@ export function KanbanCard({ card, labels }: KanbanCardProps) {
         )}
         <p className="kanban-card-title">{card.title}</p>
         {card.note && <p className="kanban-card-note">{card.note}</p>}
-        {card.comments.length > 0 && (
-          <span
+        {(card.dueDate || card.comments.length > 0) && <div className="kanban-card-status-row">
+          {card.dueDate && <span className={`kanban-card-due-date is-${dueState}`}
+            title={`${t("fieldDueDate")}: ${card.dueDate}${completed ? ` · ${t("completed")}` : ""}`}>
+            <CalendarDays aria-hidden="true" /><span>{dueText}</span>
+          </span>}
+          {card.comments.length > 0 && <span
             className="kanban-card-comment-count"
             title={`${t("commentsTitle")}: ${card.comments.length}`}
             aria-label={`${t("commentsTitle")}: ${card.comments.length}`}
           >
             <MessageSquare aria-hidden="true" />
             <span className="kanban-tabular">{card.comments.length}</span>
-          </span>
-        )}
+          </span>}
+        </div>}
       </CardContent>
     </Card>
   )
 }
 
-export function SortableCard({ card, labels, onOpen }: SortableCardProps) {
+export function SortableCard({ card, labels, completed, today = localDate(), onOpen }: SortableCardProps) {
   const t = useT()
   const helpId = useId()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -94,8 +105,11 @@ export function SortableCard({ card, labels, onOpen }: SortableCardProps) {
       }}
       className={`kanban-sortable-card${isDragging ? " is-dragging" : ""}`}
     >
-      <span id={helpId} className="kanban-sr-only">{t("cardKeyboardHelp")}</span>
-      <KanbanCard card={card} labels={labels} />
+      <span id={helpId} className="kanban-sr-only">
+        {t("cardKeyboardHelp")}
+        {card.dueDate && ` ${t("fieldDueDate")}: ${card.dueDate}. ${completed ? t("completed") : card.dueDate === today ? t("dueToday") : card.dueDate < today ? t("overdueDays").replace("{days}", String(overdueDays(card.dueDate, today))) : ""}`}
+      </span>
+      <KanbanCard card={card} labels={labels} completed={completed} today={today} />
     </div>
   )
 }

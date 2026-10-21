@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { useEffect, useId, useRef, useState } from "react"
+import { Tags, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label as FieldLabel } from "@/components/ui/label"
 import { useT } from "@/lib/i18n"
 import type { Label } from "@/lib/types"
 
@@ -20,6 +21,7 @@ interface LabelDialogProps {
 
 export function LabelDialog({ open, error, labels, onOpenChange, onAdd, onUpdate, onDelete }: LabelDialogProps) {
   const t = useT()
+  const newNameId = useId()
   const [drafts, setDrafts] = useState<Record<string, { name: string; color: string }>>({})
   const [newName, setNewName] = useState("")
   const [newColor, setNewColor] = useState("#38bdf8")
@@ -80,45 +82,54 @@ export function LabelDialog({ open, error, labels, onOpenChange, onAdd, onUpdate
       if (!next && deleting) { setDeleting(null); return }
       onOpenChange(next)
     }}>
-      <DialogContent className="kanban-dialog-medium">
+      <DialogContent className="kanban-dialog-medium kanban-editor-dialog">
         <DialogHeader>
           <DialogTitle>{t("labelEdit")}</DialogTitle>
           <DialogDescription>{t("labelEditDesc")}</DialogDescription>
         </DialogHeader>
-        <DialogBody>
+        <DialogBody className="kanban-editor-body">
           {(error || failure) && <p className="kanban-dialog-error" role="alert">{error || failure}</p>}
-          <div className="kanban-label-list">
-            {labels.map((label) => {
-              const d = drafts[label.name] ?? { name: label.name, color: label.color }
-              return (
-                <div key={label.name} className="kanban-label-row">
-                  <input
-                    type="color"
-                    aria-label={`${t("labelColor")}: ${label.name}`}
-                    value={d.color}
-                    disabled={pending || Boolean(deleting)}
-                    className="kanban-color-input"
-                    onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, color: e.target.value } }))}
-                    onBlur={() => commit(label.name)}
-                  />
-                  <Input
-                    aria-label={`${t("labelName")}: ${label.name}`}
-                    value={d.name}
-                    disabled={pending || Boolean(deleting)}
-                    maxLength={20}
-                    onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, name: e.target.value } }))}
-                    onBlur={() => commit(label.name)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") (e.target as HTMLInputElement).blur()
-                    }}
-                  />
-                  <Button variant="ghost" size="icon" className="kanban-icon-button kanban-danger-button" aria-label={`${t("deleteLabel")}: ${label.name}`} disabled={pending || Boolean(deleting)} onClick={() => setDeleting(label.name)}>
-                    <Trash2 className="kanban-icon" />
-                  </Button>
-                </div>
-              )
-            })}
-          </div>
+          <section className="kanban-editor-section" aria-label={t("boardLabels")}>
+            <h3 className="kanban-editor-caption">{t("boardLabels")} <span>{labels.length}</span></h3>
+            <div className="kanban-editor-list">
+              {labels.length === 0 && <div className="kanban-editor-empty">
+                <Tags className="kanban-icon" aria-hidden="true" />
+                <p>{t("noLabelsHint")}</p>
+              </div>}
+              {labels.map((label) => {
+                const d = drafts[label.name] ?? { name: label.name, color: label.color }
+                return (
+                  <div key={label.name} className="kanban-editor-row">
+                    <input
+                      type="color"
+                      aria-label={`${t("labelColor")}: ${label.name}`}
+                      title={`${t("labelColor")}: ${label.name}`}
+                      value={d.color}
+                      disabled={pending || Boolean(deleting)}
+                      className="kanban-color-input"
+                      onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, color: e.target.value } }))}
+                      onBlur={() => commit(label.name)}
+                    />
+                    <Input
+                      className="kanban-editor-name"
+                      aria-label={`${t("labelName")}: ${label.name}`}
+                      value={d.name}
+                      disabled={pending || Boolean(deleting)}
+                      maxLength={20}
+                      onChange={(e) => setDrafts((m) => ({ ...m, [label.name]: { ...d, name: e.target.value } }))}
+                      onBlur={() => commit(label.name)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                      }}
+                    />
+                    <Button variant="ghost" size="icon" className="kanban-icon-button kanban-editor-delete" aria-label={`${t("deleteLabel")}: ${label.name}`} disabled={pending || Boolean(deleting)} onClick={() => setDeleting(label.name)}>
+                      <Trash2 className="kanban-icon" />
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
         </DialogBody>
         <DialogFooter>
           {deleting ? <div className="kanban-dialog-confirm">
@@ -129,30 +140,34 @@ export function LabelDialog({ open, error, labels, onOpenChange, onAdd, onUpdate
                 if (await run(() => onDelete(deleting))) setDeleting(null)
               }}>{t("confirmDelete")}</Button>
             </div>
-          </div> : <div className="kanban-label-add-row">
-            <input
-              type="color"
-              aria-label={t("newLabelColor")}
-              value={newColor}
-              disabled={pending}
-              className="kanban-color-input"
-              onChange={(e) => setNewColor(e.target.value)}
-            />
-            <Input
-              value={newName}
-              disabled={pending}
-              placeholder={t("newLabelPlaceholder")}
-              aria-label={t("newLabelPlaceholder")}
-              maxLength={20}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); void add() }
-              }}
-            />
-            <Button size="sm" disabled={pending || !newName.trim()} onClick={() => void add()}>
-              <Plus className="kanban-icon" />
-              {t("add")}
-            </Button>
+          </div> : <div className="kanban-editor-add">
+            <FieldLabel htmlFor={newNameId}>{t("newLabelPlaceholder")}</FieldLabel>
+            <div className="kanban-editor-add-row">
+              <input
+                type="color"
+                aria-label={t("newLabelColor")}
+                title={t("newLabelColor")}
+                value={newColor}
+                disabled={pending}
+                className="kanban-color-input"
+                onChange={(e) => setNewColor(e.target.value)}
+              />
+              <Input
+                id={newNameId}
+                value={newName}
+                disabled={pending}
+                placeholder={t("newLabelPlaceholder")}
+                aria-label={t("newLabelPlaceholder")}
+                maxLength={20}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void add() }
+                }}
+              />
+              <Button size="sm" className="kanban-editor-add-button" disabled={pending || !newName.trim()} onClick={() => void add()}>
+                {t("add")}
+              </Button>
+            </div>
           </div>}
         </DialogFooter>
       </DialogContent>

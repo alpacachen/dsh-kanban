@@ -7,14 +7,15 @@
  * Responsibilities:
  * - Workspace isolation: boards are keyed by workspaceId, one board per workspace.
  * - Persistence: ctx.fs writes <workspace.path>/.dsh-kanban.json.
- * - Agent tools: ctx.tools.register exposes 15 kanban_* tools.
+ * - Agent tools: ctx.tools.register exposes 16 kanban_* tools.
  * - Browser API: ctx.get('connection') registers the authenticated /api/kanban route.
  *
  * Per-workspace data model (disk files include schemaVersion):
- *   schemaVersion: 3
+ *   schemaVersion: 4
+ *   completedColumnId: string | null
  *   columns: [{ id, title }]
  *   labels: [{ name, color }] // name is the unique key and binds the color
- *   cards:   [{ id, columnId, title, note, label, priority, createdAt, createdBy,
+ *   cards:   [{ id, columnId, title, note, label, priority, dueDate, createdAt, createdBy,
  *               comments: [{ id, content, source, createdAt }] }]
  *   activities: [{ id, ts, cardId, type, source, field?, from?, to?, meta? }] // append-only log
  *
@@ -45,7 +46,7 @@ export const inject = ['tools']
 // Back up old files before following the migration chain on first access.
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 export const LEGACY_VERSION = 0
 
 // Append-only activity log persisted with the board; drop oldest events above the limit.
@@ -63,6 +64,15 @@ export const COMMENT_LIMIT = 2000
 const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const strField = (v, fb) => (typeof v === 'string' && v ? v : fb)
 const normColor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : '#94a3b8')
+
+// Calendar dates stay date-only; parsing them as timestamps can shift the day by timezone.
+const isDueDate = (value) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const [year, month, day] = value.split('-').map(Number)
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  return day <= [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+}
 
 // Canonical v1 entity shapes: fill missing defaults without changing valid data.
 const normColumn = (c) =>
@@ -128,6 +138,13 @@ export const MIGRATIONS = {
       activities: pick(src.activities),
     }
   },
+  3: (data) => ({
+    ...data,
+    schemaVersion: 4,
+    // Existing boards choose completion explicitly; titles and positions are customizable.
+    completedColumnId: null,
+    cards: Array.isArray(data.cards) ? data.cards.map((card) => isObj(card) ? { ...card, dueDate: null } : card) : data.cards,
+  }),
 }
 
 /**
@@ -184,6 +201,10 @@ export function validateBoard(data) {
     }
   }
 
+  if (data.completedColumnId !== null && !columnIds.has(data.completedColumnId)) {
+    errors.push('completedColumnId must be null or reference an existing column')
+  }
+
   const labelNames = new Set()
   if (Array.isArray(data.labels)) {
     for (const l of data.labels) {
@@ -213,6 +234,7 @@ export function validateBoard(data) {
       }
       if (!columnIds.has(c.columnId)) errors.push('card references missing column: ' + c.id)
       if (c.label != null && !labelNames.has(c.label)) errors.push('card references missing label: ' + c.id)
+      if (c.dueDate !== null && !isDueDate(c.dueDate)) errors.push('card has invalid due date: ' + c.id)
       if (c.priority != null && !['high', 'medium', 'low'].includes(c.priority)) errors.push('card has invalid priority: ' + c.id)
       for (const comment of c.comments) {
         if (!isObj(comment) || typeof comment.id !== 'string' || !comment.id || typeof comment.content !== 'string' || !comment.content.trim() || comment.content.length > 2000 || !['human', 'agent'].includes(comment.source) || typeof comment.createdAt !== 'string' || !comment.createdAt) {
@@ -430,6 +452,7 @@ export function apply(ctx) {
     const load = (async () => {
       const board = {
         schemaVersion: SCHEMA_VERSION,
+        completedColumnId: null,
         columns: [],
         labels: [],
         cards: [],
@@ -440,12 +463,15 @@ export function apply(ctx) {
       const fs = getFs()
       const target = await targetOf(workspace)
       let migrated = false
+      let loadedBoard = false
       if (fs && target) {
         try {
           const text = await fs.readText(target)
           const parsed = parseBoardText(text)
           for (const w of parsed.warnings) warn(board, w)
           if (parsed.ok) {
+            loadedBoard = true
+            board.completedColumnId = parsed.data.completedColumnId
             board.columns = parsed.data.columns
             board.labels = parsed.data.labels
             board.cards = parsed.data.cards
@@ -486,7 +512,11 @@ export function apply(ctx) {
       }
       for (const act of board.activities) bumpSeq(act.id)
       if (board.columns.length === 0) {
-        for (const title of DEFAULT_COLUMNS) board.columns.push({ id: nextId('c'), title })
+        for (const title of DEFAULT_COLUMNS) {
+          const column = { id: nextId('c'), title }
+          board.columns.push(column)
+          if (!loadedBoard && title === 'Done') board.completedColumnId = column.id
+        }
       }
       if (board.labels.length === 0) board.labels = DEFAULT_LABELS.map((l) => ({ ...l }))
       boards.set(key, board)
@@ -518,6 +548,7 @@ export function apply(ctx) {
         target,
         JSON.stringify({
           schemaVersion: SCHEMA_VERSION,
+          completedColumnId: board.completedColumnId,
           columns: board.columns,
           labels: board.labels,
           cards: board.cards,
@@ -553,6 +584,7 @@ export function apply(ctx) {
   const findLabel = (b, name) => b.labels.find((l) => l.name === name)
 
   const cloneBoard = (b) => ({
+    completedColumnId: b.completedColumnId,
     columns: b.columns.map((c) => ({ id: c.id, title: c.title })),
     labels: b.labels.map((l) => ({ name: l.name, color: l.color })),
     cards: b.cards.map((c) => ({
@@ -562,6 +594,7 @@ export function apply(ctx) {
       note: c.note ?? '',
       label: c.label ?? null,
       priority: c.priority ?? null,
+      dueDate: c.dueDate,
       createdAt: typeof c.createdAt === 'string' ? c.createdAt : null,
       createdBy: typeof c.createdBy === 'string' ? c.createdBy : null,
       comments: Array.isArray(c.comments)
@@ -576,6 +609,7 @@ export function apply(ctx) {
     activities: Array.isArray(b.activities) ? b.activities.map((a) => ({ ...a })) : [],
   })
   const summaryOfClone = (clone) => ({
+    completedColumnId: clone.completedColumnId,
     columns: clone.columns.map((c) => ({
       id: c.id,
       title: c.title,
@@ -588,6 +622,7 @@ export function apply(ctx) {
       title: c.title,
       label: c.label ?? null,
       priority: c.priority ?? null,
+      dueDate: c.dueDate,
       commentCount: c.comments.length,
     })),
   })
@@ -624,10 +659,11 @@ export function apply(ctx) {
       case 'getCard': {
         const card = cloneBoard(board).cards.find((c) => c.id === str(a.id, ''))
         if (!card) return { warnings: takeWarnings(board), error: 'Card not found: ' + str(a.id, '') }
-        return { card, warnings: takeWarnings(board) }
+        return { card, completedColumnId: board.completedColumnId, warnings: takeWarnings(board) }
       }
 
       case 'addCard': {
+        if (a.dueDate !== undefined && a.dueDate !== null && a.dueDate !== '' && !isDueDate(a.dueDate)) return result({ error: 'Due date must be a real calendar date in YYYY-MM-DD format' })
         const col = findColumn(board, str(a.columnId, '')) || board.columns[0]
         if (!col) return result({ error: 'No list available' })
         const label = typeof a.label === 'string' ? clampText(a.label, LABEL_LIMIT, 'Label', board) : undefined
@@ -639,6 +675,7 @@ export function apply(ctx) {
           note: clampText(a.note, NOTE_LIMIT, 'Note', board),
           label,
           priority: normPriority(a.priority),
+          dueDate: a.dueDate || null,
           createdAt: new Date().toISOString(),
           createdBy: actor,
           comments: [],
@@ -653,6 +690,7 @@ export function apply(ctx) {
             column: col.title,
             label: card.label ?? null,
             priority: card.priority ?? null,
+            dueDate: card.dueDate,
           },
         })
         await save(workspace, session)
@@ -660,6 +698,7 @@ export function apply(ctx) {
       }
 
       case 'updateCard': {
+        if (a.dueDate !== undefined && a.dueDate !== null && a.dueDate !== '' && !isDueDate(a.dueDate)) return result({ error: 'Due date must be a real calendar date in YYYY-MM-DD format' })
         const card = findCard(board, str(a.id, ''))
         if (card) {
           const nextLabel = typeof a.label === 'string' ? clampText(a.label, LABEL_LIMIT, 'Label', board) : undefined
@@ -669,16 +708,19 @@ export function apply(ctx) {
             note: card.note,
             label: card.label ?? null,
             priority: card.priority ?? null,
+            dueDate: card.dueDate,
           }
           if (typeof a.title === 'string') card.title = clampText(a.title, TITLE_LIMIT, 'Title', board) || card.title
           if (typeof a.note === 'string') card.note = clampText(a.note, NOTE_LIMIT, 'Note', board)
           if (typeof a.label === 'string') card.label = nextLabel || undefined
           if (typeof a.priority === 'string') card.priority = normPriority(a.priority)
+          if (a.dueDate !== undefined) card.dueDate = a.dueDate || null
           const after = {
             title: card.title,
             note: card.note,
             label: card.label ?? null,
             priority: card.priority ?? null,
+            dueDate: card.dueDate,
           }
           if (after.title !== before.title) {
             record(board, { cardId: card.id, type: 'card_title_changed', source: actor, field: 'title', from: before.title, to: after.title })
@@ -688,6 +730,9 @@ export function apply(ctx) {
           }
           if (after.label !== before.label) {
             record(board, { cardId: card.id, type: 'card_label_changed', source: actor, field: 'label', from: before.label, to: after.label })
+          }
+          if (after.dueDate !== before.dueDate) {
+            record(board, { cardId: card.id, type: 'card_due_date_changed', source: actor, field: 'dueDate', from: before.dueDate, to: after.dueDate })
           }
           if (after.priority !== before.priority) {
             record(board, { cardId: card.id, type: 'card_priority_changed', source: actor, field: 'priority', from: before.priority, to: after.priority })
@@ -770,6 +815,17 @@ export function apply(ctx) {
         return col ? result({ message: 'List renamed' }) : result({ error: 'List not found' })
       }
 
+      case 'setCompletedColumn': {
+        if (a.columnId !== null && (typeof a.columnId !== 'string' || !findColumn(board, a.columnId))) return result({ error: 'Completion column must be null or an existing list id' })
+        const previousId = board.completedColumnId
+        if (previousId !== a.columnId) {
+          board.completedColumnId = a.columnId
+          record(board, { cardId: null, type: 'board_completed_column_changed', source: actor, field: 'completedColumnId', from: previousId, to: a.columnId, meta: { fromColumn: findColumn(board, previousId)?.title ?? null, toColumn: findColumn(board, a.columnId)?.title ?? null } })
+          await save(workspace, session)
+        }
+        return result({ message: a.columnId === null ? 'Completion column cleared' : 'Completion column updated' })
+      }
+
       case 'deleteColumn': {
         const id = str(a.id, '')
         if (board.columns.length <= 1) return result({ error: 'At least one list must remain' })
@@ -777,6 +833,10 @@ export function apply(ctx) {
         if (idx < 0) return result({ error: 'List not found' })
         const deleted = board.columns[idx]
         board.columns.splice(idx, 1)
+        if (board.completedColumnId === id) {
+          board.completedColumnId = null
+          record(board, { cardId: null, type: 'board_completed_column_changed', source: actor, field: 'completedColumnId', from: id, to: null, meta: { fromColumn: deleted.title, toColumn: null } })
+        }
         const fallback = board.columns[0].id
         for (const card of board.cards) {
           if (card.columnId === id) {
@@ -903,7 +963,7 @@ export function apply(ctx) {
     const registry = getWorkspaceRegistry()
     return registry && typeof registry.get === 'function' ? registry.get(id) : undefined
   }
-  const emptyBoardSummary = { columns: [], labels: [], cards: [] }
+  const emptyBoardSummary = { completedColumnId: null, columns: [], labels: [], cards: [] }
 
   const runTool = async (method, args, exec) => {
     const workspace = await workspaceOfExec(exec)
@@ -974,50 +1034,15 @@ export function apply(ctx) {
     }
   }
 
-  const routeState = { registered: false, timer: null, dispose: null, disposed: false, attempts: 0 }
-  const registerRoute = () => {
-    if (routeState.registered || routeState.disposed) return
-    const connection = ctx.get('connection')
-    if (connection === undefined) return
-    try {
-      const dispose = connection.fetch.register({
-        path: '/api/kanban',
-        methods: ['POST'],
-        requestBody: 'streaming',
-        fetch: httpHandler,
-      })
-      routeState.dispose = typeof dispose === 'function' ? dispose : null
-      routeState.registered = true
-      console.log('dsh-kanban: /api/kanban route registered')
-    } catch (err) {
-      console.log('dsh-kanban: Route registration failed: ' + ((err && err.message) || err))
-    }
-  }
-  registerRoute()
-  if (!routeState.registered) {
-    const timer = ctx.get('timer')
-    if (timer) {
-      routeState.timer = timer.interval(() => {
-        routeState.attempts++
-        registerRoute()
-        maybeStartupCheck()
-        if (routeState.registered || routeState.attempts >= 40) {
-          if (routeState.timer) routeState.timer()
-          routeState.timer = null
-        }
-      }, 500)
-    }
-  }
+  // Connection may arrive after tools during desktop boot; follow its lifecycle.
+  ctx.inject(['connection'], (routeCtx) => routeCtx.connection.fetch.register({
+    path: '/api/kanban',
+    methods: ['POST'],
+    requestBody: 'streaming',
+    fetch: httpHandler,
+  }))
 
   // ---- Startup checks: read each workspace board and back up corrupt files ----
-  const startupState = { done: false }
-  const maybeStartupCheck = () => {
-    if (startupState.done) return
-    const registry = getWorkspaceRegistry()
-    if (!getFs() || !registry || typeof registry.list !== 'function') return
-    startupState.done = true
-    runStartupCheck()
-  }
   const runStartupCheck = async () => {
     const fs = getFs()
     const registry = getWorkspaceRegistry()
@@ -1079,7 +1104,7 @@ export function apply(ctx) {
       console.log('dsh-kanban: Startup check failed: ' + ((err && err.message) || err))
     }
   }
-  maybeStartupCheck()
+  ctx.inject(['fs', 'workspaceRegistry'], () => { void runStartupCheck() })
 
   // ---- Tool registration ----
   const resultSchema = {
@@ -1102,8 +1127,9 @@ export function apply(ctx) {
     lines.push(String((value && value.message) || ''))
     if (b && Array.isArray(b.columns)) {
       lines.push('Board state:')
+      lines.push('Completion column: ' + (b.completedColumnId || 'not set'))
       for (const col of b.columns) {
-        lines.push('· ' + col.title + ' (' + col.count + ')')
+        lines.push('· [' + col.id + '] ' + col.title + ' (' + col.count + ')' + (col.id === b.completedColumnId ? ' [completed]' : ''))
       }
       if (Array.isArray(b.labels) && b.labels.length > 0) {
         lines.push('Labels: ' + b.labels.map((l) => l.name).join(' / '))
@@ -1115,6 +1141,8 @@ export function apply(ctx) {
             (card.priority ? '[' + card.priority + '] ' : '') +
             (card.label ? '[' + card.label + '] ' : '') +
             card.title +
+            (card.dueDate ? ' (due ' + card.dueDate + ')' : '') +
+            (card.columnId === b.completedColumnId ? ' [completed]' : '') +
             (card.commentCount ? ' (' + card.commentCount + ' comments)' : ''),
           )
         }
@@ -1127,7 +1155,7 @@ export function apply(ctx) {
   const tools = [
     {
       name: 'kanban_get',
-      description: 'Read the current state of the current project (workspace) kanban board (all lists, labels and cards). Call it before planning to understand existing content and avoid duplicate cards.',
+      description: 'Read the current state of the current project (workspace) kanban board (all lists, labels, cards with dueDate, and completedColumnId). Due dates are local calendar dates, not UTC timestamps; a date becomes overdue the following day. Cards in completedColumnId are finished and excluded from due-today/overdue checks. Resolve relative dates using the user local date and confirm the concrete YYYY-MM-DD date. Call it before planning to understand existing content and avoid duplicate cards.',
       parameters: { type: 'object', properties: {} },
       output: output(renderBoard),
       async execute(args, exec) {
@@ -1136,7 +1164,7 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_get_card',
-      description: "Read one card's full details (title, raw Markdown description in note, label, priority and comments) by id from the current project (workspace) board. Use kanban_get first to discover card ids; its summary omits note. Read this tool before editing an existing description to preserve its content and Markdown formatting.",
+      description: "Read one card's full details (title, raw Markdown description in note, label, priority, dueDate and comments), plus the board completion column ID from the current project (workspace) board by card id. Use kanban_get first to discover card ids; its summary omits note. Read this tool before editing an existing description to preserve its content and Markdown formatting.",
       parameters: {
         type: 'object',
         properties: {
@@ -1151,6 +1179,7 @@ export function apply(ctx) {
             ok: { type: 'boolean' },
             message: { type: 'string' },
             card: { type: 'object' },
+            completedColumnId: { oneOf: [{ type: 'string' }, { type: 'null' }] },
             warnings: { type: 'array', items: { type: 'string' } },
           },
           required: ['ok', 'message'],
@@ -1167,6 +1196,8 @@ export function apply(ctx) {
             lines.push('[' + c.id + '] ' + c.title)
             if (c.priority) lines.push('Priority: ' + c.priority)
             if (c.label) lines.push('Label: ' + c.label)
+            if (c.dueDate) lines.push('Due date: ' + c.dueDate + ' (local calendar date)')
+            lines.push('Completed: ' + (c.columnId === value.completedColumnId ? 'yes' : 'no'))
             if (c.note) lines.push('Note: ' + c.note)
             if (Array.isArray(c.comments) && c.comments.length > 0) {
               lines.push('Comments:')
@@ -1184,7 +1215,7 @@ export function apply(ctx) {
         const session = exec && exec.agent && exec.agent.session
         const r = await dispatch(workspace, 'getCard', args, 'agent', session)
         if (r.error) return { ok: false, message: r.error, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
-        return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
+        return { ok: true, message: 'Card ' + String(args.id || '') + ' details', card: r.card, completedColumnId: r.completedColumnId, warnings: Array.isArray(r.warnings) ? r.warnings : [] }
       },
     },
     {
@@ -1214,6 +1245,7 @@ export function apply(ctx) {
           note: { type: 'string', description: `Task description as raw Markdown source, not HTML: background, acceptance criteria or breakdown details. Supports headings, lists, tables and fenced code blocks; preserve line breaks. Optional; max ${NOTE_LIMIT} chars including Markdown syntax and newlines. Longer input is truncated with a warning.` },
           label: { type: 'string', description: `Label name (optional; max ${LABEL_LIMIT} chars): e.g. New Feature, bug, Feedback` },
           priority: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Priority (optional): high=P0 / medium=P1 / low=P2' },
+          dueDate: { oneOf: [{ type: 'string' }, { type: 'null' }], description: 'Optional local calendar date in YYYY-MM-DD format, without time or timezone. Resolve relative dates such as Friday using the user local date and confirm the concrete date. Omit to keep unchanged (new cards default to no date); null or empty string clears it. Due today is not overdue until the next local day; completed-column cards are excluded.' },
         },
         required: ['title'],
       },
@@ -1224,7 +1256,7 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_update_card',
-      description: "Update a card's title, Markdown description (note), label or priority on the board. Read kanban_get_card before editing an existing description; note replaces the whole description, not a patch.",
+      description: "Update a card's title, Markdown description (note), label, priority or dueDate on the board. Read kanban_get_card before editing an existing description; note replaces the whole description, not a patch.",
       parameters: {
         type: 'object',
         properties: {
@@ -1233,6 +1265,7 @@ export function apply(ctx) {
           note: { type: 'string', description: `Complete replacement description as raw Markdown source, not HTML; preserve line breaks. Omit to keep the description unchanged; pass an empty string to clear it. Max ${NOTE_LIMIT} chars including Markdown syntax and newlines. Longer input is truncated with a warning.` },
           label: { type: 'string', description: `New label name (optional; max ${LABEL_LIMIT} chars); pass empty string to clear` },
           priority: { type: 'string', enum: ['high', 'medium', 'low', ''], description: 'New priority (optional): high=P0 / medium=P1 / low=P2; pass empty string to clear' },
+          dueDate: { oneOf: [{ type: 'string' }, { type: 'null' }], description: 'Optional local calendar date in YYYY-MM-DD format, without time or timezone. Resolve relative dates such as Friday using the user local date and confirm the concrete date. Omit to keep unchanged (new cards default to no date); null or empty string clears it. Due today is not overdue until the next local day; completed-column cards are excluded.' },
         },
         required: ['id'],
       },
@@ -1298,6 +1331,19 @@ export function apply(ctx) {
       output: output(renderBoard),
       async execute(args, exec) {
         return runTool('renameColumn', args, exec)
+      },
+    },
+    {
+      name: 'kanban_set_completed_column',
+      description: 'Choose the one list that means completed for this board by its stable column id, or clear the setting with null. Cards in this list are excluded from due-today and overdue checks. Existing boards require an explicit choice; never infer completion from a list name or position. New boards default to Done.',
+      parameters: {
+        type: 'object',
+        properties: { columnId: { oneOf: [{ type: 'string' }, { type: 'null' }], description: 'Existing list id from kanban_get, or null to clear the completion column' } },
+        required: ['columnId'],
+      },
+      output: output(renderBoard),
+      async execute(args, exec) {
+        return runTool('setCompletedColumn', args, exec)
       },
     },
     {
@@ -1423,11 +1469,6 @@ export function apply(ctx) {
   for (const tool of tools) ctx.tools.register(tool)
 
   return async () => {
-    routeState.disposed = true
-    if (routeState.timer) routeState.timer()
-    routeState.timer = null
-    if (routeState.dispose) await routeState.dispose()
-    routeState.dispose = null
     boards.clear()
     boardLoads.clear()
     workspaceQueues.clear()
