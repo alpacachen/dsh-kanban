@@ -44,12 +44,12 @@ const board = {
   completedColumnId: 'done',
   columns: [{ id: 'todo', title: 'Todo' }, { id: 'doing', title: 'In progress' }, { id: 'review', title: 'Review' }, { id: 'done', title: 'Done' }],
   labels: [{ name: 'Dark label', color: '#000000' }, ...Array.from({ length: 9 }, (_, i) => ({ name: `Label ${i + 1}`, color: '#4176e6' }))],
-  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: markdown, label: 'Dark label', priority: 'high', dueDate: null, createdAt: null, createdBy: null, comments: Array.from({ length: 12 }, (_, i) => ({ id: `comment-${i}`, source: 'human', createdAt: '2026-10-16T03:00:00Z', content: `Comment ${i + 1}: verify scrolling keeps the header, close control and footer visible.` })) }],
+  cards: [{ id: 'card-fixture', columnId: 'todo', title: 'Keyboard fixture', note: markdown, label: 'Dark label', priority: 'high', dueDate: null, completedAt: null, createdAt: null, createdBy: null, comments: Array.from({ length: 12 }, (_, i) => ({ id: `comment-${i}`, source: 'human', createdAt: '2026-10-16T03:00:00Z', content: `Comment ${i + 1}: verify scrolling keeps the header, close control and footer visible.` })) }],
   activities: [],
 }
 
 try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: 'light', reducedMotion: 'reduce', serviceWorkers: 'block' })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: 'light', timezoneId: 'Asia/Shanghai', reducedMotion: 'reduce', serviceWorkers: 'block' })
   if (process.env.DSH_TEST_COOKIE) {
     const [name, ...value] = process.env.DSH_TEST_COOKIE.split('=')
     await context.addCookies([{ name, value: value.join('='), url: base }])
@@ -304,6 +304,7 @@ try {
       await assertMarkdown()
       const save = page.getByRole('button', { name: 'Save', exact: true })
       assert.equal((await styles(save, ['backgroundColor'])).backgroundColor, await tokenColor('--dsw-alias-button-primary-fill', 'backgroundColor'), 'Save is the primary action')
+      assert.equal(await page.getByLabel('Completed at', { exact: true }).innerText(), '—')
       await shot(`card-${scheme}-${size}`)
       if (size === 'desktop') {
         await page.getByRole('button', { name: 'Edit', exact: true }).click()
@@ -337,6 +338,38 @@ try {
       checked.push(`${scheme}/${size}: board, task drawer with real Markdown, list/label dialogs, six menus`)
     }
   }
+
+  for (const scheme of ['light', 'dark']) {
+    await page.evaluate(scheme => {
+      document.body.toggleAttribute('data-ds-dark-theme', scheme === 'dark')
+      document.body.style.colorScheme = scheme
+    }, scheme)
+    for (const [size, viewport] of Object.entries(viewports)) {
+      await page.setViewportSize(viewport)
+      for (const state of ['known', 'unknown']) {
+        board.cards[0].columnId = 'done'
+        board.cards[0].completedAt = state === 'known' ? '2026-10-27T06:30:00.000Z' : null
+        const refreshed = page.waitForResponse(response => response.url().endsWith('/api/kanban'))
+        await page.getByRole('button', { name: 'Refresh board', exact: true }).click()
+        await refreshed
+        await page.locator('.kanban-column').last().getByRole('button', { name: 'Keyboard fixture', exact: true }).click()
+        const completion = page.getByLabel('Completed at', { exact: true })
+        assert.equal(await completion.innerText(), state === 'known' ? '2026-10-27 14:30' : 'Unknown', 'Completion uses the local timezone and distinguishes unknown')
+        assert.equal(await page.getByRole('textbox', { name: 'Completed at', exact: true }).count(), 0, 'Completion is text, not an editor')
+        assert.equal((await styles(completion, ['borderTopWidth'])).borderTopWidth, '0px', 'Completion has no input border')
+        assert.deepEqual(await styles(completion, ['fontFamily', 'fontSize', 'fontWeight']), await styles(page.getByLabel('Title', { exact: true }), ['fontFamily', 'fontSize', 'fontWeight']), 'Completion uses the same computed font as the existing input')
+        await assertDialog()
+        await shot(`completion-${state}-${scheme}-${size}`)
+        await closeDialog()
+      }
+    }
+  }
+  board.cards[0].columnId = 'todo'
+  board.cards[0].completedAt = null
+  const reopened = page.waitForResponse(response => response.url().endsWith('/api/kanban'))
+  await page.getByRole('button', { name: 'Refresh board', exact: true }).click()
+  await reopened
+  checked.push('Read-only completion dates, Asia/Shanghai conversion, unknown historical dates, inherited computed fonts in both themes and three viewports')
 
   await page.setViewportSize(viewports.desktop)
   const card = page.getByRole('button', { name: 'Keyboard fixture', exact: true })

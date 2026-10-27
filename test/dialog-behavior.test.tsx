@@ -9,7 +9,7 @@ import type { Card } from "../src/client/lib/types"
 
 const card: Card = {
   id: "card-1", columnId: "todo", title: "Review this", note: "Existing note",
-  label: null, priority: null, dueDate: null, comments: [], createdAt: null, createdBy: null,
+  label: null, priority: null, dueDate: null, comments: [], completedAt: null, createdAt: null, createdBy: null,
 }
 const cardProps = () => ({
   open: true, card, labels: [], comments: [], activities: [],
@@ -31,7 +31,7 @@ describe("dialog draft safety", () => {
     const pending = deferred()
     const props = cardProps()
     props.onSave.mockReturnValueOnce(pending.promise)
-    render(<CardDialog {...props} />)
+    render(<CardDialog completed={false} completedAt={null} {...props} />)
     const title = screen.getByLabelText(t("fieldTitle")) as HTMLInputElement
     await user.clear(title)
     await user.type(title, "Unsaved title")
@@ -53,7 +53,7 @@ describe("dialog draft safety", () => {
   it.each(["fieldTitle", "fieldNote", "commentsTitle"])("asks before closing a draft in %s, and Cancel preserves it", async (field) => {
     const user = userEvent.setup()
     const props = cardProps()
-    render(<CardDialog {...props} />)
+    render(<CardDialog completed={false} completedAt={null} {...props} />)
     if (field === "fieldNote") await user.click(screen.getByRole("button", { name: t("editNote"), exact: true }))
     const input = screen.getByLabelText(new RegExp(t(field))) as HTMLInputElement
     await user.type(input, " Keep me")
@@ -71,7 +71,7 @@ describe("dialog draft safety", () => {
     const user = userEvent.setup()
     const props = cardProps()
     props.onDelete.mockResolvedValue(false)
-    render(<CardDialog {...props} />)
+    render(<CardDialog completed={false} completedAt={null} {...props} />)
     await user.click(screen.getByRole("button", { name: t("delete") }))
     expect(props.onDelete).not.toHaveBeenCalled()
     await user.click(screen.getByRole("button", { name: t("cancel") }))
@@ -89,7 +89,7 @@ describe("dialog draft safety", () => {
   it("asks before chat navigation would discard an unsent comment", async () => {
     const user = userEvent.setup()
     const props = cardProps()
-    render(<CardDialog {...props} />)
+    render(<CardDialog completed={false} completedAt={null} {...props} />)
     await user.type(screen.getByLabelText(new RegExp(t("commentsTitle"))), "Keep this comment")
     await user.click(screen.getByRole("button", { name: t("chatWithAgent") }))
     await user.click(screen.getByRole("menuitem", { name: t("chatNewSession") }))
@@ -106,7 +106,7 @@ describe("dialog draft safety", () => {
     const pending = deferred()
     const props = cardProps()
     props.onAddComment.mockReturnValueOnce(pending.promise)
-    render(<CardDialog {...props} />)
+    render(<CardDialog completed={false} completedAt={null} {...props} />)
     const input = screen.getByLabelText(new RegExp(t("commentsTitle"))) as HTMLTextAreaElement
     await user.type(input, "Pending comment")
     await user.click(screen.getByRole("button", { name: t("save") }))

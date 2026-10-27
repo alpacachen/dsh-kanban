@@ -5,9 +5,9 @@
  *
  * Use temporary directories and a minimal fs service to call index.js apply(ctx).
  * Invoke the registered kanban_get tool to exercise the boardOf pipeline:
- * - v0: migrate, write schemaVersion 4, create .bak-v0, and return warnings
- * - v4: pass unchanged, without writing, backups or warnings
- * - v1/v2: migrate, write schemaVersion 4, and create a versioned backup
+ * - v0: migrate, write the current schema version, create .bak-v0, and return warnings
+ * - the current schema: pass unchanged, without writing, backups or warnings
+ * - v1/v2: migrate, write the current schema version, and create a versioned backup
  * - Corrupt files: create .corrupt-* backups, return an empty board and warnings
  * - Future versions: create .unsupported-vN backups and return a read-only empty board
  * - After backing up corruption, future saves write the current schema
@@ -18,7 +18,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply } from '../index.js'
+import { apply, SCHEMA_VERSION } from '../index.js'
 
 let failed = 0
 const check = (name, cond, detail) => {
@@ -189,7 +189,7 @@ try {
     check('Board data remains intact', r.board.cards.length === 1 && r.board.cards[0].title === 'Old card')
 
     const onDisk = JSON.parse(readFileSync(join(dir, '.dsh-kanban.json'), 'utf8'))
-    check('Writes schemaVersion 4', onDisk.schemaVersion === 4)
+    check('Writes the current schema version', onDisk.schemaVersion === SCHEMA_VERSION)
     check('Write preserves data', onDisk.cards.length === 1 && onDisk.columns.length === 2)
     check('.bak-v0 backup exists', existsSync(join(dir, '.dsh-kanban.json.bak-v0')))
     const bak = JSON.parse(readFileSync(join(dir, '.dsh-kanban.json.bak-v0'), 'utf8'))
@@ -200,24 +200,24 @@ try {
     check('Reload has no warnings', r2.warnings.length === 0)
   }
 
-  // ---- B: Accept v4 files unchanged ----
-  console.log('\n[B] v4 files pass unchanged')
+  // ---- B: Accept the current schema files unchanged ----
+  console.log('\n[B] the current schema files pass unchanged')
   {
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
     const { tools } = bootPlugin(dir)
     writeFileSync(
       join(dir, '.dsh-kanban.json'),
-      JSON.stringify({ schemaVersion: 4, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [], activities: [] }),
+      JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [], activities: [] }),
     )
     const r = await runTool(tools, 'kanban_get')
     check('Tool returns ok', r.ok === true)
     check('No warnings', r.warnings.length === 0)
-    check('No .bak backup created', !existsSync(join(dir, '.dsh-kanban.json.bak-v0')) && !existsSync(join(dir, '.dsh-kanban.json.bak-v1')) && !existsSync(join(dir, '.dsh-kanban.json.bak-v2')) && !existsSync(join(dir, '.dsh-kanban.json.bak-v3')))
+    check('No .bak backup created', !existsSync(join(dir, '.dsh-kanban.json.bak-v0')) && !existsSync(join(dir, '.dsh-kanban.json.bak-v1')) && !existsSync(join(dir, '.dsh-kanban.json.bak-v2')) && !existsSync(join(dir, '.dsh-kanban.json.bak-v3')) && !existsSync(join(dir, '.dsh-kanban.json.bak-v4')))
   }
 
-  // ---- B2: Migrate v1 to v4 ----
-  console.log('\n[B2] v1 -> automatically migrate to v4')
+  // ---- B2: Migrate v1 to the current schema ----
+  console.log('\n[B2] v1 -> automatically migrate to the current schema')
   {
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
@@ -230,15 +230,15 @@ try {
     check('Tool returns ok', r.ok === true, JSON.stringify(r))
     check('Returns migration warnings', r.warnings.some((w) => w.includes('upgraded')))
     const onDisk = JSON.parse(readFileSync(join(dir, '.dsh-kanban.json'), 'utf8'))
-    check('Writes schemaVersion 4', onDisk.schemaVersion === 4)
+    check('Writes the current schema version', onDisk.schemaVersion === SCHEMA_VERSION)
     check('activities initialized', Array.isArray(onDisk.activities) && onDisk.activities.length === 0)
     check('Card createdAt/createdBy default to null', onDisk.cards[0].createdAt === null && onDisk.cards[0].createdBy === null)
     check('Card comments initialized', Array.isArray(onDisk.cards[0].comments) && onDisk.cards[0].comments.length === 0)
     check('.bak-v1 backup exists', existsSync(join(dir, '.dsh-kanban.json.bak-v1')))
   }
 
-  // ---- B3: Migrate v2 to v4 ----
-  console.log('\n[B3] v2 -> automatically migrate to v4')
+  // ---- B3: Migrate v2 to the current schema ----
+  console.log('\n[B3] v2 -> automatically migrate to the current schema')
   {
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
@@ -256,7 +256,7 @@ try {
     const r = await runTool(tools, 'kanban_get')
     check('Tool returns ok', r.ok === true, JSON.stringify(r))
     const onDisk = JSON.parse(readFileSync(join(dir, '.dsh-kanban.json'), 'utf8'))
-    check('Writes schemaVersion 4', onDisk.schemaVersion === 4)
+    check('Writes the current schema version', onDisk.schemaVersion === SCHEMA_VERSION)
     check('Preserve card metadata and initialize comments', onDisk.cards[0].createdBy === 'human' && Array.isArray(onDisk.cards[0].comments))
     check('.bak-v2 backup exists', existsSync(join(dir, '.dsh-kanban.json.bak-v2')))
   }
@@ -281,7 +281,7 @@ try {
     const add = await runTool(tools, 'kanban_add_card', { title: 'New after corrupt' })
     check('Cards remain writable after corruption', add.ok === true)
     const onDisk = JSON.parse(readFileSync(join(dir, '.dsh-kanban.json'), 'utf8'))
-    check('Save writes schemaVersion', onDisk.schemaVersion === 4 && onDisk.cards.length === 1)
+    check('Save writes schemaVersion', onDisk.schemaVersion === SCHEMA_VERSION && onDisk.cards.length === 1)
     check('New cards initialize comments', Array.isArray(onDisk.cards[0].comments) && onDisk.cards[0].comments.length === 0)
     check('New cards emit card_created events', Array.isArray(onDisk.activities) && onDisk.activities.length === 1 && onDisk.activities[0].type === 'card_created')
   }

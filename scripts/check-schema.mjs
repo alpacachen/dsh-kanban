@@ -5,7 +5,7 @@
  *
  * Coverage:
  * - Legacy unversioned files (v0): migration and field normalization
- * - v4 files pass unchanged; v1/v2/v3 files migrate automatically
+ * - current-schema files pass unchanged; v1/v2/v3/v4 files migrate automatically
  * - Broken JSON is classified as corrupt
  * - Invalid structures are classified as invalid
  * - Future versions are unsupported and must not be migrated
@@ -57,16 +57,16 @@ console.log('\n[2] v0 files missing note/label/priority')
   check('priority defaults to null', r.ok && r.data.cards[0].priority === null)
 }
 
-// ---- 3. Accept v4 files unchanged ----
-console.log('\n[3] v4 files pass unchanged')
+// ---- 3. Accept current-schema files unchanged ----
+console.log('\n[3] current-schema files pass unchanged')
 {
   const r = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: [], activities: [] }))
-  check('v4 -> ok without migration', r.ok && r.migrated === false, JSON.stringify(r))
-  check('v4 has no warnings', r.ok && r.warnings.length === 0)
+  check('current-schema -> ok without migration', r.ok && r.migrated === false, JSON.stringify(r))
+  check('current-schema has no warnings', r.ok && r.warnings.length === 0)
 }
 
-// ---- 3a. Migrate v2 to v4 ----
-console.log('\n[3a] Automatically migrate v2 to v4')
+// ---- 3a. Migrate v2 to current-schema ----
+console.log('\n[3a] Automatically migrate v2 to current-schema')
 {
   const r = parseBoardText(JSON.stringify({
     schemaVersion: 2,
@@ -81,8 +81,8 @@ console.log('\n[3a] Automatically migrate v2 to v4')
   check('Cards get empty comments arrays', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
 }
 
-// ---- 3b. Migrate v1 to v4 ----
-console.log('\n[3b] Automatically migrate v1 to v4')
+// ---- 3b. Migrate v1 to current-schema ----
+console.log('\n[3b] Automatically migrate v1 to current-schema')
 {
   const r = parseBoardText(JSON.stringify({
     schemaVersion: 1,
@@ -100,7 +100,7 @@ console.log('\n[3b] Automatically migrate v1 to v4')
 }
 
 // ---- 3c. Migrate v3 without inferring a completion column ----
-console.log('\n[3c] Automatically migrate v3 to v4')
+console.log('\n[3c] Automatically migrate v3 to current-schema')
 {
   const original = {
     schemaVersion: 3, columns: [{ id: 'c1', title: 'Done' }], labels: [],
@@ -127,9 +127,9 @@ console.log('\n[5] Invalid structure')
 {
   const r = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: 'oops', activities: [] }))
   check('Classified as invalid', !r.ok && r.kind === 'invalid', JSON.stringify(r))
-  const dup = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', dueDate: null, comments: [] }, { id: 'k1', columnId: 'c1', title: 'b', dueDate: null, comments: [] }], activities: [] }))
+  const dup = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', dueDate: null, completedAt: null, comments: [] }, { id: 'k1', columnId: 'c1', title: 'b', dueDate: null, completedAt: null, comments: [] }], activities: [] }))
   check('Duplicate card ids -> invalid', !dup.ok && dup.kind === 'invalid', JSON.stringify(dup))
-  const badComment = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', dueDate: null, comments: [{ id: 'm1', content: ' ', source: 'human', createdAt: 'now' }] }], activities: [] }))
+  const badComment = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [{ id: 'c1', title: 'Todo' }], labels: [], cards: [{ id: 'k1', columnId: 'c1', title: 'a', dueDate: null, completedAt: null, comments: [{ id: 'm1', content: ' ', source: 'human', createdAt: 'now' }] }], activities: [] }))
   check('Empty comment -> invalid', !badComment.ok && badComment.kind === 'invalid', JSON.stringify(badComment))
   const noAct = parseBoardText(JSON.stringify({ schemaVersion: SCHEMA_VERSION, completedColumnId: null, columns: [], labels: [], cards: [] }))
   check('Missing activities -> invalid', !noAct.ok && noAct.kind === 'invalid', JSON.stringify(noAct))

@@ -65,6 +65,7 @@ export interface Card {
   label: string | null
   priority: Priority | null
   dueDate: string | null
+  completedAt: string | null
   createdAt: string | null
   createdBy: ActivitySource | null
   comments: Comment[]

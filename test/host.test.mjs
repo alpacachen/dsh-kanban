@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -11,6 +11,7 @@ const { apply, parseBoardText, SCHEMA_VERSION, NOTE_LIMIT, TITLE_LIMIT, LABEL_LI
 const workspaces = []
 
 afterEach(() => {
+  vi.useRealTimers()
   for (const dir of workspaces.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -86,7 +87,7 @@ describe("host board seam", () => {
     expect(parsed.ok).toBe(true)
     expect(parsed.data.schemaVersion).toBe(SCHEMA_VERSION)
     expect(parsed.data.activities).toEqual([])
-    expect(parsed.data.cards[0]).toMatchObject({ note: "", label: null, priority: null, createdAt: null, createdBy: null, dueDate: null, comments: [] })
+    expect(parsed.data.cards[0]).toMatchObject({ note: "", label: null, priority: null, createdAt: null, createdBy: null, dueDate: null, completedAt: null, comments: [] })
   })
 
   it("rejects malformed entities and dangling references", () => {
@@ -105,7 +106,7 @@ describe("host board seam", () => {
       completedColumnId: null,
       columns: [{ id: "c1", title: "Todo" }],
       labels: [],
-      cards: [{ id: "k1", columnId: "missing", title: "Broken", note: "", label: null, priority: null, dueDate: null, comments: [] }],
+      cards: [{ id: "k1", columnId: "missing", title: "Broken", note: "", label: null, priority: null, dueDate: null, completedAt: null, comments: [] }],
       activities: [],
     }))
     expect(dangling).toMatchObject({ ok: false, kind: "invalid" })
@@ -119,7 +120,7 @@ describe("host board seam", () => {
         id: "k1",
         columnId: "c1",
         title: "Broken comments",
-        dueDate: null, comments: [{ id: "m1", content: "  ", source: "human", createdAt: "now" }],
+        dueDate: null, completedAt: null, comments: [{ id: "m1", content: "  ", source: "human", createdAt: "now" }],
       }],
       activities: [],
     }))
@@ -131,15 +132,15 @@ describe("host board seam", () => {
       columns: [{ id: "c1", title: "Todo" }],
       labels: [],
       cards: [
-        { id: "k1", columnId: "c1", title: "One", dueDate: null, comments: [{ id: "m1", content: "A", source: "human", createdAt: "now" }] },
-        { id: "k2", columnId: "c1", title: "Two", dueDate: null, comments: [{ id: "m1", content: "B", source: "agent", createdAt: "now" }] },
+        { id: "k1", columnId: "c1", title: "One", dueDate: null, completedAt: null, comments: [{ id: "m1", content: "A", source: "human", createdAt: "now" }] },
+        { id: "k2", columnId: "c1", title: "Two", dueDate: null, completedAt: null, comments: [{ id: "m1", content: "B", source: "agent", createdAt: "now" }] },
       ],
       activities: [],
     }))
     expect(duplicateComments).toMatchObject({ ok: false, kind: "invalid" })
   })
 
-  it("migrates v3 dates without guessing completion, backs up once and reloads v4", async () => {
+  it("migrates v3 dates without guessing completion, backs up once and reloads the current schema", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-kanban-v3-"))
     workspaces.push(dir)
     const original = {
@@ -154,7 +155,7 @@ describe("host board seam", () => {
     expect(loaded.board).toMatchObject({ completedColumnId: null, cards: [{ dueDate: null }] })
     expect(JSON.parse(readFileSync(join(dir, ".dsh-kanban.json.bak-v3"), "utf8"))).toEqual(original)
     const saved = JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))
-    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, completedColumnId: null, cards: [{ ...original.cards[0], dueDate: null }] })
+    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, completedColumnId: null, cards: [{ ...original.cards[0], dueDate: null, completedAt: null }] })
     expect(parseBoardText(JSON.stringify(saved))).toMatchObject({ ok: true, migrated: false })
     const second = boot(dir)
     expect(await tool(second.registered, "kanban_get").execute({}, second.exec)).toMatchObject({ ok: true, warnings: [], board: loaded.board })
@@ -207,7 +208,7 @@ describe("host board seam", () => {
     expect((await tool(registered, "kanban_rename_column").execute({ id: done.id, title: "Shipped" }, exec)).board.completedColumnId).toBe(done.id)
     expect((await tool(registered, "kanban_move_column").execute({ id: done.id, toIndex: 0 }, exec)).board.completedColumnId).toBe(done.id)
     const moved = await tool(registered, "kanban_move_card").execute({ id: added.board.cards[0].id, columnId: done.id }, exec)
-    expect(tool(registered, "kanban_get").output.render({}, moved)[0].text).toContain("Deadline (due 2026-01-01) [completed]")
+    expect(tool(registered, "kanban_get").output.render({}, moved)[0].text).toContain("Deadline (due 2026-01-01) [completed; completedAt:")
     expect((await set.execute({ columnId: null }, exec)).board.completedColumnId).toBeNull()
     expect((await set.execute({ columnId: done.id }, exec)).board.completedColumnId).toBe(done.id)
     const reloaded = boot(dir)
@@ -226,6 +227,118 @@ describe("host board seam", () => {
     options.failWrites = true
     expect(await tool(registered, "kanban_update_card").execute({ id: added.board.cards[0].id, dueDate: null }, exec)).toMatchObject({ ok: false, board: { cards: [{ dueDate: "2026-10-21" }] } })
     expect(await tool(registered, "kanban_set_completed_column").execute({ columnId: null }, exec)).toMatchObject({ ok: false, board: { completedColumnId: added.board.completedColumnId } })
+  })
+
+  it("records only completion transitions, preserves timestamps across edits and reloads, and exposes them to agents", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-27T01:00:00.000Z"))
+    const host = boot()
+    const call = (name, args = {}) => tool(host.registered, "kanban_" + name).execute(args, host.exec)
+    const added = await call("add_card", { title: "Ship", completedAt: "forged" })
+    const card = added.board.cards[0]
+    const done = added.board.completedColumnId
+    expect(card.completedAt).toBeNull()
+    const firstTime = "2026-10-27T02:00:00.000Z"
+    vi.setSystemTime(new Date(firstTime))
+    const completed = await call("move_card", { id: card.id, columnId: done })
+    expect(completed.board.cards[0].completedAt).toBe(firstTime)
+    expect(tool(host.registered, "kanban_get").output.render({}, completed)[0].text).toContain(firstTime)
+    vi.setSystemTime(new Date("2026-10-27T03:00:00.000Z"))
+    await call("move_card", { id: card.id, columnId: done, toIndex: 0 })
+    await call("update_card", { id: card.id, title: "Shipped", note: "Edited", priority: "high", label: "bug", dueDate: "2026-10-28", completedAt: "forged" })
+    await call("add_comment", { id: card.id, content: "Reviewed later" })
+    await call("rename_column", { id: done, title: "Shipped" })
+    await call("move_column", { id: done, toIndex: 0 })
+    await call("set_completed_column", { columnId: done })
+    const detail = await call("get_card", { id: card.id })
+    expect(detail.card.completedAt).toBe(firstTime)
+    expect(tool(host.registered, "kanban_get_card").output.render({}, detail)[0].text).toContain("Completed at: " + firstTime)
+    const reloaded = boot(host.dir)
+    expect((await tool(reloaded.registered, "kanban_get_card").execute({ id: card.id }, reloaded.exec)).card.completedAt).toBe(firstTime)
+    expect((await call("move_card", { id: card.id, columnId: card.columnId })).board.cards[0].completedAt).toBeNull()
+    expect((await call("move_card", { id: card.id, columnId: done })).board.cards[0].completedAt).toBe("2026-10-27T03:00:00.000Z")
+    const createdDone = await call("add_card", { title: "Already shipped", columnId: done })
+    const newCard = (await call("get_card", { id: createdDone.board.cards.at(-1).id })).card
+    expect(newCard.completedAt).toBe(newCard.createdAt)
+  })
+
+  it("uses column ids for same-name moves and resets dates when completion settings change", async () => {
+    const host = boot()
+    const call = (name, args = {}) => tool(host.registered, "kanban_" + name).execute(args, host.exec)
+    const added = await call("add_card", { title: "Ship" })
+    const card = added.board.cards[0]
+    const done = added.board.completedColumnId
+    await call("rename_column", { id: card.columnId, title: "Done" })
+    expect((await call("move_card", { id: card.id, columnId: done })).board.cards[0].completedAt).toEqual(expect.any(String))
+    const saved = JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json"), "utf8"))
+    expect(saved.activities.filter(a => a.type === "card_moved")).toHaveLength(1)
+    await call("add_card", { title: "Existing", columnId: card.columnId })
+    const switched = await call("set_completed_column", { columnId: card.columnId })
+    expect(switched.board.cards.every(c => c.completedAt === null)).toBe(true)
+    expect(tool(host.registered, "kanban_get").output.render({}, switched)[0].text).toContain("completedAt: unknown")
+    await call("move_card", { id: card.id, columnId: card.columnId })
+    expect((await call("set_completed_column", { columnId: null })).board.cards.every(c => c.completedAt === null)).toBe(true)
+    expect((await call("set_completed_column", { columnId: done })).board.cards.every(c => c.completedAt === null)).toBe(true)
+  })
+
+  it("records automatic moves into completion and clears dates when the completed column is deleted", async () => {
+    const host = boot()
+    const call = (name, args = {}) => tool(host.registered, "kanban_" + name).execute(args, host.exec)
+    const added = await call("add_card", { title: "Ship" })
+    const source = added.board.cards[0].columnId
+    const done = added.board.completedColumnId
+    await call("move_column", { id: done, toIndex: 0 })
+    const moved = await call("delete_column", { id: source })
+    expect(moved.board.cards[0]).toMatchObject({ columnId: done, completedAt: expect.any(String) })
+    const deleted = await call("delete_column", { id: done })
+    expect(deleted.board.completedColumnId).toBeNull()
+    expect(deleted.board.cards[0].completedAt).toBeNull()
+  })
+
+  it("migrates v4 with a backup and unknown dates, validates timestamps, and survives activity truncation", async () => {
+    const host = boot()
+    const original = {
+      schemaVersion: 4, completedColumnId: "done", columns: [{ id: "done", title: "Done" }], labels: [{ name: "Release", color: "#94a3b8" }],
+      cards: [{ id: "k1", columnId: "done", title: "Legacy", dueDate: null, comments: [] }],
+      activities: [{ id: "e1", ts: "2026-10-01T00:00:00.000Z", cardId: "k1", type: "card_created", source: "human", meta: { column: "Done" } }],
+    }
+    writeFileSync(join(host.dir, ".dsh-kanban.json"), JSON.stringify(original))
+    const loaded = await tool(host.registered, "kanban_get_card").execute({ id: "k1" }, host.exec)
+    expect(loaded.card.completedAt).toBeNull()
+    expect(tool(host.registered, "kanban_get_card").output.render({}, loaded)[0].text).toContain("Completed at: unknown")
+    expect(JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json.bak-v4"), "utf8"))).toEqual(original)
+    const saved = JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json"), "utf8"))
+    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, cards: [{ ...original.cards[0], completedAt: null }] })
+    for (const completedAt of [undefined, "", "today", "2026-02-30T00:00:00.000Z", "2026-10-27", 42, false]) {
+      expect(parseBoardText(JSON.stringify({ ...saved, cards: [{ ...saved.cards[0], completedAt }] })).ok).toBe(false)
+    }
+    saved.cards[0].completedAt = "2026-10-01T00:00:00.000Z"
+    expect(parseBoardText(JSON.stringify({ ...saved, completedColumnId: null })).ok).toBe(false)
+    saved.activities = Array.from({ length: 5000 }, (_, i) => ({ id: "e" + (i + 1), ts: "2026-10-02T00:00:00.000Z", type: "card_note_changed", cardId: "k1", source: "human" }))
+    writeFileSync(join(host.dir, ".dsh-kanban.json"), JSON.stringify(saved))
+    const reloaded = boot(host.dir)
+    const result = await tool(reloaded.registered, "kanban_add_comment").execute({ id: "k1", content: "Later" }, reloaded.exec)
+    expect(result.board.cards[0].completedAt).toBe(saved.cards[0].completedAt)
+    const after = JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json"), "utf8"))
+    expect(after.activities).toHaveLength(5000)
+    expect(after.activities[0].id).toBe("e2")
+    expect(after.cards[0].completedAt).toBe(saved.cards[0].completedAt)
+  })
+
+  it("rolls back completion timestamps with failed moves and completion setting writes", async () => {
+    const options = {}
+    const host = boot(undefined, options)
+    const call = (name, args = {}) => tool(host.registered, "kanban_" + name).execute(args, host.exec)
+    const added = await call("add_card", { title: "Ship" })
+    const card = added.board.cards[0]
+    options.failWrites = true
+    const failed = await call("move_card", { id: card.id, columnId: added.board.completedColumnId })
+    expect(failed).toMatchObject({ ok: false, board: { cards: [{ columnId: card.columnId, completedAt: null }] } })
+    options.failWrites = false
+    const completed = await call("move_card", { id: card.id, columnId: added.board.completedColumnId })
+    options.failWrites = true
+    expect(await call("set_completed_column", { columnId: null })).toMatchObject({ ok: false, board: { cards: [{ completedAt: completed.board.cards[0].completedAt }] } })
+    expect(await call("move_card", { id: card.id, columnId: card.columnId })).toMatchObject({ ok: false, board: { cards: [{ completedAt: completed.board.cards[0].completedAt }] } })
   })
 
   it("registers every model tool with a usable schema", () => {

@@ -38,6 +38,8 @@ interface CardDialogProps {
   open: boolean
   error?: string | null
   card: Card | null
+  completed: boolean
+  completedAt: string | null
   labels: LabelType[]
   comments: Comment[]
   activities: Activity[]
@@ -48,7 +50,7 @@ interface CardDialogProps {
   onChatWithAgent: (values: CardFormValues, target: ChatTarget) => boolean | void | Promise<boolean | void>
 }
 
-export function CardDialog({ open, error, card, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
+export function CardDialog({ open, error, card, completed, completedAt, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
   const t = useT()
   const formId = useId()
   const triggerRef = useRef<HTMLElement | null>(null)
@@ -199,21 +201,34 @@ export function CardDialog({ open, error, card, labels, comments, activities, on
               </Select>
             </div>
           </div>
-          <div className="kanban-form-field">
-            <Label htmlFor={`${formId}-due-date`}>{t("fieldDueDate")}</Label>
-            <div className="kanban-due-date-controls">
-              <Input ref={dueDateRef} id={`${formId}-due-date`} type="date" min="0001-01-01" max="9999-12-31"
-                value={values.dueDate} disabled={pending || Boolean(confirm)}
-                onChange={(e) => set({ dueDate: e.target.value })} />
-              <div className="kanban-date-shortcuts">
-                {([["today", 0], ["tomorrow", 1], ["nextWeek", 7]] as const).map(([key, offset]) => (
-                  <Button key={key} type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm)}
-                    onClick={() => set({ dueDate: localDate(new Date(), offset) })}>{t(key)}</Button>
-                ))}
-                <Button type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm) || !values.dueDate}
-                  onClick={() => set({ dueDate: "" })}>{t("clearDate")}</Button>
+          <div className={card ? "kanban-form-row kanban-date-fields" : undefined}>
+            <div className="kanban-form-field">
+              <Label htmlFor={`${formId}-due-date`}>{t("fieldDueDate")}</Label>
+              <div className="kanban-due-date-controls">
+                <Input ref={dueDateRef} id={`${formId}-due-date`} type="date" min="0001-01-01" max="9999-12-31"
+                  value={values.dueDate} disabled={pending || Boolean(confirm)}
+                  onChange={(e) => set({ dueDate: e.target.value })} />
+                <div className="kanban-date-shortcuts">
+                  {([["today", 0], ["tomorrow", 1], ["nextWeek", 7]] as const).map(([key, offset]) => (
+                    <Button key={key} type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm)}
+                      onClick={() => set({ dueDate: localDate(new Date(), offset) })}>{t(key)}</Button>
+                  ))}
+                  <Button type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm) || !values.dueDate}
+                    onClick={() => set({ dueDate: "" })}>{t("clearDate")}</Button>
+                </div>
               </div>
             </div>
+            {card && <div className="kanban-form-field">
+              <Label htmlFor={`${formId}-completed-date`}>{t("fieldCompletedDate")}</Label>
+              <output id={`${formId}-completed-date`} className="kanban-completed-date"
+                aria-describedby={completed && !completedAt ? `${formId}-completed-date-hint` : undefined}>
+                {!completed ? "—" : completedAt
+                  ? <time dateTime={completedAt}>{formatTime(completedAt)}</time>
+                  : t("completedDateUnknown")}
+              </output>
+              {completed && !completedAt &&
+                <p id={`${formId}-completed-date-hint`} className="kanban-muted-small">{t("completedDateUnknownHint")}</p>}
+            </div>}
           </div>
           <div className="kanban-form-field">
             <div className="kanban-field-label">

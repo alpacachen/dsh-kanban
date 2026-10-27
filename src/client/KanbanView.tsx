@@ -119,7 +119,7 @@ export function KanbanView(props: KanbanViewProps) {
         ...res.board,
         completedColumnId: res.board.completedColumnId ?? null,
         cards: Array.isArray(res.board.cards)
-          ? res.board.cards.map((card: CardType) => ({ ...card, dueDate: card.dueDate ?? null, comments: Array.isArray(card.comments) ? card.comments : [] }))
+          ? res.board.cards.map((card: CardType) => ({ ...card, dueDate: card.dueDate ?? null, completedAt: card.completedAt ?? null, comments: Array.isArray(card.comments) ? card.comments : [] }))
           : [],
         activities: Array.isArray(res.board.activities) ? res.board.activities : [],
       })
@@ -381,7 +381,7 @@ export function KanbanView(props: KanbanViewProps) {
     async (values: CardFormValues, target: ChatTarget): Promise<boolean> => {
       const current = boardRef.current
       const card = current?.cards.find((item) => item.id === values.id)
-      const text = cardToChatText({ ...values,
+      const text = cardToChatText({ ...values, completedAt: card?.completedAt,
         completed: card && current?.completedColumnId ? card.columnId === current.completedColumnId : undefined,
       })
       if (!text) return false
@@ -415,6 +415,8 @@ export function KanbanView(props: KanbanViewProps) {
       </div>
     )
   }
+
+  const dialogCard = board.cards.find((card) => card.id === dialog?.card?.id)
 
   return (
     <div
@@ -649,7 +651,9 @@ export function KanbanView(props: KanbanViewProps) {
         open={dialog !== null}
         card={dialog?.card ?? null}
         labels={board.labels}
-        comments={dialog?.card ? board.cards.find((card) => card.id === dialog.card!.id)?.comments ?? [] : []}
+        completed={Boolean(dialogCard && dialogCard.columnId === board.completedColumnId)}
+        completedAt={dialogCard?.completedAt ?? null}
+        comments={dialogCard?.comments ?? []}
         activities={dialog?.card ? board.activities.filter((a) => a.cardId === dialog.card!.id) : []}
         onOpenChange={(open) => {
           if (!open) setDialog(null)
