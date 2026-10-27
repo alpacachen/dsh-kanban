@@ -8,7 +8,7 @@ import type { Card } from "../src/client/lib/types"
 const note = "# Release\n\n- [ ] Verify **both themes**\n\n```ts\nconst ok = true\n```\n"
 const card: Card = {
   id: "k1", columnId: "todo", title: "Release", note, label: null,
-  priority: null, dueDate: null, comments: [], createdAt: null, createdBy: null,
+  priority: null, dueDate: null, comments: [], completedAt: null, createdAt: null, createdBy: null,
 }
 const props = () => ({
   open: true, card, labels: [], comments: [], activities: [],
@@ -20,7 +20,7 @@ describe("Markdown description editing", () => {
   it("starts in preview and switches between the original source and preview without saving or losing whitespace", async () => {
     const user = userEvent.setup()
     const callbacks = props()
-    render(<CardDialog {...callbacks} />)
+    render(<CardDialog completed={false} completedAt={null} {...callbacks} />)
     expect(screen.getByRole("region", { name: t("fieldNote") }).textContent).toBe(note)
     expect(screen.queryByRole("textbox", { name: t("fieldNote") })).toBeNull()
     await user.click(screen.getByRole("button", { name: t("editNote"), exact: true }))
@@ -41,7 +41,7 @@ describe("Markdown description editing", () => {
     const user = userEvent.setup()
     const callbacks = props()
     callbacks.onSave.mockResolvedValue(false)
-    render(<CardDialog {...callbacks} />)
+    render(<CardDialog completed={false} completedAt={null} {...callbacks} />)
     await user.click(screen.getByRole("button", { name: t("editNote"), exact: true }))
     fireEvent.change(screen.getByRole("textbox", { name: t("fieldNote") }), { target: { value: "**Keep me**" } })
     await user.click(screen.getByRole("button", { name: t("finishEditingNote") }))
@@ -56,10 +56,10 @@ describe("Markdown description editing", () => {
   it("opens new cards in source mode and resets to the next card's preview", async () => {
     const user = userEvent.setup()
     const callbacks = props()
-    const { rerender } = render(<CardDialog {...callbacks} card={null} />)
+    const { rerender } = render(<CardDialog completed={false} completedAt={null} {...callbacks} card={null} />)
     expect(screen.getByRole("textbox", { name: t("fieldNote") })).toBeTruthy()
     await user.type(screen.getByRole("textbox", { name: t("fieldNote") }), "Draft")
-    rerender(<CardDialog {...callbacks} />)
+    rerender(<CardDialog completed={false} completedAt={null} {...callbacks} />)
     expect(screen.queryByRole("textbox", { name: t("fieldNote") })).toBeNull()
     expect(screen.getByRole("region", { name: t("fieldNote") }).textContent).toBe(note)
   })

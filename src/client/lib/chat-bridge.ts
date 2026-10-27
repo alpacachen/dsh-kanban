@@ -50,7 +50,7 @@ export function getDraftVersion(): number {
 }
 
 /** Serialize card fields into chat text, including the task id and label for agent context. */
-export function cardToChatText(values: { id?: string; title: string; note: string; label?: string; dueDate?: string | null; completed?: boolean }): string {
+export function cardToChatText(values: { id?: string; title: string; note: string; label?: string; dueDate?: string | null; completed?: boolean; completedAt?: string | null }): string {
   const id = (values.id ?? "").trim()
   const title = (values.title ?? "").trim()
   const note = (values.note ?? "").trim()
@@ -61,6 +61,7 @@ export function cardToChatText(values: { id?: string; title: string; note: strin
   if (label) parts.push(t("fieldLabel") + ": " + label)
   if (values.dueDate) parts.push(t("fieldDueDate") + ": " + values.dueDate)
   if (values.completed !== undefined) parts.push(t("completionStatus") + ": " + t(values.completed ? "completed" : "incomplete"))
+  if (values.completed) parts.push(t("fieldCompletedDate") + ": " + (values.completedAt || t("completedDateUnknown")))
   if (note) parts.push(note)
   return parts.join("\n\n")
 }

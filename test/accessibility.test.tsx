@@ -10,7 +10,7 @@ import type { Card } from "../src/client/lib/types"
 
 const card: Card = {
   id: "keyboard-card", columnId: "todo", title: "Keyboard card", note: "",
-  label: "Dark label", priority: "high", dueDate: null, createdAt: null, createdBy: null, comments: [],
+  label: "Dark label", priority: "high", dueDate: null, completedAt: null, createdAt: null, createdBy: null, comments: [],
 }
 const labels = [{ name: "Dark label", color: "#000000" }]
 

@@ -11,11 +11,11 @@
  * - Browser API: ctx.get('connection') registers the authenticated /api/kanban route.
  *
  * Per-workspace data model (disk files include schemaVersion):
- *   schemaVersion: 4
+ *   schemaVersion: 5
  *   completedColumnId: string | null
  *   columns: [{ id, title }]
  *   labels: [{ name, color }] // name is the unique key and binds the color
- *   cards:   [{ id, columnId, title, note, label, priority, dueDate, createdAt, createdBy,
+ *   cards:   [{ id, columnId, title, note, label, priority, dueDate, completedAt, createdAt, createdBy,
  *               comments: [{ id, content, source, createdAt }] }]
  *   activities: [{ id, ts, cardId, type, source, field?, from?, to?, meta? }] // append-only log
  *
@@ -46,7 +46,7 @@ export const inject = ['tools']
 // Back up old files before following the migration chain on first access.
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 export const LEGACY_VERSION = 0
 
 // Append-only activity log persisted with the board; drop oldest events above the limit.
@@ -145,6 +145,12 @@ export const MIGRATIONS = {
     completedColumnId: null,
     cards: Array.isArray(data.cards) ? data.cards.map((card) => isObj(card) ? { ...card, dueDate: null } : card) : data.cards,
   }),
+  4: (data) => ({
+    ...data,
+    schemaVersion: 5,
+    // Truncated, title-based activity history cannot reliably recover completion times.
+    cards: Array.isArray(data.cards) ? data.cards.map((card) => isObj(card) ? { ...card, completedAt: null } : card) : data.cards,
+  }),
 }
 
 /**
@@ -235,6 +241,8 @@ export function validateBoard(data) {
       if (!columnIds.has(c.columnId)) errors.push('card references missing column: ' + c.id)
       if (c.label != null && !labelNames.has(c.label)) errors.push('card references missing label: ' + c.id)
       if (c.dueDate !== null && !isDueDate(c.dueDate)) errors.push('card has invalid due date: ' + c.id)
+      if (c.completedAt !== null && (typeof c.completedAt !== 'string' || !Number.isFinite(Date.parse(c.completedAt)) || new Date(c.completedAt).toISOString() !== c.completedAt)) errors.push('card has invalid completion time: ' + c.id)
+      if (c.completedAt !== null && c.columnId !== data.completedColumnId) errors.push('incomplete card has a completion time: ' + c.id)
       if (c.priority != null && !['high', 'medium', 'low'].includes(c.priority)) errors.push('card has invalid priority: ' + c.id)
       for (const comment of c.comments) {
         if (!isObj(comment) || typeof comment.id !== 'string' || !comment.id || typeof comment.content !== 'string' || !comment.content.trim() || comment.content.length > 2000 || !['human', 'agent'].includes(comment.source) || typeof comment.createdAt !== 'string' || !comment.createdAt) {
@@ -595,6 +603,7 @@ export function apply(ctx) {
       label: c.label ?? null,
       priority: c.priority ?? null,
       dueDate: c.dueDate,
+      completedAt: c.completedAt,
       createdAt: typeof c.createdAt === 'string' ? c.createdAt : null,
       createdBy: typeof c.createdBy === 'string' ? c.createdBy : null,
       comments: Array.isArray(c.comments)
@@ -623,6 +632,7 @@ export function apply(ctx) {
       label: c.label ?? null,
       priority: c.priority ?? null,
       dueDate: c.dueDate,
+      completedAt: c.completedAt,
       commentCount: c.comments.length,
     })),
   })
@@ -680,6 +690,7 @@ export function apply(ctx) {
           createdBy: actor,
           comments: [],
         }
+        card.completedAt = col.id === board.completedColumnId ? card.createdAt : null
         board.cards.push(card)
         record(board, {
           cardId: card.id,
@@ -778,7 +789,9 @@ export function apply(ctx) {
         if (!card || !target) return result({ error: 'Card or list not found' })
         const fromCol = findColumn(board, card.columnId)
         const fromTitle = fromCol ? fromCol.title : String(card.columnId)
+        const changedColumn = card.columnId !== target.id
         board.cards = board.cards.filter((c) => c.id !== card.id)
+        if (changedColumn) card.completedAt = target.id === board.completedColumnId ? new Date().toISOString() : null
         card.columnId = target.id
         const inCol = board.cards.filter((c) => c.columnId === target.id)
         const toIndex = typeof a.toIndex === 'number' && Number.isFinite(a.toIndex)
@@ -787,7 +800,7 @@ export function apply(ctx) {
         const anchor = inCol[toIndex]
         if (anchor) board.cards.splice(board.cards.indexOf(anchor), 0, card)
         else board.cards.push(card)
-        if (fromTitle !== target.title) {
+        if (changedColumn) {
           record(board, { cardId: card.id, type: 'card_moved', source: actor, field: 'columnId', from: fromTitle, to: target.title, meta: { title: card.title } })
         }
         await save(workspace, session)
@@ -820,6 +833,8 @@ export function apply(ctx) {
         const previousId = board.completedColumnId
         if (previousId !== a.columnId) {
           board.completedColumnId = a.columnId
+          // Changing the definition of done does not establish when existing cards finished.
+          for (const card of board.cards) card.completedAt = null
           record(board, { cardId: null, type: 'board_completed_column_changed', source: actor, field: 'completedColumnId', from: previousId, to: a.columnId, meta: { fromColumn: findColumn(board, previousId)?.title ?? null, toColumn: findColumn(board, a.columnId)?.title ?? null } })
           await save(workspace, session)
         }
@@ -841,6 +856,7 @@ export function apply(ctx) {
         for (const card of board.cards) {
           if (card.columnId === id) {
             card.columnId = fallback
+            card.completedAt = fallback === board.completedColumnId ? new Date().toISOString() : null
             record(board, { cardId: card.id, type: 'card_moved', source: actor, field: 'columnId', from: deleted.title, to: board.columns[0].title, meta: { title: card.title } })
           }
         }
@@ -1142,7 +1158,7 @@ export function apply(ctx) {
             (card.label ? '[' + card.label + '] ' : '') +
             card.title +
             (card.dueDate ? ' (due ' + card.dueDate + ')' : '') +
-            (card.columnId === b.completedColumnId ? ' [completed]' : '') +
+            (card.columnId === b.completedColumnId ? ' [completed; completedAt: ' + (card.completedAt || 'unknown') + ']' : '') +
             (card.commentCount ? ' (' + card.commentCount + ' comments)' : ''),
           )
         }
@@ -1155,7 +1171,7 @@ export function apply(ctx) {
   const tools = [
     {
       name: 'kanban_get',
-      description: 'Read the current state of the current project (workspace) kanban board (all lists, labels, cards with dueDate, and completedColumnId). Due dates are local calendar dates, not UTC timestamps; a date becomes overdue the following day. Cards in completedColumnId are finished and excluded from due-today/overdue checks. Resolve relative dates using the user local date and confirm the concrete YYYY-MM-DD date. Call it before planning to understand existing content and avoid duplicate cards.',
+      description: 'Read the current state of the current project (workspace) kanban board (all lists, labels, cards with dueDate and completedAt, and completedColumnId). Due dates are local calendar dates, not UTC timestamps; a date becomes overdue the following day. Cards in completedColumnId are finished and excluded from due-today/overdue checks. completedAt is the latest completion UTC timestamp; null on a completed card means unknown. Resolve relative dates using the user local date and confirm the concrete YYYY-MM-DD date. Call it before planning to understand existing content and avoid duplicate cards.',
       parameters: { type: 'object', properties: {} },
       output: output(renderBoard),
       async execute(args, exec) {
@@ -1164,7 +1180,7 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_get_card',
-      description: "Read one card's full details (title, raw Markdown description in note, label, priority, dueDate and comments), plus the board completion column ID from the current project (workspace) board by card id. Use kanban_get first to discover card ids; its summary omits note. Read this tool before editing an existing description to preserve its content and Markdown formatting.",
+      description: "Read one card's full details (title, raw Markdown description in note, label, priority, dueDate, completedAt and comments), plus the board completion column ID from the current project (workspace) board by card id. completedAt is a system-managed UTC timestamp, cleared on reopening; null on a completed card means unknown. Use kanban_get first to discover card ids; its summary omits note. Read this tool before editing an existing description to preserve its content and Markdown formatting.",
       parameters: {
         type: 'object',
         properties: {
@@ -1198,6 +1214,7 @@ export function apply(ctx) {
             if (c.label) lines.push('Label: ' + c.label)
             if (c.dueDate) lines.push('Due date: ' + c.dueDate + ' (local calendar date)')
             lines.push('Completed: ' + (c.columnId === value.completedColumnId ? 'yes' : 'no'))
+            if (c.columnId === value.completedColumnId) lines.push('Completed at: ' + (c.completedAt || 'unknown'))
             if (c.note) lines.push('Note: ' + c.note)
             if (Array.isArray(c.comments) && c.comments.length > 0) {
               lines.push('Comments:')
@@ -1335,7 +1352,7 @@ export function apply(ctx) {
     },
     {
       name: 'kanban_set_completed_column',
-      description: 'Choose the one list that means completed for this board by its stable column id, or clear the setting with null. Cards in this list are excluded from due-today and overdue checks. Existing boards require an explicit choice; never infer completion from a list name or position. New boards default to Done.',
+      description: 'Choose the one list that means completed for this board by its stable column id, or clear the setting with null. Cards in this list are excluded from due-today and overdue checks. Existing boards require an explicit choice; never infer completion from a list name or position. New boards default to Done. Changing this setting clears completion timestamps; cards already in the new completion list have unknown completion times.',
       parameters: {
         type: 'object',
         properties: { columnId: { oneOf: [{ type: 'string' }, { type: 'null' }], description: 'Existing list id from kanban_get, or null to clear the completion column' } },

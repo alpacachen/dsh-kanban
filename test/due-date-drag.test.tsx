@@ -15,7 +15,7 @@ describe("dragging with a deadline filter", () => {
     const card: Card = {
       id: "k1", columnId: "todo", title: "Deadline task", note: "",
       dueDate: localDate(new Date(), filter === "overdue" ? -1 : 0),
-      priority: null, label: null, comments: [], createdAt: null, createdBy: null,
+      priority: null, label: null, comments: [], completedAt: null, createdAt: null, createdBy: null,
     }
     let board: Board = {
       completedColumnId: "done", columns: [{ id: "todo", title: "Todo" }, { id: "done", title: "Done" }],

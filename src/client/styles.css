@@ -470,6 +470,14 @@
   gap: 6px;
 }
 
+.kanban-date-fields { align-items: start; }
+
+.kanban-completed-date {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
 .kanban-due-date-controls {
   display: flex;
   flex-wrap: wrap;

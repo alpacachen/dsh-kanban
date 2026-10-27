@@ -7,11 +7,11 @@ import { ColumnDialog } from "../src/client/components/ColumnDialog"
 import { KanbanCard } from "../src/client/components/SortableCard"
 import { dateLabel, localDate, matchesDueDate, overdueDays, useLocalDate } from "../src/client/lib/due-date"
 import { cardToChatText } from "../src/client/lib/chat-bridge"
-import { describeActivity } from "../src/client/lib/activity"
+import { describeActivity, formatTime } from "../src/client/lib/activity"
 import { t } from "../src/client/lib/i18n"
 import type { Board, Card } from "../src/client/lib/types"
 
-const card: Card = { id: "k1", columnId: "todo", title: "Payment integration", note: "", priority: "high", label: "release", dueDate: "2026-10-21", comments: [], createdAt: null, createdBy: null }
+const card: Card = { id: "k1", columnId: "todo", title: "Payment integration", note: "", priority: "high", label: "release", dueDate: "2026-10-21", comments: [], completedAt: null, createdAt: null, createdBy: null }
 const props = { sessionId: "deadline-fixture" } as React.ComponentProps<typeof KanbanView>
 const dialogProps = () => ({ open: true, card, labels: [], comments: [], activities: [], onOpenChange: vi.fn(), onSave: vi.fn().mockResolvedValue(true), onAddComment: vi.fn(), onChatWithAgent: vi.fn() })
 const titles = () => Array.from(document.querySelectorAll(".kanban-card-title"), (node) => node.textContent)
@@ -68,11 +68,37 @@ describe("deadline presentation and drafts", () => {
     expect(screen.queryByText(t("overdueDays").replace("{days}", "2"))).toBeNull()
   })
 
+  it("shows a read-only local completion time, unknown legacy completion, and a dash after reopening", async () => {
+    const callbacks = dialogProps()
+    const completedAt = "2026-10-27T06:30:00.000Z"
+    const view = render(<CardDialog {...callbacks} completed={false} completedAt={null} />)
+    const value = () => screen.getByLabelText(t("fieldCompletedDate"))
+    expect(value().textContent).toBe("—")
+    view.rerender(<CardDialog {...callbacks} completed completedAt={completedAt} />)
+    expect(value().textContent).toBe(formatTime(completedAt))
+    expect(screen.queryByRole("textbox", { name: t("fieldCompletedDate") })).toBeNull()
+    await userEvent.setup().click(screen.getByRole("button", { name: t("save"), exact: true }))
+    expect(callbacks.onSave.mock.calls[0][0]).not.toHaveProperty("completedAt")
+    fireEvent.change(screen.getByLabelText(t("fieldTitle")), { target: { value: "Unsaved draft" } })
+    view.rerender(<CardDialog {...callbacks} completed completedAt={null} />)
+    expect((screen.getByLabelText(t("fieldTitle")) as HTMLInputElement).value).toBe("Unsaved draft")
+    view.rerender(<CardDialog {...callbacks} completed completedAt={null} />)
+    expect(value().textContent).toBe(t("completedDateUnknown"))
+    expect(document.getElementById(value().getAttribute("aria-describedby")!)?.textContent).toBe(t("completedDateUnknownHint"))
+    view.rerender(<CardDialog {...callbacks} completed={false} completedAt={null} />)
+    expect(value().textContent).toBe("—")
+    expect(screen.queryByText(t("completedDateUnknownHint"))).toBeNull()
+    view.rerender(<CardDialog {...callbacks} completed={false} completedAt={null} card={null} />)
+    expect(screen.queryByLabelText(t("fieldCompletedDate"))).toBeNull()
+    expect(cardToChatText({ ...card, label: "release", completed: true, completedAt })).toContain(completedAt)
+    expect(cardToChatText({ ...card, label: "release", completed: true })).toContain(t("completedDateUnknown"))
+  })
+
   it("keeps failed date changes, protects them on close, and supports quick dates and clearing", async () => {
     const user = userEvent.setup()
     const callbacks = dialogProps()
     callbacks.onSave.mockResolvedValue(false)
-    render(<CardDialog {...callbacks} />)
+    render(<CardDialog completed={false} completedAt={null} {...callbacks} />)
     const input = screen.getByLabelText(t("fieldDueDate")) as HTMLInputElement
     await user.click(screen.getByRole("button", { name: t("tomorrow"), exact: true }))
     expect(input.value).toBe(localDate(new Date(), 1))
@@ -95,7 +121,7 @@ describe("deadline presentation and drafts", () => {
   it("refuses to save a date outside the supported four-digit year range", async () => {
     const user = userEvent.setup()
     const callbacks = dialogProps()
-    render(<CardDialog {...callbacks} />)
+    render(<CardDialog completed={false} completedAt={null} {...callbacks} />)
     const input = screen.getByLabelText(t("fieldDueDate")) as HTMLInputElement
     fireEvent.change(input, { target: { value: "10000-01-01" } })
     expect(input.validity.rangeOverflow).toBe(true)
