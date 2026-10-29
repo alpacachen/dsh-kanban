@@ -171,7 +171,8 @@ describe("board label filter", () => {
     await screen.findByText("Urgent bug")
     await selectLabel(user, "bug")
     board = { ...board, labels: [] }
-    await user.click(screen.getByRole("button", { name: t("refresh") }))
+    await user.click(screen.getByRole("button", { name: t("settings") }))
+    await user.click(screen.getByRole("menuitem", { name: t("refresh") }))
     await waitFor(() => expect(titles()).toHaveLength(5))
     await user.click(screen.getByRole("button", { name: t("labelFilter") }))
     expect(screen.getAllByRole("menuitemradio")).toHaveLength(2)

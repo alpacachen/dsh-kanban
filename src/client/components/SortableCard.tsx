@@ -1,5 +1,5 @@
 import { useId } from "react"
-import { CalendarDays, MessageSquare } from "lucide-react"
+import { CalendarDays, Image as ImageIcon, MessageSquare } from "lucide-react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { Badge } from "@/components/ui/badge"
@@ -14,14 +14,20 @@ interface KanbanCardProps {
   labels: Label[]
   completed?: boolean
   today?: string
+  query?: string
 }
 
 interface SortableCardProps extends KanbanCardProps {
   onOpen: (card: CardType) => void
 }
 
-export function KanbanCard({ card, labels, completed = false, today = localDate() }: KanbanCardProps) {
+export function KanbanCard({ card, labels, completed = false, today = localDate(), query = "" }: KanbanCardProps) {
   const t = useT()
+  const needle = query.trim().toLowerCase()
+  const commentMatch = needle && !card.title.toLowerCase().includes(needle) && !card.note.toLowerCase().includes(needle)
+    ? card.comments.find((comment) => comment.content.toLowerCase().includes(needle))?.content : undefined
+  const snippet = commentMatch ? commentMatch.slice(Math.max(0, commentMatch.toLowerCase().indexOf(needle) - 24), commentMatch.toLowerCase().indexOf(needle) + needle.length + 70) : ""
+  const imageCount = card.images?.length ?? 0
   const priority = card.priority ? PRIORITY_META[card.priority] : null
   const color = labelColor(labels, card.label)
   const dueState = completed ? "completed" : card.dueDate === today ? "today" : card.dueDate && card.dueDate < today ? "overdue" : "future"
@@ -56,10 +62,14 @@ export function KanbanCard({ card, labels, completed = false, today = localDate(
         )}
         <p className="kanban-card-title">{card.title}</p>
         {card.note && <p className="kanban-card-note">{card.note}</p>}
-        {(card.dueDate || card.comments.length > 0) && <div className="kanban-card-status-row">
+        {commentMatch && <p className="kanban-search-match">{t("matchComment")}: {snippet}</p>}
+        {(card.dueDate || card.comments.length > 0 || imageCount > 0) && <div className="kanban-card-status-row">
           {card.dueDate && <span className={`kanban-card-due-date is-${dueState}`}
             title={`${t("fieldDueDate")}: ${card.dueDate}${completed ? ` · ${t("completed")}` : ""}`}>
             <CalendarDays aria-hidden="true" /><span>{dueText}</span>
+          </span>}
+          {imageCount > 0 && <span className="kanban-card-comment-count" aria-label={`${t("images")}: ${imageCount}`} title={`${t("images")}: ${imageCount}`}>
+            <ImageIcon aria-hidden="true" /><span className="kanban-tabular">{imageCount}</span>
           </span>}
           {card.comments.length > 0 && <span
             className="kanban-card-comment-count"
@@ -75,7 +85,7 @@ export function KanbanCard({ card, labels, completed = false, today = localDate(
   )
 }
 
-export function SortableCard({ card, labels, completed, today = localDate(), onOpen }: SortableCardProps) {
+export function SortableCard({ card, labels, completed, today = localDate(), query, onOpen }: SortableCardProps) {
   const t = useT()
   const helpId = useId()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -109,7 +119,7 @@ export function SortableCard({ card, labels, completed, today = localDate(), onO
         {t("cardKeyboardHelp")}
         {card.dueDate && ` ${t("fieldDueDate")}: ${card.dueDate}. ${completed ? t("completed") : card.dueDate === today ? t("dueToday") : card.dueDate < today ? t("overdueDays").replace("{days}", String(overdueDays(card.dueDate, today))) : ""}`}
       </span>
-      <KanbanCard card={card} labels={labels} completed={completed} today={today} />
+      <KanbanCard card={card} labels={labels} completed={completed} today={today} query={query} />
     </div>
   )
 }

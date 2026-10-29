@@ -5,7 +5,7 @@
  *
  * Coverage:
  * - Legacy unversioned files (v0): migration and field normalization
- * - current-schema files pass unchanged; v1/v2/v3/v4 files migrate automatically
+ * - current-schema files pass unchanged; v1/v2/v3/v4/v5 files migrate automatically
  * - Broken JSON is classified as corrupt
  * - Invalid structures are classified as invalid
  * - Future versions are unsupported and must not be migrated
@@ -45,6 +45,7 @@ console.log('\n[1] Automatically migrate legacy v0 files')
   check('Empty activities array added', r.ok && Array.isArray(r.data.activities) && r.data.activities.length === 0)
   check('Legacy cards default createdAt/createdBy to null', r.ok && r.data.cards[0].createdAt === null && r.data.cards[0].createdBy === null)
   check('Legacy cards get empty comments arrays', r.ok && Array.isArray(r.data.cards[0].comments) && r.data.cards[0].comments.length === 0)
+  check('Legacy cards get empty images arrays', r.ok && Array.isArray(r.data.cards[0].images) && r.data.cards[0].images.length === 0)
 }
 
 // ---- 2. Fill optional fields in v0 files ----

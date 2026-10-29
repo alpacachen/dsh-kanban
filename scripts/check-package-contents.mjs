@@ -22,7 +22,9 @@ const expected = [
   "cordis.patch.yml",
   "image.png",
   "docs/screenshots/card-details-dark.png",
+  "docs/testing-images.md",
   "index.js",
+  "search.js",
   "lib/client.js",
   "package.json",
 ].sort()

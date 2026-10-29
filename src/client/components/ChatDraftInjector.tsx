@@ -1,27 +1,35 @@
-import { useEffect, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
 import type {} from "@deepseek-ai/dsh-client-ui-session/client"
-import { consumeDraft, getDraftVersion, subscribeDraft } from "@/lib/chat-bridge"
+import { consumeDraft, fillChatDraft, getDraftVersion, subscribeDraft, type AttachmentDrafts, type ChatDraft } from "@/lib/chat-bridge"
+import { useT } from "@/lib/i18n"
+import { Button } from "./ui/button"
 
-type ChatDraftInjectorProps = PropsRuntime<"conversation.input.dock">
+type ChatDraftInjectorProps = PropsRuntime<"conversation.input.dock"> & { attachmentDrafts?: AttachmentDrafts }
 
-/**
- * Invisible session-scoped component mounted in conversation.input.dock. It consumes
- * queued cross-session drafts and fills the current composer without rendering any UI.
- *
- * queueDraft() stores { sessionId -> text }. When the target session becomes active
- * or the queue version changes, write the text with setDraft and remove the entry.
- * This only fills a draft; it never submits or sends a message.
- */
-export function ChatDraftInjector({ sessionId, inputActions }: ChatDraftInjectorProps) {
+/** Survives board navigation and fills the target composer without submitting it. */
+export function ChatDraftInjector({ sessionId, inputActions, attachmentDrafts }: ChatDraftInjectorProps) {
   const version = useSyncExternalStore(subscribeDraft, getDraftVersion)
-
+  const [failure, setFailure] = useState<{ sessionId: string; draft: ChatDraft; message: string } | null>(null)
+  const t = useT()
+  const apply = (draft: ChatDraft) => {
+    try {
+      fillChatDraft(sessionId, inputActions, draft, attachmentDrafts)
+      setFailure(null)
+    } catch (error) {
+      setFailure({ sessionId, draft, message: String(error instanceof Error ? error.message : error) })
+    }
+  }
   useEffect(() => {
     if (!sessionId || !inputActions?.setDraft) return
-    const text = consumeDraft(sessionId)
-    if (text != null) inputActions.setDraft(text)
-  }, [version, sessionId, inputActions])
+    const draft = consumeDraft(sessionId)
+    if (draft) apply(draft)
+  }, [version, sessionId, inputActions, attachmentDrafts])
 
-  return null
+  if (!failure || failure.sessionId !== sessionId) return null
+  return <div role="alert" className="kanban-dialog-error">
+    {t("actionFailed")}{failure.message}
+    <Button variant="ghost" size="sm" onClick={() => apply(failure.draft)}>{t("retry")}</Button>
+  </div>
 }

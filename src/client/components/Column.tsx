@@ -14,11 +14,12 @@ interface ColumnProps {
   labels: Label[]
   completed: boolean
   today: string
+  query?: string
   onAddCard: (column: ColumnType) => void
   onOpenCard: (card: CardType) => void
 }
 
-export function Column({ column, cards, totalCount, filtered, labels, completed, today, onAddCard, onOpenCard }: ColumnProps) {
+export function Column({ column, cards, totalCount, filtered, labels, completed, today, query, onAddCard, onOpenCard }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { type: "column" } })
   const { active, over } = useDndContext()
   const t = useT()
@@ -46,6 +47,7 @@ export function Column({ column, cards, totalCount, filtered, labels, completed,
               labels={labels}
               completed={completed}
               today={today}
+              query={query}
               onOpen={onOpenCard}
             />
           ))}

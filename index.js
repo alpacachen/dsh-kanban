@@ -1,3 +1,5 @@
+import { matchCardSearch } from './search.js'
+
 /**
  * dsh-kanban: DSH bundle host plugin (standard Cordis function plugin).
  *
@@ -7,11 +9,11 @@
  * Responsibilities:
  * - Workspace isolation: boards are keyed by workspaceId, one board per workspace.
  * - Persistence: ctx.fs writes <workspace.path>/.dsh-kanban.json.
- * - Agent tools: ctx.tools.register exposes 16 kanban_* tools.
+ * - Agent tools: ctx.tools.register exposes 19 kanban_* tools.
  * - Browser API: ctx.get('connection') registers the authenticated /api/kanban route.
  *
  * Per-workspace data model (disk files include schemaVersion):
- *   schemaVersion: 5
+ *   schemaVersion: 6
  *   completedColumnId: string | null
  *   columns: [{ id, title }]
  *   labels: [{ name, color }] // name is the unique key and binds the color
@@ -46,7 +48,7 @@ export const inject = ['tools']
 // Back up old files before following the migration chain on first access.
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 export const LEGACY_VERSION = 0
 
 // Append-only activity log persisted with the board; drop oldest events above the limit.
@@ -60,6 +62,20 @@ export const NOTE_LIMIT = 2000
 export const LABEL_LIMIT = 20
 export const COLUMN_TITLE_LIMIT = 40
 export const COMMENT_LIMIT = 2000
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+export const MAX_CARD_IMAGES = 10
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const imageRef = ({ attachmentId, mediaType, bytes, width, height }) => ({ attachmentId, mediaType, bytes, width, height })
+const validImageRef = (image) => isObj(image)
+  && /^sha256:[a-f0-9]{64}$/.test(image.attachmentId)
+  && IMAGE_TYPES.includes(image.mediaType)
+  && ['bytes', 'width', 'height'].every((field) => Number.isSafeInteger(image[field]) && image[field] > 0)
+const imageType = (bytes) => {
+  if (bytes.length >= 8 && Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg'
+  if (bytes.length >= 12 && Buffer.from(bytes.subarray(0, 4)).toString() === 'RIFF' && Buffer.from(bytes.subarray(8, 12)).toString() === 'WEBP') return 'image/webp'
+  throw new Error('Only PNG, JPEG and WebP images are supported')
+}
 
 const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const strField = (v, fb) => (typeof v === 'string' && v ? v : fb)
@@ -144,6 +160,11 @@ export const MIGRATIONS = {
     // Existing boards choose completion explicitly; titles and positions are customizable.
     completedColumnId: null,
     cards: Array.isArray(data.cards) ? data.cards.map((card) => isObj(card) ? { ...card, dueDate: null } : card) : data.cards,
+  }),
+  5: (data) => ({
+    ...data,
+    schemaVersion: 6,
+    cards: Array.isArray(data.cards) ? data.cards.map((card) => isObj(card) ? { ...card, images: [] } : card) : data.cards,
   }),
   4: (data) => ({
     ...data,
@@ -238,6 +259,7 @@ export function validateBoard(data) {
         errors.push('duplicate card id: ' + c.id)
         break
       }
+      if (!Array.isArray(c.images) || c.images.length > MAX_CARD_IMAGES || c.images.some((image) => !validImageRef(image)) || new Set(c.images.map((image) => image.attachmentId)).size !== c.images.length) errors.push('card images contain invalid or duplicate references: ' + c.id)
       if (!columnIds.has(c.columnId)) errors.push('card references missing column: ' + c.id)
       if (c.label != null && !labelNames.has(c.label)) errors.push('card references missing label: ' + c.id)
       if (c.dueDate !== null && !isDueDate(c.dueDate)) errors.push('card has invalid due date: ' + c.id)
@@ -362,6 +384,15 @@ export function apply(ctx) {
   const getFs = () => ctx.get('fs')
   const getPolicy = () => ctx.get('sandboxPolicy')
   const getWorkspaceRegistry = () => ctx.get('workspaceRegistry')
+  const getAttachments = () => ctx.get('attachments')
+  const imageLimits = () => {
+    const store = getAttachments()
+    const limits = store?.imageLimits
+    if (!limits || typeof store.saveImage !== 'function' || typeof store.readImage !== 'function') return null
+    const mediaTypes = IMAGE_TYPES.filter((type) => limits.mediaTypes.includes(type))
+    const maxImageBytes = Math.min(MAX_IMAGE_BYTES, limits.maxImageBytes)
+    return mediaTypes.length && maxImageBytes > 0 ? { maxImageBytes, maxImagesPerCard: MAX_CARD_IMAGES, mediaTypes } : null
+  }
 
   const boards = new Map() // workspaceId -> { columns, labels, cards }
   const boardLoads = new Map() // workspaceId -> Promise<board>; publish only fully initialized boards
@@ -550,7 +581,7 @@ export function apply(ctx) {
     const target = await targetOf(workspace)
     const key = workspaceKey(workspace)
     const board = boards.get(key)
-    if (!fs || !target || !board) return
+    if (!fs || !target || !board) return false
     try {
       await fs.writeText(
         target,
@@ -566,6 +597,7 @@ export function apply(ctx) {
         undefined,
         writePolicyFor(workspace, session),
       )
+      return true
     } catch (err) {
       console.log('dsh-kanban: Save failed ' + key + ': ' + ((err && err.message) || err))
       throw err
@@ -606,6 +638,7 @@ export function apply(ctx) {
       completedAt: c.completedAt,
       createdAt: typeof c.createdAt === 'string' ? c.createdAt : null,
       createdBy: typeof c.createdBy === 'string' ? c.createdBy : null,
+      images: c.images.map(imageRef),
       comments: Array.isArray(c.comments)
         ? c.comments.map((comment) => ({
             id: comment.id,
@@ -634,6 +667,7 @@ export function apply(ctx) {
       dueDate: c.dueDate,
       completedAt: c.completedAt,
       commentCount: c.comments.length,
+      imageCount: c.images.length,
     })),
   })
 
@@ -651,20 +685,56 @@ export function apply(ctx) {
   }
 
   // ---- Core operations shared by agent tools and browser HTTP ----
-  const READ_METHODS = new Set(['get', 'getCard'])
+  const READ_METHODS = new Set(['get', 'getCard', '_getImage'])
   const dispatchUnlocked = async (workspace, method, args, source, session) => {
     const board = await boardOf(workspace, session)
     const a = args || {}
     const actor = source === 'agent' ? 'agent' : 'human'
     const persisted = () => persistedFlag(workspace)
-    const result = (extra) => ({ board: cloneBoard(board), persisted: persisted(), warnings: takeWarnings(board), ...extra })
+    const result = (extra) => ({ board: cloneBoard(board), persisted: persisted(), imageLimits: imageLimits(), warnings: takeWarnings(board), ...extra })
     if (!READ_METHODS.has(method) && board.readOnlyReason) {
       return result({ error: board.readOnlyReason })
     }
 
     switch (method) {
-      case 'get':
-        return { board: cloneBoard(board), persisted: persisted(), warnings: takeWarnings(board), message: 'Board loaded' }
+      case 'get': {
+        if (a.query !== undefined && (typeof a.query !== 'string' || a.query.length > 200)) return result({ error: 'Search query must be at most 200 characters' })
+        const copy = cloneBoard(board)
+        copy.cards = copy.cards.filter((card) => matchCardSearch(card, a.query))
+        return result({ board: copy, message: 'Board loaded' })
+      }
+
+      case '_getImage': {
+        const card = findCard(board, a.id)
+        const image = card?.images.find((item) => item.attachmentId === a.attachmentId)
+        return image ? { image: imageRef(image) } : { error: 'Image not found on this card' }
+      }
+
+      case '_addImage': {
+        const card = findCard(board, a.id)
+        if (!card) return result({ error: 'Card not found: ' + str(a.id, '') })
+        if (!persisted()) return result({ error: 'Images require persistent workspace storage' })
+        if (!validImageRef(a.image)) return result({ error: 'Invalid image reference' })
+        if (card.images.some((image) => image.attachmentId === a.image.attachmentId)) return result({ message: 'Image already added' })
+        if (card.images.length >= MAX_CARD_IMAGES) return result({ error: 'A card can contain at most ' + MAX_CARD_IMAGES + ' images' })
+        card.images.push(imageRef(a.image))
+        record(board, { cardId: card.id, type: 'card_image_added', source: actor })
+        if (!await save(workspace, session)) throw new Error('Image association could not be persisted')
+        return result({ message: 'Image added' })
+      }
+
+      case 'removeImage': {
+        const card = findCard(board, a.id)
+        if (!card) return result({ error: 'Card not found: ' + str(a.id, '') })
+        if (!persisted()) return result({ error: 'Images require persistent workspace storage' })
+        const index = card.images.findIndex((image) => image.attachmentId === a.attachmentId)
+        if (index < 0) return result({ error: 'Image not found on this card' })
+        card.images.splice(index, 1)
+        // DSH objects may be shared by other cards and conversations.
+        record(board, { cardId: card.id, type: 'card_image_removed', source: actor })
+        if (!await save(workspace, session)) throw new Error('Image removal could not be persisted')
+        return result({ message: 'Image removed' })
+      }
 
       case 'getCard': {
         const card = cloneBoard(board).cards.find((c) => c.id === str(a.id, ''))
@@ -689,6 +759,7 @@ export function apply(ctx) {
           createdAt: new Date().toISOString(),
           createdBy: actor,
           comments: [],
+          images: [],
         }
         card.completedAt = col.id === board.completedColumnId ? card.createdAt : null
         board.cards.push(card)
@@ -705,7 +776,7 @@ export function apply(ctx) {
           },
         })
         await save(workspace, session)
-        return result({ message: 'Card added to "' + col.title + '"' })
+        return result({ cardId: card.id, message: 'Card added to "' + col.title + '"' })
       }
 
       case 'updateCard': {
@@ -957,6 +1028,62 @@ export function apply(ctx) {
     return run
   }
 
+  const requireImages = () => {
+    const limits = imageLimits()
+    if (!limits) throw new Error('Image attachments require a DSH image storage service')
+    return limits
+  }
+  const checkImageTarget = async (workspace, id, session) => {
+    const board = await boardOf(workspace, session)
+    if (board.readOnlyReason) throw new Error(board.readOnlyReason)
+    if (!await targetOf(workspace)) throw new Error('Images require persistent workspace storage')
+    if (writePolicyFor(workspace, session).mode === 'read-only') throw new Error('Workspace is read-only')
+    const card = findCard(board, id)
+    if (!card) throw new Error('Card not found: ' + str(id, ''))
+    return card
+  }
+  const storeImage = async (workspace, id, data, mediaType, source, session) => {
+    const limits = requireImages()
+    await checkImageTarget(workspace, id, session)
+    if (!limits.mediaTypes.includes(mediaType)) throw new Error('Only PNG, JPEG and WebP images are supported')
+    if (!data.byteLength || data.byteLength > limits.maxImageBytes) throw new Error('Image exceeds the allowed byte limit or is empty')
+    // The DSH store fully decodes and validates bytes before publishing an image reference.
+    const image = await getAttachments().saveImage({ data, mediaType })
+    return dispatch(workspace, '_addImage', { id, image }, source, session)
+  }
+  const importImage = async (workspace, args, exec) => {
+    const session = exec?.agent?.session
+    const limits = requireImages()
+    await checkImageTarget(workspace, args.id, session)
+    const source = args.source
+    if (source?.kind === 'workspace_file') {
+      if (typeof source.path !== 'string' || !source.path || source.path.includes('\0') || /^(?:[\\/]|[a-zA-Z]:)/.test(source.path)) throw new Error('Image path must be relative to the current workspace')
+      const fs = getFs()
+      if (typeof fs?.readBytes !== 'function' || typeof fs.contains !== 'function') throw new Error('This DSH filesystem cannot import images')
+      const root = await fs.resolve(workspace.path)
+      const target = await fs.resolve(source.path, { cwd: workspace.path })
+      if (!fs.contains(root, target)) throw new Error('Image must be inside the current workspace')
+      const data = await fs.readBytes(target, exec?.signal, limits.maxImageBytes)
+      return storeImage(workspace, args.id, data, imageType(data), 'agent', session)
+    }
+    if (source?.kind === 'session_attachment') {
+      const controller = ctx.get('sessionController')
+      if (!session?.id || typeof controller?.attachment !== 'function') throw new Error('Current session image access is unavailable')
+      // Only the current execution session can authorize an existing image reference.
+      const stored = await controller.attachment({ sessionId: session.id, attachmentId: source.attachmentId })
+      const image = stored.attachment
+      if (!validImageRef(image) || image.bytes > limits.maxImageBytes || !limits.mediaTypes.includes(image.mediaType)) throw new Error('Session image exceeds the supported type or size limits')
+      return dispatch(workspace, '_addImage', { id: args.id, image }, 'agent', session)
+    }
+    throw new Error('Expected a workspace_file or session_attachment image source')
+  }
+  const readCardImage = async (workspace, args, session, signal) => {
+    requireImages()
+    const result = await dispatch(workspace, '_getImage', args, 'agent', session)
+    if (result.error) throw new Error(result.error)
+    return getAttachments().readImage(result.image, signal)
+  }
+
   // ---- Tool execution context and browser workspaceId resolution ----
   const workspaceOfExec = async (exec) => {
     const agent = exec && exec.agent
@@ -996,6 +1123,7 @@ export function apply(ctx) {
       const r = await dispatch(workspace, method, args, 'agent', session)
       return {
         ok: !r.error,
+        ...(r.cardId ? { cardId: r.cardId } : {}),
         message: r.error || r.message || 'Done',
         board: summaryOfClone(r.board),
         warnings: Array.isArray(r.warnings) ? r.warnings : [],
@@ -1038,6 +1166,7 @@ export function apply(ctx) {
       const body = raw ? JSON.parse(raw) : {}
       if (!isObj(body)) return sendJson(400, { error: 'Expected a JSON object' })
       const method = typeof body.method === 'string' ? body.method : 'get'
+      if (method.startsWith('_')) return sendJson(400, { error: 'Unknown kanban method' })
       const args = isObj(body.args) ? body.args : {}
       const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId : ''
       const workspace = workspaceId ? workspaceOfId(workspaceId) : undefined
@@ -1056,6 +1185,89 @@ export function apply(ctx) {
     methods: ['POST'],
     requestBody: 'streaming',
     fetch: httpHandler,
+  }))
+
+  const imageHttpHandler = async (req) => {
+    try {
+      if (!['GET', 'POST'].includes(req.method)) return sendJson(405, { error: 'Method not allowed' })
+      const chunks = []
+      let oversized = false
+      if (req.method === 'POST' && req.body) {
+        const maxBytes = imageLimits()?.maxImageBytes ?? MAX_IMAGE_BYTES
+        const reader = req.body.getReader()
+        let size = 0
+        let timedOut = false
+        const timeout = setTimeout(() => {
+          timedOut = true
+          void reader.cancel().catch(() => {})
+        }, 30_000)
+        try {
+          // Connection destroys unread requests before its error response can flush; drain without buffering excess bytes.
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (!oversized) {
+              size += value.byteLength
+              oversized = size > maxBytes
+              if (oversized) chunks.length = 0
+              else chunks.push(value)
+            }
+          }
+        } finally {
+          clearTimeout(timeout)
+          reader.releaseLock()
+        }
+        // shortcut: Connection may close timed-out uploads without a JSON response; revisit when its streaming bridge flushes before destroying requests.
+        if (timedOut) return sendJson(408, { error: 'Image upload timed out' })
+      }
+      const url = new URL(req.url)
+      const origin = req.headers.get('origin')
+      const host = req.headers.get('host') || url.host
+      if (origin) {
+        let originHost = ''
+        try { originHost = new URL(origin).host } catch {}
+        if (originHost !== host) return sendJson(403, { error: 'Cross-origin request denied' })
+      }
+      const workspace = workspaceOfId(url.searchParams.get('workspaceId') || '')
+      if (!workspace) return sendJson(400, { error: 'Unknown workspace' })
+      const id = url.searchParams.get('cardId') || ''
+      if (req.method === 'GET') {
+        const attachmentId = url.searchParams.get('attachmentId') || ''
+        const ref = await dispatch(workspace, '_getImage', { id, attachmentId }, 'human')
+        if (ref.error) return sendJson(404, { error: ref.error })
+        requireImages()
+        const stored = await getAttachments().readImage(ref.image, req.signal)
+        return new Response(stored.data.slice(), { headers: {
+          'Content-Type': stored.ref.mediaType,
+          'Content-Length': String(stored.data.byteLength),
+          'Cache-Control': 'private, no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': "sandbox; default-src 'none'",
+        } })
+      }
+      const limits = requireImages()
+      const mediaType = (req.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase()
+      if (!limits.mediaTypes.includes(mediaType)) return sendJson(415, { error: 'Only PNG, JPEG and WebP images are supported' })
+      if (oversized) return sendJson(413, { error: 'Image exceeds the allowed byte limit' })
+      await checkImageTarget(workspace, id)
+      const result = await storeImage(workspace, id, Buffer.concat(chunks), mediaType, 'human')
+      return sendJson(result.error ? 400 : 200, result)
+    } catch (err) {
+      return sendJson(400, { error: String(err?.message || err) })
+    }
+  }
+  // Connection's streaming bridge always supplies a body, which Fetch forbids on GET.
+  ctx.inject(['connection'], (routeCtx) => routeCtx.connection.fetch.register({
+    path: '/api/kanban/image',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: imageHttpHandler,
+  }))
+  ctx.inject(['connection'], (routeCtx) => routeCtx.connection.fetch.register({
+    path: '/api/kanban/image/upload',
+    methods: ['POST'],
+    requestBody: 'streaming',
+    fetch: imageHttpHandler,
   }))
 
   // ---- Startup checks: read each workspace board and back up corrupt files ----
@@ -1129,6 +1341,7 @@ export function apply(ctx) {
       ok: { type: 'boolean' },
       message: { type: 'string' },
       board: { type: 'object' },
+      cardId: { type: 'string' },
       warnings: { type: 'array', items: { type: 'string' } },
     },
     required: ['ok', 'message'],
@@ -1159,7 +1372,8 @@ export function apply(ctx) {
             card.title +
             (card.dueDate ? ' (due ' + card.dueDate + ')' : '') +
             (card.columnId === b.completedColumnId ? ' [completed; completedAt: ' + (card.completedAt || 'unknown') + ']' : '') +
-            (card.commentCount ? ' (' + card.commentCount + ' comments)' : ''),
+            (card.commentCount ? ' (' + card.commentCount + ' comments)' : '') +
+            (card.imageCount ? ' (' + card.imageCount + ' images)' : ''),
           )
         }
       }
@@ -1170,9 +1384,66 @@ export function apply(ctx) {
 
   const tools = [
     {
+      name: 'kanban_add_image',
+      description: 'Add a PNG, JPEG or WebP image to an existing card. Supply a workspace-relative file path or an attachmentId actually present in the current session. Never send base64 or a URL. Use the cardId returned by kanban_add_card. Retries of the same image do not add duplicates.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Card id' },
+          source: {
+            oneOf: [
+              { type: 'object', properties: { kind: { type: 'string', const: 'workspace_file' }, path: { type: 'string' } }, required: ['kind', 'path'], additionalProperties: false },
+              { type: 'object', properties: { kind: { type: 'string', const: 'session_attachment' }, attachmentId: { type: 'string' } }, required: ['kind', 'attachmentId'], additionalProperties: false },
+            ],
+          },
+        },
+        required: ['id', 'source'],
+      },
+      output: output(renderBoard),
+      async execute(args, exec) {
+        try {
+          const workspace = await workspaceOfExec(exec)
+          if (!workspace) throw new Error('Cannot determine current workspace')
+          const result = await importImage(workspace, args, exec)
+          return { ok: !result.error, message: result.error || result.message, board: summaryOfClone(result.board), warnings: result.warnings || [] }
+        } catch (err) {
+          return { ok: false, message: String(err?.message || err), warnings: [] }
+        }
+      },
+    },
+    {
+      name: 'kanban_read_image',
+      description: 'Read the actual image attached to a card for visual inspection. Use an attachmentId from kanban_get_card. Only images associated with the card in the current workspace can be read.',
+      parameters: { type: 'object', properties: { id: { type: 'string' }, attachmentId: { type: 'string' } }, required: ['id', 'attachmentId'] },
+      output: {
+        schema: { type: 'object', properties: { ok: { type: 'boolean' }, message: { type: 'string' }, image: { type: 'object' } }, required: ['ok', 'message'], additionalProperties: false },
+        render: (_args, value) => value.ok && value.image
+          ? [{ type: 'text', text: value.message }, { type: 'image', attachment: value.image }]
+          : [{ type: 'text', text: value.message }],
+      },
+      async execute(args, exec) {
+        try {
+          const workspace = await workspaceOfExec(exec)
+          if (!workspace) throw new Error('Cannot determine current workspace')
+          const stored = await readCardImage(workspace, args, exec?.agent?.session, exec?.signal)
+          return { ok: true, message: 'Card image', image: imageRef(stored.ref) }
+        } catch (err) {
+          return { ok: false, message: String(err?.message || err) }
+        }
+      },
+    },
+    {
+      name: 'kanban_remove_image',
+      description: 'Remove an image association from a card. The DSH object may still be used by other cards or conversations and is not physically deleted.',
+      parameters: { type: 'object', properties: { id: { type: 'string' }, attachmentId: { type: 'string' } }, required: ['id', 'attachmentId'] },
+      output: output(renderBoard),
+      execute(args, exec) { return runTool('removeImage', args, exec) },
+    },
+
+    {
       name: 'kanban_get',
-      description: 'Read the current state of the current project (workspace) kanban board (all lists, labels, cards with dueDate and completedAt, and completedColumnId). Due dates are local calendar dates, not UTC timestamps; a date becomes overdue the following day. Cards in completedColumnId are finished and excluded from due-today/overdue checks. completedAt is the latest completion UTC timestamp; null on a completed card means unknown. Resolve relative dates using the user local date and confirm the concrete YYYY-MM-DD date. Call it before planning to understand existing content and avoid duplicate cards.',
-      parameters: { type: 'object', properties: {} },
+      description: 'Read the current state of the current project (workspace) kanban board (all lists, labels, cards optionally filtered by query, with dueDate and completedAt, and completedColumnId). Due dates are local calendar dates, not UTC timestamps; a date becomes overdue the following day. Cards in completedColumnId are finished and excluded from due-today/overdue checks. completedAt is the latest completion UTC timestamp; null on a completed card means unknown. Resolve relative dates using the user local date and confirm the concrete YYYY-MM-DD date. Call it before planning to understand existing content and avoid duplicate cards.',
+      parameters: { type: 'object', properties: { query: { type: 'string', description: 'Optional text, at most 200 characters. Literal text search across card ids, titles, descriptions and comments; ignores case and surrounding whitespace.' } } },
       output: output(renderBoard),
       async execute(args, exec) {
         return runTool('get', args, exec)
@@ -1216,6 +1487,7 @@ export function apply(ctx) {
             lines.push('Completed: ' + (c.columnId === value.completedColumnId ? 'yes' : 'no'))
             if (c.columnId === value.completedColumnId) lines.push('Completed at: ' + (c.completedAt || 'unknown'))
             if (c.note) lines.push('Note: ' + c.note)
+            for (const image of c.images || []) lines.push('Image: ' + image.attachmentId + ' (' + image.width + '×' + image.height + '); use kanban_read_image to view it')
             if (Array.isArray(c.comments) && c.comments.length > 0) {
               lines.push('Comments:')
               for (const comment of c.comments) {

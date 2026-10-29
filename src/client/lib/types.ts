@@ -12,6 +12,8 @@ export type ActivityType =
   | "card_title_changed"
   | "card_note_changed"
   | "card_comment_added"
+  | "card_image_added"
+  | "card_image_removed"
   | "card_deleted"
   | "column_added"
   | "column_renamed"
@@ -57,6 +59,20 @@ export interface Comment {
   createdAt: string
 }
 
+export interface ImageRef {
+  attachmentId: string
+  mediaType: "image/png" | "image/jpeg" | "image/webp"
+  bytes: number
+  width: number
+  height: number
+}
+
+export interface ImageLimits {
+  maxImageBytes: number
+  maxImagesPerCard: number
+  mediaTypes: string[]
+}
+
 export interface Card {
   id: string
   columnId: string
@@ -69,6 +85,7 @@ export interface Card {
   createdAt: string | null
   createdBy: ActivitySource | null
   comments: Comment[]
+  images: ImageRef[]
 }
 
 export interface Board {
@@ -87,6 +104,8 @@ export interface WorkspaceItem {
 }
 
 export interface KanbanResponse {
+  cardId?: string
+  imageLimits?: ImageLimits | null
   board?: Board
   persisted?: boolean
   error?: string

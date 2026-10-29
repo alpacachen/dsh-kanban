@@ -125,21 +125,12 @@
 .kanban-toolbar {
   display: flex;
   flex-shrink: 0;
-  flex-direction: column;
   align-items: center;
-  align-self: flex-start;
   gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-1);
 }
 
-.kanban-toolbar-divider {
-  width: 24px;
-  height: 1px;
-  margin: 2px 0;
-  background: var(--dsw-alias-border-l2);
+.kanban-toolbar-settings {
+  margin-left: auto;
 }
 
 .kanban-toolbar-button {
@@ -321,6 +312,7 @@
 }
 
 .kanban-sortable-card {
+  position: relative;
   border-radius: 10px;
   cursor: grab;
   touch-action: auto;
@@ -1072,6 +1064,7 @@
 }
 
 .kanban-dropdown-item {
+  text-decoration: none;
   position: relative;
   display: flex;
   align-items: center;
@@ -1540,8 +1533,9 @@
   }
 }
 
-/* Task details retain the dialog's focus management while using the full height. */
+/* Host previews share z-index 1000 and mount after the drawer. */
 .kanban-dialog-content.kanban-drawer-content {
+  z-index: 1000;
   top: 0;
   right: 0;
   bottom: 0;
@@ -1613,4 +1607,91 @@
   .kanban-dialog-content.kanban-drawer-content {
     border-left-width: 0;
   }
+}
+
+/* Search and actions share one compact row, wrapping when the pane is narrow. */
+.kanban-search-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  flex-shrink: 0;
+}
+.kanban-search-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: min(100%, 240px);
+  max-width: 420px;
+  padding-left: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.kanban-search-field > svg { width: 16px; height: 16px; color: var(--dsw-alias-label-tertiary); }
+.kanban-search-field .kanban-input { min-width: 0; flex: 1; border: 0; background: transparent; }
+.kanban-search-field input::-webkit-search-cancel-button { display: none; }
+.kanban-search-field .kanban-button { width: 28px; height: 28px; margin-right: 3px; }
+.kanban-search-match { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+
+.kanban-images {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 8px;
+}
+.kanban-images.is-dragging { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 4px; }
+.kanban-image-empty {
+  padding: 18px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: center;
+}
+.kanban-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
+  gap: 10px;
+}
+.kanban-image-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  align-items: stretch;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.kanban-image-tile > .kanban-button { align-self: flex-end; }
+.kanban-image-preview {
+  position: relative;
+  height: 116px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+}
+.kanban-image-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.kanban-image-open { display: block; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; cursor: zoom-in; }
+.kanban-image-open:disabled { cursor: default; }
+.kanban-image-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+}
+.kanban-image-message > svg { width: 16px; height: 16px; }
+.kanban-image-draft-info { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; overflow-wrap: anywhere; }
+.kanban-image-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--dsw-font-xxs-12); }
+.kanban-image-draft-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 600px) {
+  .kanban-search-field { flex-basis: 100%; max-width: none; }
+  .kanban-image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
