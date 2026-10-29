@@ -47,6 +47,10 @@ export function describeActivity(activity: Activity, t: (key: string) => string)
       return t("actNote")
     case "card_comment_added":
       return t("actComment")
+    case "card_image_added":
+      return t("actImageAdded")
+    case "card_image_removed":
+      return t("actImageRemoved")
     case "card_deleted":
       return t("actDeleted")
     case "column_added":

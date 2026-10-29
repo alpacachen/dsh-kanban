@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync, symlinkSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { matchCardSearch } from "../search.js"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve, relative, isAbsolute } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
 import { assertSupportedJsonSchema } from "@deepseek-ai/dsh-tools"
 import * as plugin from "../index.js"
@@ -22,7 +24,17 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
   const childDisposers = []
   const fs = {
     async resolve(path, options = {}) {
-      return join(options.cwd || dir, path)
+      const target = resolve(options.cwd || dir, path)
+      return existsSync(target) ? realpathSync(target) : target
+    },
+    contains(root, target) {
+      const child = relative(root, target)
+      return child === '' || (!child.startsWith('..') && !isAbsolute(child))
+    },
+    async readBytes(target, _signal, limit) {
+      const bytes = readFileSync(target)
+      if (bytes.length > limit) throw new Error('FS_TOO_LARGE')
+      return bytes
     },
     async readText(target) {
       if (!existsSync(target)) {
@@ -34,7 +46,7 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
     },
     async writeText(target, content) {
       if (options.writeDelay) await new Promise((resolve) => setTimeout(resolve, options.writeDelay(content)))
-      if (options.failWrites) throw new Error("ENOSPC")
+      if (typeof options.failWrites === "function" ? options.failWrites() : options.failWrites) throw new Error("ENOSPC")
       writeFileSync(target, content, "utf8")
       return { version: 1 }
     },
@@ -49,8 +61,10 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
     get(name) {
       if (name === "connection") return options.connection
       if (name === "webServer") throw new Error("Browser routes must use authenticated Connection")
-      if (name === "fs") return fs
-      if (name === "sandboxPolicy") return { defaultMode: "workspace-write", resolve: () => ({ mode: "workspace-write" }) }
+      if (name === "attachments") return options.attachments
+      if (name === "sessionController") return options.sessionController
+      if (name === "fs") return options.noFs ? undefined : fs
+      if (name === "sandboxPolicy") return { defaultMode: "workspace-write", resolve: () => ({ mode: options.readOnly?.() ? "read-only" : "workspace-write" }) }
       if (name === "workspaceRegistry") return {
         get: (id) => id === workspace.id ? workspace : undefined,
         list: () => [workspace],
@@ -67,7 +81,7 @@ function boot(dir = mkdtempSync(join(tmpdir(), "dsh-kanban-test-")), options = {
     for (const disposeChild of childDisposers) await disposeChild()
     await cleanup()
   }
-  const exec = { agent: { session: { header: { cwd: dir } } } }
+  const exec = { agent: { session: { id: "test-session", header: { cwd: dir } } } }
   return { dir, workspace, registered, exec, dispose }
 }
 
@@ -155,7 +169,7 @@ describe("host board seam", () => {
     expect(loaded.board).toMatchObject({ completedColumnId: null, cards: [{ dueDate: null }] })
     expect(JSON.parse(readFileSync(join(dir, ".dsh-kanban.json.bak-v3"), "utf8"))).toEqual(original)
     const saved = JSON.parse(readFileSync(join(dir, ".dsh-kanban.json"), "utf8"))
-    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, completedColumnId: null, cards: [{ ...original.cards[0], dueDate: null, completedAt: null }] })
+    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, completedColumnId: null, cards: [{ ...original.cards[0], dueDate: null, completedAt: null, images: [] }] })
     expect(parseBoardText(JSON.stringify(saved))).toMatchObject({ ok: true, migrated: false })
     const second = boot(dir)
     expect(await tool(second.registered, "kanban_get").execute({}, second.exec)).toMatchObject({ ok: true, warnings: [], board: loaded.board })
@@ -308,7 +322,7 @@ describe("host board seam", () => {
     expect(tool(host.registered, "kanban_get_card").output.render({}, loaded)[0].text).toContain("Completed at: unknown")
     expect(JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json.bak-v4"), "utf8"))).toEqual(original)
     const saved = JSON.parse(readFileSync(join(host.dir, ".dsh-kanban.json"), "utf8"))
-    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, cards: [{ ...original.cards[0], completedAt: null }] })
+    expect(saved).toEqual({ ...original, schemaVersion: SCHEMA_VERSION, cards: [{ ...original.cards[0], completedAt: null, images: [] }] })
     for (const completedAt of [undefined, "", "today", "2026-02-30T00:00:00.000Z", "2026-10-27", 42, false]) {
       expect(parseBoardText(JSON.stringify({ ...saved, cards: [{ ...saved.cards[0], completedAt }] })).ok).toBe(false)
     }
@@ -345,8 +359,8 @@ describe("host board seam", () => {
     const { registered } = boot()
     const names = registered.map(({ name }) => name)
 
-    expect(names).toHaveLength(16)
-    expect(new Set(names).size).toBe(16)
+    expect(names).toHaveLength(19)
+    expect(new Set(names).size).toBe(19)
     for (const registeredTool of registered) {
       expect(registeredTool.name).toMatch(/^kanban_/)
       expect(registeredTool.parameters).toMatchObject({ type: "object" })
@@ -550,7 +564,7 @@ describe("authenticated Connection route", () => {
     let route
     let removed = false
     const host = boot(undefined, { connection: { fetch: { register(value) {
-      route = value
+      if (value.path === "/api/kanban") route = value
       return async () => { removed = true }
     } } } })
     expect(route).toMatchObject({ path: "/api/kanban", methods: ["POST"], requestBody: "streaming" })
@@ -574,7 +588,7 @@ describe("authenticated Connection route", () => {
 
   it("rejects malformed, cross-origin and oversized requests without writing", async () => {
     let route
-    const host = boot(undefined, { connection: { fetch: { register(value) { route = value } } } })
+    const host = boot(undefined, { connection: { fetch: { register(value) { if (value.path === "/api/kanban") route = value } } } })
     const cases = [
       [request("", {}, "GET"), 405],
       [request("{}", { "content-type": "text/plain" }), 415],
@@ -603,7 +617,7 @@ describe("Cordis service lifecycle", () => {
       const fiber = root.plugin(plugin)
       await fiber
       expect(root.get("timer")).toBeUndefined()
-      expect(registered).toHaveLength(16)
+      expect(registered).toHaveLength(19)
       expect(routes.size).toBe(0)
       const provideConnection = () => root.plugin({ apply(ctx) {
         ctx.provide("connection", { fetch: { register(route) {
@@ -615,6 +629,11 @@ describe("Cordis service lifecycle", () => {
       let provider = provideConnection()
       await provider
       expect(routes.has("/api/kanban")).toBe(true)
+      expect(routes.get("/api/kanban/image")).toMatchObject({ methods: ["GET"], requestBody: "buffered" })
+      expect(routes.get("/api/kanban/image/upload")).toMatchObject({ methods: ["POST"], requestBody: "streaming" })
+      for (const route of routes.values()) {
+        if (route.methods.includes("GET")) expect(route.requestBody).toBe("buffered")
+      }
       expect((await routes.get("/api/kanban").fetch(new Request("http://localhost/api/kanban", {
         method: "POST", headers: { "content-type": "application/json" }, body: "{}",
       }))).status).toBe(400)
@@ -648,5 +667,260 @@ describe("Cordis service lifecycle", () => {
     } finally {
       await root.fiber.dispose()
     }
+  })
+})
+
+// A deliberately small storage seam: tests below exercise Kanban ownership and persistence,
+// while DSH owns raster decoding and its content-addressed object format.
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDSkAAAAASUVORK5CYII=', 'base64')
+function imageStore() {
+  const objects = new Map()
+  return {
+    objects,
+    imageLimits: { maxImageBytes: 1024, mediaTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+    async saveImage({ data, mediaType }) {
+      if (mediaType !== 'image/png' || !Buffer.from(data).equals(png)) throw new Error('INVALID_IMAGE')
+      const ref = { attachmentId: 'sha256:' + createHash('sha256').update(data).digest('hex'), mediaType, bytes: data.length, width: 1, height: 1, name: 'not-persisted.png', originalDimensions: { width: 1, height: 1 } }
+      objects.set(ref.attachmentId, { ref, data })
+      return ref
+    },
+    async readImage(ref) {
+      const stored = objects.get(ref.attachmentId)
+      if (!stored) throw new Error('ATTACHMENT_NOT_FOUND')
+      return { ref, data: stored.data }
+    },
+  }
+}
+function imageHost(options = {}, dir) {
+  const routes = new Map()
+  const host = boot(dir, { attachments: imageStore(), ...options, connection: { fetch: { register(route) { routes.set(route.path, route); return () => routes.delete(route.path) } } } })
+  const call = (name, args = {}) => tool(host.registered, 'kanban_' + name).execute(args, host.exec)
+  const imageRequest = (cardId, body, options = {}) => routes.get(body === undefined ? '/api/kanban/image' : '/api/kanban/image/upload').fetch(new Request('http://localhost/api/kanban/image' + (body === undefined ? '' : '/upload') + '?' + new URLSearchParams({ workspaceId: host.workspace.id, cardId, ...(options.attachmentId ? { attachmentId: options.attachmentId } : {}), ...options.params }), {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'content-type': 'image/png', ...options.headers },
+    ...(body === undefined ? {} : { body }),
+  }))
+  return { ...host, routes, call, imageRequest }
+}
+
+describe('card image lifecycle and search', () => {
+  it('searches full descriptions and comments with the same literal rule as the UI', async () => {
+    const host = imageHost()
+    const first = await host.call('add_card', { title: '登录错误', note: 'Code ABC-123' })
+    const id = first.cardId
+    expect(id).toBe(first.board.cards[0].id)
+    await host.call('add_card', { title: 'Unrelated' })
+    await host.call('add_comment', { id, content: '等待接口修复' })
+    for (const query of [' 登录 ', 'abc-123', '接口', id]) {
+      const result = await host.call('get', { query })
+      expect(result.board.cards.map((card) => card.id)).toEqual([id])
+      const card = (await host.call('get_card', { id })).card
+      expect(matchCardSearch(card, query)).toBe(true)
+    }
+    expect((await host.call('get', { query: '.*' })).board.cards).toEqual([])
+    expect((await host.call('get', { query: '   ' })).board.cards).toHaveLength(2)
+    expect(await host.call('get', { query: 'a'.repeat(201) })).toMatchObject({ ok: false })
+  })
+
+  it('persists only five native reference fields, survives reload, and reads lazily by card ownership', async () => {
+    const store = imageStore()
+    const host = imageHost({ attachments: store })
+    const { cardId } = await host.call('add_card', { title: 'Image card' })
+    const upload = await host.imageRequest(cardId, png)
+    expect(upload.status).toBe(200)
+    const added = await upload.json()
+    expect(added).toMatchObject({ persisted: true, imageLimits: { maxImageBytes: 1024, maxImagesPerCard: 10 } })
+    const ref = added.board.cards[0].images[0]
+    expect(Object.keys(ref).sort()).toEqual(['attachmentId', 'bytes', 'height', 'mediaType', 'width'])
+    const saved = JSON.parse(readFileSync(join(host.dir, '.dsh-kanban.json'), 'utf8'))
+    expect(saved.cards[0].images).toEqual([ref])
+    expect(parseBoardText(JSON.stringify(saved))).toMatchObject({ ok: true, migrated: false })
+    const reloaded = imageHost({ attachments: store }, host.dir)
+    const response = await reloaded.imageRequest(cardId, undefined, { attachmentId: ref.attachmentId })
+    expect(response.headers.get('content-type')).toBe('image/png')
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(png)
+    const read = await reloaded.call('read_image', { id: cardId, attachmentId: ref.attachmentId })
+    expect(tool(reloaded.registered, 'kanban_read_image').output.render({}, read)).toContainEqual({ type: 'image', attachment: ref })
+    const other = await reloaded.call('add_card', { title: 'Another card' })
+    expect((await reloaded.imageRequest(other.cardId, undefined, { attachmentId: ref.attachmentId })).status).toBe(404)
+    expect(await reloaded.call('read_image', { id: other.cardId, attachmentId: ref.attachmentId })).toMatchObject({ ok: false })
+    expect((await reloaded.imageRequest(cardId, undefined, { attachmentId: ref.attachmentId, params: { workspaceId: 'other-workspace' } })).status).toBe(400)
+  })
+
+  it('validates type, bytes, source origin and opaque references before publishing', async () => {
+    const host = imageHost()
+    const { cardId } = await host.call('add_card', { title: 'Checks' })
+    expect((await host.imageRequest(cardId, png, { headers: { origin: 'https://other.example' } })).status).toBe(403)
+    expect((await host.imageRequest(cardId, png, { headers: { 'content-type': 'image/svg+xml' } })).status).toBe(415)
+    expect((await host.imageRequest(cardId, Buffer.alloc(1025))).status).toBe(413)
+    expect((await host.imageRequest(cardId, 'not an image')).status).toBe(400)
+    const forged = await host.routes.get('/api/kanban').fetch(new Request('http://localhost/api/kanban', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method: '_addImage', args: { workspaceId: host.workspace.id, id: cardId, image: { attachmentId: 'sha256:' + 'a'.repeat(64) } } }) }))
+    expect(forged.status).toBe(400)
+    expect((await host.call('get_card', { id: cardId })).card.images).toEqual([])
+    const saved = JSON.parse(readFileSync(join(host.dir, '.dsh-kanban.json'), 'utf8'))
+    for (const images of [[{ attachmentId: '../secret' }], [null], undefined]) {
+      expect(parseBoardText(JSON.stringify({ ...saved, cards: [{ ...saved.cards[0], images }] }))).toMatchObject({ ok: false })
+    }
+  })
+
+  it('drains rejected uploads before responding so Connection can flush the error', async () => {
+    const store = imageStore()
+    const host = imageHost({ attachments: store })
+    const { cardId } = await host.call('add_card', { title: 'Rejected uploads' })
+    for (const [headers, workspaceId, size, status] of [
+      [{ 'content-type': 'image/svg+xml' }, host.workspace.id, 64, 415],
+      [{ origin: 'https://other.example' }, host.workspace.id, 64, 403],
+      [{}, 'missing', 64, 400],
+      [{}, host.workspace.id, 512, 413],
+    ]) {
+      let chunks = 0
+      let ended = false
+      const cancel = vi.fn()
+      const body = new ReadableStream({
+        pull(controller) {
+          if (++chunks <= 4) controller.enqueue(new Uint8Array(size))
+          else { ended = true; controller.close() }
+        },
+        cancel,
+      })
+      const request = new Request('http://localhost/api/kanban/image/upload?' + new URLSearchParams({ workspaceId, cardId }), {
+        method: 'POST', headers: { 'content-type': 'image/png', ...headers }, body, duplex: 'half',
+      })
+      const response = await host.routes.get('/api/kanban/image/upload').fetch(request)
+      expect(response.status).toBe(status)
+      expect(ended).toBe(true)
+      expect(cancel).not.toHaveBeenCalled()
+    }
+    expect(store.objects.size).toBe(0)
+    expect((await host.call('get_card', { id: cardId })).card.images).toEqual([])
+  })
+
+  it('stops uploads which never finish without storing an image', async () => {
+    const store = imageStore()
+    const host = imageHost({ attachments: store })
+    const { cardId } = await host.call('add_card', { title: 'Stalled upload' })
+    vi.useFakeTimers()
+    const cancel = vi.fn()
+    const body = new ReadableStream({ start(controller) { controller.enqueue(png) }, cancel })
+    const request = new Request('http://localhost/api/kanban/image/upload?' + new URLSearchParams({ workspaceId: host.workspace.id, cardId }), {
+      method: 'POST', headers: { 'content-type': 'image/png' }, body, duplex: 'half',
+    })
+    const pending = host.routes.get('/api/kanban/image/upload').fetch(request)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect((await pending).status).toBe(408)
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(store.objects.size).toBe(0)
+  })
+
+  it('deduplicates retries and removes only the card association', async () => {
+    const store = imageStore()
+    const options = { attachments: store, failWrites: false }
+    const host = imageHost(options)
+    const { cardId } = await host.call('add_card', { title: 'Retry' })
+    const responses = await Promise.all([host.imageRequest(cardId, png), host.imageRequest(cardId, png)])
+    expect(responses.every((response) => response.status === 200)).toBe(true)
+    const detail = await host.call('get_card', { id: cardId })
+    expect(detail.card.images).toHaveLength(1)
+    const attachmentId = detail.card.images[0].attachmentId
+    await host.call('remove_image', { id: cardId, attachmentId })
+    expect((await host.call('get_card', { id: cardId })).card.images).toEqual([])
+    expect(store.objects.has(attachmentId)).toBe(true)
+    expect((await host.imageRequest(cardId, undefined, { attachmentId })).status).toBe(404)
+  })
+
+  it('imports a workspace file through the filesystem provider and rejects a symlink outside it', async () => {
+    const host = imageHost()
+    const { cardId } = await host.call('add_card', { title: 'Agent import' })
+    writeFileSync(join(host.dir, 'image.png'), png)
+    const result = await host.call('add_image', { id: cardId, source: { kind: 'workspace_file', path: 'image.png' } })
+    expect(result).toMatchObject({ ok: true, board: { cards: [{ imageCount: 1 }] } })
+    const outside = mkdtempSync(join(tmpdir(), 'kanban-outside-'))
+    workspaces.push(outside)
+    writeFileSync(join(outside, 'secret.png'), png)
+    symlinkSync(join(outside, 'secret.png'), join(host.dir, 'escape.png'))
+    expect(await host.call('add_image', { id: cardId, source: { kind: 'workspace_file', path: 'escape.png' } })).toMatchObject({ ok: false })
+    expect(await host.call('add_image', { id: cardId, source: { kind: 'workspace_file', path: join(outside, 'secret.png') } })).toMatchObject({ ok: false })
+  })
+
+  it('uses the execution session to authorize existing attachments and never accepts another session id', async () => {
+    const store = imageStore()
+    const ref = await store.saveImage({ data: png, mediaType: 'image/png' })
+    const attachment = vi.fn(async ({ sessionId, attachmentId }) => {
+      if (sessionId !== 'test-session' || attachmentId !== ref.attachmentId) throw new Error('ATTACHMENT_NOT_REFERENCED')
+      return { attachment: ref, data: png.toString('base64') }
+    })
+    const host = imageHost({ attachments: store, sessionController: { attachment } })
+    const { cardId } = await host.call('add_card', { title: 'Session import' })
+    expect(await host.call('add_image', { id: cardId, source: { kind: 'session_attachment', attachmentId: ref.attachmentId, sessionId: 'another-session' } })).toMatchObject({ ok: true })
+    expect(attachment).toHaveBeenCalledWith({ sessionId: 'test-session', attachmentId: ref.attachmentId })
+    expect(await host.call('add_image', { id: cardId, source: { kind: 'session_attachment', attachmentId: 'sha256:' + 'b'.repeat(64) } })).toMatchObject({ ok: false })
+  })
+
+  it('does not upload without persistent storage or after the card is deleted during image admission', async () => {
+    const store = imageStore()
+    const noStorage = imageHost({ noFs: true, attachments: store })
+    const { cardId } = await noStorage.call('add_card', { title: 'Memory only' })
+    expect((await noStorage.imageRequest(cardId, png)).status).toBe(400)
+    expect(store.objects.size).toBe(0)
+    let finish
+    let started
+    const gate = new Promise((resolve) => { started = resolve })
+    const slowStore = { ...store, async saveImage(input) { started(); await new Promise((resolve) => { finish = resolve }); return store.saveImage(input) } }
+    const host = imageHost({ attachments: slowStore })
+    const added = await host.call('add_card', { title: 'Delete while uploading' })
+    const pending = host.imageRequest(added.cardId, png)
+    await gate
+    await host.call('delete_card', { id: added.cardId })
+    finish()
+    expect((await pending).status).toBe(400)
+    expect((await host.call('get')).board.cards).toEqual([])
+  })
+})
+
+describe('image storage failure boundaries', () => {
+  it('backs up schema v5 and adds empty images without changing existing card data', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kanban-v5-images-'))
+    workspaces.push(dir)
+    const original = { schemaVersion: 5, completedColumnId: null, columns: [{ id: 'todo', title: 'Todo' }], labels: [{ name: 'Keep label', color: '#123456' }], cards: [{ id: 'k1', columnId: 'todo', title: 'Keep', note: 'Description', comments: [], dueDate: null, completedAt: null }], activities: [] }
+    writeFileSync(join(dir, '.dsh-kanban.json'), JSON.stringify(original))
+    const host = imageHost({}, dir)
+    expect(await host.call('get_card', { id: 'k1' })).toMatchObject({ card: { title: 'Keep', note: 'Description', images: [] } })
+    expect(JSON.parse(readFileSync(join(dir, '.dsh-kanban.json.bak-v5'), 'utf8'))).toEqual(original)
+    expect(JSON.parse(readFileSync(join(dir, '.dsh-kanban.json'), 'utf8'))).toEqual({ ...original, schemaVersion: 6, cards: [{ ...original.cards[0], images: [] }] })
+  })
+
+  it('rejects read-only imports before touching the store and rolls back a failed metadata commit', async () => {
+    let readOnly = false
+    let failWrites = false
+    const store = imageStore()
+    const host = imageHost({ attachments: store, readOnly: () => readOnly, failWrites: () => failWrites })
+    const { cardId } = await host.call('add_card', { title: 'Persistent card' })
+    readOnly = true
+    const denied = await host.imageRequest(cardId, png)
+    expect(denied.status).toBe(400)
+    expect((await denied.json()).error).toContain('read-only')
+    expect(store.objects.size).toBe(0)
+    readOnly = false
+    failWrites = true
+    const failed = await host.imageRequest(cardId, png)
+    expect(failed.status).toBe(400)
+    expect((await failed.json()).error).toContain('ENOSPC')
+    expect((await host.call('get_card', { id: cardId })).card.images).toEqual([])
+    expect(JSON.parse(readFileSync(join(host.dir, '.dsh-kanban.json'), 'utf8')).cards[0].images).toEqual([])
+    failWrites = false
+    expect((await host.imageRequest(cardId, png)).status).toBe(200)
+    expect((await host.call('get_card', { id: cardId })).card.images).toHaveLength(1)
+  })
+
+  it('enforces the card image limit when concurrent imports commit', async () => {
+    const store = imageStore()
+    const base = await store.saveImage({ data: png, mediaType: 'image/png' })
+    const refs = Array.from({ length: 11 }, (_, i) => ({ ...base, attachmentId: 'sha256:' + i.toString(16).padStart(64, '0') }))
+    const host = imageHost({ attachments: store, sessionController: { async attachment({ attachmentId }) { return { attachment: refs.find((ref) => ref.attachmentId === attachmentId) } } } })
+    const { cardId } = await host.call('add_card', { title: 'Bounded images' })
+    const results = await Promise.all(refs.map((ref) => host.call('add_image', { id: cardId, source: { kind: 'session_attachment', attachmentId: ref.attachmentId } })))
+    expect(results.filter((result) => result.ok)).toHaveLength(10)
+    expect(results.filter((result) => !result.ok)).toHaveLength(1)
+    expect((await host.call('get_card', { id: cardId })).card.images).toHaveLength(10)
   })
 })

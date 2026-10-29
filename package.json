@@ -1,7 +1,7 @@
 {
   "name": "@alpacachen/dsh-kanban",
-  "version": "1.9.0",
-  "description": "A kanban board plugin for DeepSeek Harness: a 'Board' tab, card comments and 16 kanban_* AI tools, with per-workspace isolation and disk persistence.",
+  "version": "1.10.0",
+  "description": "A collaborative kanban board for DeepSeek Harness with text search, native image attachments, due dates, comments and 19 agent tools.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -12,12 +12,14 @@
   },
   "files": [
     "index.js",
+    "search.js",
     "lib/client.js",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
     "image.png",
     "docs/screenshots/card-details-dark.png",
+    "docs/testing-images.md",
     "LICENSE"
   ],
   "scripts": {
@@ -109,14 +111,14 @@
       ]
     },
     "compatibility": {
-      "dsh": "0.1.5-rc.1 || 0.1.5-rc.2 || 0.2.0-rc.2",
+      "dsh": "0.2.0-rc.2 || 0.2.1-rc.3",
       "dshReleases": {
-        "0.1.5-rc.1": "compatible",
-        "0.1.5-rc.2": "compatible",
-        "0.2.0-rc.2": "compatible"
+        "0.2.0-rc.2": "compatible",
+        "0.2.1-rc.3": "compatible"
       },
       "profiles": [
-        "web"
+        "web",
+        "desktop"
       ]
     }
   }

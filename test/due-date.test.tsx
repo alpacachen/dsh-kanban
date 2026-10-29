@@ -170,11 +170,11 @@ describe("board deadline controls", () => {
     expect(titles()).toEqual(["Overdue task"])
     await user.click(screen.getByRole("button", { name: `${t("clearFilter")}: ${t("overdue")}` }))
     expect(titles()).toEqual([card.title, "Overdue task", "Unscheduled", "Finished"])
-    const feedback = screen.getByRole("link", { name: t("feedback") })
+    await user.click(screen.getByRole("button", { name: t("settings") }))
+    const feedback = screen.getByRole("menuitem", { name: t("feedback") })
     expect(feedback.getAttribute("href")).toBe("https://github.com/alpacachen/dsh-kanban/issues/new/choose")
     expect(feedback.getAttribute("target")).toBe("_blank")
     expect(feedback.getAttribute("rel")).toContain("noopener")
-    expect(feedback.closest(".kanban-toolbar")?.lastElementChild?.contains(feedback)).toBe(true)
   })
 
   it("sends an explicit null when clearing an existing deadline", async () => {

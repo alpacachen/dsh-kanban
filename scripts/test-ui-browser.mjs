@@ -350,7 +350,8 @@ try {
         board.cards[0].columnId = 'done'
         board.cards[0].completedAt = state === 'known' ? '2026-10-27T06:30:00.000Z' : null
         const refreshed = page.waitForResponse(response => response.url().endsWith('/api/kanban'))
-        await page.getByRole('button', { name: 'Refresh board', exact: true }).click()
+        await page.getByRole('button', { name: 'Settings', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Refresh board', exact: true }).click()
         await refreshed
         await page.locator('.kanban-column').last().getByRole('button', { name: 'Keyboard fixture', exact: true }).click()
         const completion = page.getByLabel('Completed at', { exact: true })
@@ -367,7 +368,8 @@ try {
   board.cards[0].columnId = 'todo'
   board.cards[0].completedAt = null
   const reopened = page.waitForResponse(response => response.url().endsWith('/api/kanban'))
-  await page.getByRole('button', { name: 'Refresh board', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Refresh board', exact: true }).click()
   await reopened
   checked.push('Read-only completion dates, Asia/Shanghai conversion, unknown historical dates, inherited computed fonts in both themes and three viewports')
 

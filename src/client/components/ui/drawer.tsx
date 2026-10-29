@@ -1,7 +1,9 @@
 import * as React from "react"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { DialogContent } from "./dialog"
+import { createPortal } from "react-dom"
+import { useModalLayer } from "@deepseek-ai/dsh-client-ui-primitives"
+import { X } from "lucide-react"
 
 const WIDTH_KEY = "dsh-kanban:card-drawer-width"
 const DEFAULT_WIDTH = 720
@@ -20,9 +22,13 @@ function rememberWidth(width: number) {
 }
 
 const DrawerContent = React.forwardRef<
-  React.ElementRef<typeof DialogContent>,
-  React.ComponentPropsWithoutRef<typeof DialogContent>
->(({ className, children, id, style, ...props }, ref) => {
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { open: boolean; onClose: () => void; title: string }
+>(({ open, onClose, title, className, children, id, style, ...props }, ref) => {
+  const panel = React.useRef<HTMLDivElement>(null)
+  React.useImperativeHandle(ref, () => panel.current!, [open])
+  // Share Host modal ownership so its body-portaled image preview can receive focus.
+  useModalLayer(panel, open, onClose)
   const t = useT()
   const generatedId = React.useId()
   const panelId = id ?? generatedId
@@ -59,12 +65,19 @@ const DrawerContent = React.forwardRef<
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
-  return (
-    <DialogContent
+  if (!open) return null
+  return createPortal(<>
+    <div className="kanban-portal kanban-dialog-overlay" aria-hidden="true" onClick={onClose} />
+    <div
       {...props}
-      ref={ref}
+      ref={panel}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      tabIndex={-1}
+      data-state="open"
       id={panelId}
-      className={cn("kanban-drawer-content", className)}
+      className={cn("kanban-portal kanban-dialog-content kanban-drawer-content", className)}
       style={{ ...style, width }}
       data-resizing={resizing || undefined}
     >
@@ -114,8 +127,9 @@ const DrawerContent = React.forwardRef<
         />
         <span id={hintId} className="kanban-sr-only">{t("resizeTaskDetailsHint")}</span>
       </>}
-    </DialogContent>
-  )
+      <button type="button" className="kanban-dialog-close" aria-label={t("close")} onClick={onClose}><X className="kanban-dialog-close-icon" /></button>
+    </div>
+  </>, document.body)
 })
 DrawerContent.displayName = "DrawerContent"
 

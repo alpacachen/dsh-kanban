@@ -5,29 +5,31 @@ import {
   useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
-import { CalendarDays, Check, Filter, List, MessageSquare, RefreshCw, Settings2, Tag, X } from "lucide-react"
+import { CalendarDays, Check, Filter, List, MessageSquare, RefreshCw, Search, Settings2, Tag, X } from "lucide-react"
 import { CardDialog, type CardFormValues, type ChatTarget } from "./components/CardDialog"
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
 import { LabelDialog } from "./components/LabelDialog"
 import { KanbanCard } from "./components/SortableCard"
+import { Input } from "@/components/ui/input"
+import { matchCardSearch } from "../../search.js"
 import { Button } from "@/components/ui/button"
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { matchesDueDate, useLocalDate, type DueDateFilter } from "@/lib/due-date"
-import { callKanban } from "@/lib/api"
-import { cardToChatText, queueDraft } from "@/lib/chat-bridge"
+import { callKanban, readChatImages, uploadImage } from "@/lib/api"
+import { cardToChatText, fillChatDraft, queueDraft, type AttachmentDrafts } from "@/lib/chat-bridge"
 import { PRIORITY_META, PRIORITY_OPTIONS } from "@/lib/constants"
 import { useT } from "./lib/i18n"
-import type { Board, Card as CardType, Priority } from "@/lib/types"
+import type { Board, Card as CardType, ImageLimits, Priority } from "@/lib/types"
 import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
 import type { UiWorkspace } from "@deepseek-ai/dsh-client-ui-workspace/client"
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
 
 type KanbanViewProps = PropsRuntime<"conversation.view"> & {
   uiWorkspace?: UiWorkspace
+  attachmentDrafts?: AttachmentDrafts
 }
 
 export function placeCard(
@@ -73,6 +75,7 @@ export function KanbanView(props: KanbanViewProps) {
   const useWorkspaces = props.useWorkspaces
   const inputActions = props.inputActions
   const uiWorkspace = props.uiWorkspace
+  const attachmentDrafts = props.attachmentDrafts
   const items = useWorkspaces ? useWorkspaces((s) => s.items) : []
   const workspace = Array.isArray(items)
     ? items.find((w) => Array.isArray(w.sessionIds) && w.sessionIds.includes(sessionId))
@@ -81,6 +84,8 @@ export function KanbanView(props: KanbanViewProps) {
   const t = useT()
 
   const [board, setBoard] = useState<Board | null>(null)
+  const [imageLimits, setImageLimits] = useState<ImageLimits | null>(null)
+  const [query, setQuery] = useState("")
   const [error, setError] = useState("")
   const [warnings, setWarnings] = useState<string[]>([])
   const [activeCard, setActiveCard] = useState<CardType | null>(null)
@@ -98,6 +103,8 @@ export function KanbanView(props: KanbanViewProps) {
   const boardRef = useRef<Board | null>(board)
   const dragCardsRef = useRef<CardType[] | null>(null)
   const workspaceIdRef = useRef(workspaceId)
+  const chatAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => { chatAbort.current?.abort() }, [workspaceId, sessionId])
   const issuedRequestRef = useRef(0)
   const appliedRequestRef = useRef(0)
   boardRef.current = board
@@ -119,12 +126,13 @@ export function KanbanView(props: KanbanViewProps) {
         ...res.board,
         completedColumnId: res.board.completedColumnId ?? null,
         cards: Array.isArray(res.board.cards)
-          ? res.board.cards.map((card: CardType) => ({ ...card, dueDate: card.dueDate ?? null, completedAt: card.completedAt ?? null, comments: Array.isArray(card.comments) ? card.comments : [] }))
+          ? res.board.cards.map((card: CardType) => ({ ...card, dueDate: card.dueDate ?? null, completedAt: card.completedAt ?? null, comments: Array.isArray(card.comments) ? card.comments : [], images: Array.isArray(card.images) ? card.images : [] }))
           : [],
         activities: Array.isArray(res.board.activities) ? res.board.activities : [],
       })
       setError("")
     }
+    if (res && "imageLimits" in res) setImageLimits(res.persisted === false ? null : res.imageLimits ?? null)
     if (Array.isArray(res && res.warnings) && res.warnings.length > 0) {
       setWarnings((prev) => [...prev, ...res.warnings])
     }
@@ -159,6 +167,8 @@ export function KanbanView(props: KanbanViewProps) {
     let alive = true
     const requestId = ++issuedRequestRef.current
     setBoard(null)
+    setImageLimits(null)
+    setQuery("")
     setLabelFilter(null)
     setPriorityFilter("")
     setDueDateFilter("")
@@ -354,26 +364,43 @@ export function KanbanView(props: KanbanViewProps) {
     setActiveCard(null)
   }
 
-  const saveCard = (values: CardFormValues): Promise<boolean> => {
-    if (!dialog) return Promise.resolve(false)
-    if (dialog.card) {
-      const saved = boardRef.current?.cards.find((card) => card.id === dialog.card!.id) ?? dialog.card
-      const payload: Record<string, unknown> = { id: saved.id }
+  const saveCard = async (values: CardFormValues): Promise<boolean | { cardId: string }> => {
+    if (!dialog) return false
+    const saved = boardRef.current?.cards.find((card) => card.id === (values.id || dialog.card?.id))
+    if ((values.id || dialog.card?.id) && !saved) throw new Error(t("cardNoLongerExists"))
+    const payload: Record<string, unknown> = saved ? { id: saved.id } : {
+      columnId: dialog.columnId, title: values.title, note: values.note,
+      label: values.label || undefined, priority: values.priority || undefined, dueDate: values.dueDate || null,
+    }
+    if (saved) {
       if (values.title !== saved.title) payload.title = values.title
       if (values.note !== saved.note) payload.note = values.note
       if (values.label !== (saved.label ?? "")) payload.label = values.label
       if (values.priority !== (saved.priority ?? "")) payload.priority = values.priority
       if (values.dueDate !== (saved.dueDate ?? "")) payload.dueDate = values.dueDate || null
-      return act("updateCard", payload)
     }
-    return act("addCard", {
-      columnId: dialog.columnId,
-      title: values.title,
-      note: values.note,
-      label: values.label || undefined,
-      priority: values.priority || undefined,
-      dueDate: values.dueDate || null,
-    })
+    const requestId = ++issuedRequestRef.current
+    setError("")
+    const res = await callKanban(saved ? "updateCard" : "addCard", payload, workspaceId)
+    applyBoard(res, workspaceId, requestId)
+    if (workspaceIdRef.current !== workspaceId) return false
+    const cardId = saved?.id ?? res.cardId
+    if (!cardId) {
+      // Older hosts can save text cards but cannot continue into image uploads.
+      return true
+    }
+    if (!saved) {
+      const created = res.board?.cards.find((card) => card.id === cardId)
+      if (created) setDialog({ card: created, columnId: created.columnId })
+    }
+    return { cardId }
+  }
+
+  const addImage = async (cardId: string, file: File, signal: AbortSignal) => {
+    const requestId = ++issuedRequestRef.current
+    const res = await uploadImage(workspaceId, cardId, file, signal)
+    if (res.persisted === false) throw new Error(t("actionRetry"))
+    applyBoard(res, workspaceId, requestId)
   }
 
   // Fill the conversation draft without sending it.
@@ -381,27 +408,33 @@ export function KanbanView(props: KanbanViewProps) {
     async (values: CardFormValues, target: ChatTarget): Promise<boolean> => {
       const current = boardRef.current
       const card = current?.cards.find((item) => item.id === values.id)
-      const text = cardToChatText({ ...values, completedAt: card?.completedAt,
+      const text = cardToChatText({ ...values, imageCount: card?.images?.length, completedAt: card?.completedAt,
         completed: card && current?.completedColumnId ? card.columnId === current.completedColumnId : undefined,
       })
       if (!text) return false
       setError("")
       try {
+        chatAbort.current?.abort()
+        const controller = new AbortController()
+        chatAbort.current = controller
+        const files = await readChatImages(workspaceId, card?.id ?? "", card?.images ?? [], AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]))
+        if (controller.signal.aborted) return false
+        if (files.length && (!attachmentDrafts?.createDrafts || !attachmentDrafts.releaseDraftAttachments)) throw new Error(t("chatImagesUnavailable"))
         if (target === "current") {
           if (!inputActions) return false
-          await inputActions.setDraft(text)
+          fillChatDraft(sessionId, inputActions, { text, files }, attachmentDrafts)
           return true
         }
         // Queue before DSH switches sessions; canceled navigation must not leave a pending draft.
         if (!uiWorkspace?.openWorkspace) return false
-        await uiWorkspace.openWorkspace(workspaceId, (nextId) => queueDraft(nextId, text))
+        await uiWorkspace.openWorkspace(workspaceId, (nextId) => queueDraft(nextId, text, files))
         return true
       } catch (e: any) {
         setError(t("actionFailed") + String((e && e.message) || e))
         return false
       }
     },
-    [inputActions, uiWorkspace, workspaceId, t],
+    [inputActions, uiWorkspace, workspaceId, sessionId, attachmentDrafts, t],
   )
 
   if (!board) {
@@ -426,8 +459,132 @@ export function KanbanView(props: KanbanViewProps) {
     >
       {error && !dialog && !columnDialogOpen && !labelDialogOpen && <p className="kanban-error" role="alert">{error}</p>}
 
-      {(priorityFilter || labelFilter !== null || dueDateFilter) && (
+      <div className="kanban-search-row">
+        <div className="kanban-search-field">
+          <Search aria-hidden="true" />
+          <Input type="search" aria-label={t("searchCards")} placeholder={t("searchPlaceholder")} maxLength={200}
+            value={query} onChange={(event) => setQuery(event.target.value)} />
+          {query && <Button variant="ghost" size="icon" aria-label={t("clearSearch")} onClick={() => setQuery("")}><X /></Button>}
+        </div>
+        <div className="kanban-toolbar">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`kanban-toolbar-button${priorityFilter ? " is-active" : ""}`}
+                title={t("priorityFilter")}
+                aria-label={t("priorityFilter")}
+                aria-pressed={Boolean(priorityFilter)}
+              >
+                <Filter className="kanban-icon" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem role="menuitemradio" aria-checked={!priorityFilter} onSelect={() => setPriorityFilter("")}>
+                <span className="kanban-filter-check">{!priorityFilter && <Check className="kanban-icon" />}</span>
+                {t("all")}
+              </DropdownMenuItem>
+              {PRIORITY_OPTIONS.map((p) => (
+                <DropdownMenuItem key={p} role="menuitemradio" aria-checked={priorityFilter === p} onSelect={() => setPriorityFilter(p)}>
+                  <span className="kanban-filter-check">{priorityFilter === p && <Check className="kanban-icon" />}</span>
+                  <span className="kanban-priority-dot" style={{ background: PRIORITY_META[p].color }} />
+                  {PRIORITY_META[p].label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`kanban-toolbar-button${labelFilter !== null ? " is-active" : ""}`}
+                title={labelFilter === null ? t("labelFilter") : `${t("labelFilter")}: ${labelFilter || t("noLabel")}`}
+                aria-label={t("labelFilter")}
+                aria-pressed={labelFilter !== null}
+              >
+                <Tag className="kanban-icon" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem role="menuitemradio" aria-checked={labelFilter === null} onSelect={() => setLabelFilter(null)}>
+                <span className="kanban-filter-check">{labelFilter === null && <Check className="kanban-icon" />}</span>
+                {t("all")}
+              </DropdownMenuItem>
+              <DropdownMenuItem role="menuitemradio" aria-checked={labelFilter === ""} onSelect={() => setLabelFilter("")}>
+                <span className="kanban-filter-check">{labelFilter === "" && <Check className="kanban-icon" />}</span>
+                {t("noLabel")}
+              </DropdownMenuItem>
+              {board.labels.map((label) => (
+                <DropdownMenuItem key={label.name} role="menuitemradio" aria-checked={labelFilter === label.name} onSelect={() => setLabelFilter(label.name)}>
+                  <span className="kanban-filter-check">{labelFilter === label.name && <Check className="kanban-icon" />}</span>
+                  <span className="kanban-label-dot" style={{ background: label.color }} />
+                  {label.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className={`kanban-toolbar-button${dueDateFilter ? " is-active" : ""}`}
+                title={t("dueDateFilter")} aria-label={t("dueDateFilter")} aria-pressed={Boolean(dueDateFilter)}>
+                <CalendarDays className="kanban-icon" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {(["", "today", "overdue"] as const).map((value) => (
+                <DropdownMenuItem key={value} role="menuitemradio" aria-checked={dueDateFilter === value} onSelect={() => setDueDateFilter(value)}>
+                  <span className="kanban-filter-check">{dueDateFilter === value && <Check className="kanban-icon" />}</span>
+                  {t(value === "today" ? "dueToday" : value === "overdue" ? "overdue" : "all")}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="kanban-toolbar-button kanban-toolbar-settings"
+              title={t("settings")}
+              aria-label={t("settings")}
+            >
+              <Settings2 className="kanban-icon" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={refreshing} onSelect={refreshBoard}>
+              <RefreshCw className={refreshing ? "kanban-animate-spin" : undefined} />
+              {t("refresh")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setError(""); setColumnDialogOpen(true) }}>
+              <List className="kanban-icon" />
+              {t("columnEdit")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setError(""); setLabelDialogOpen(true) }}>
+              <Tag className="kanban-icon" />
+              {t("labelEdit")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <a href="https://github.com/alpacachen/dsh-kanban/issues/new/choose" target="_blank" rel="noopener noreferrer">
+                <MessageSquare className="kanban-icon" />
+                {t("feedback")}
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {(query.trim() || priorityFilter || labelFilter !== null || dueDateFilter) && (
         <div className="kanban-filter-summary" aria-label={t("clearFilter")}>
+          {query.trim() && <span className="kanban-muted-small" role="status">{t("searchResults").replace("{count}", String(board.cards.filter((card) => matchCardSearch(card, query)
+            && (!priorityFilter || card.priority === priorityFilter)
+            && (labelFilter === null || (card.label ?? "") === labelFilter)
+            && matchesDueDate(card, dueDateFilter, board.completedColumnId, today)).length))}</span>}
           {dueDateFilter && (
             <Button variant="ghost" size="sm" className="kanban-filter-chip"
               aria-label={`${t("clearFilter")}: ${t(dueDateFilter === "today" ? "dueToday" : "overdue")}`}
@@ -482,138 +639,12 @@ export function KanbanView(props: KanbanViewProps) {
         onDragCancel={handleDragCancel}
       >
         <div className="kanban-content">
-          {/* Actions stay at the far left. */}
-          <div className="kanban-toolbar">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="kanban-toolbar-button"
-              title={t("refresh")}
-              aria-label={t("refresh")}
-              disabled={refreshing}
-              onClick={refreshBoard}
-            >
-              <RefreshCw className={refreshing ? "kanban-animate-spin" : undefined} />
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="kanban-toolbar-button"
-                  title={t("settings")}
-                >
-                  <Settings2 className="kanban-icon" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => { setError(""); setColumnDialogOpen(true) }}>
-                  <List className="kanban-icon" />
-                  {t("columnEdit")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { setError(""); setLabelDialogOpen(true) }}>
-                  <Tag className="kanban-icon" />
-                  {t("labelEdit")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`kanban-toolbar-button${priorityFilter ? " is-active" : ""}`}
-                  title={t("priorityFilter")}
-                  aria-label={t("priorityFilter")}
-                  aria-pressed={Boolean(priorityFilter)}
-                >
-                  <Filter className="kanban-icon" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem role="menuitemradio" aria-checked={!priorityFilter} onSelect={() => setPriorityFilter("")}>
-                  <span className="kanban-filter-check">{!priorityFilter && <Check className="kanban-icon" />}</span>
-                  {t("all")}
-                </DropdownMenuItem>
-                {PRIORITY_OPTIONS.map((p) => (
-                  <DropdownMenuItem key={p} role="menuitemradio" aria-checked={priorityFilter === p} onSelect={() => setPriorityFilter(p)}>
-                    <span className="kanban-filter-check">{priorityFilter === p && <Check className="kanban-icon" />}</span>
-                    <span className="kanban-priority-dot" style={{ background: PRIORITY_META[p].color }} />
-                    {PRIORITY_META[p].label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`kanban-toolbar-button${labelFilter !== null ? " is-active" : ""}`}
-                  title={labelFilter === null ? t("labelFilter") : `${t("labelFilter")}: ${labelFilter || t("noLabel")}`}
-                  aria-label={t("labelFilter")}
-                  aria-pressed={labelFilter !== null}
-                >
-                  <Tag className="kanban-icon" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem role="menuitemradio" aria-checked={labelFilter === null} onSelect={() => setLabelFilter(null)}>
-                  <span className="kanban-filter-check">{labelFilter === null && <Check className="kanban-icon" />}</span>
-                  {t("all")}
-                </DropdownMenuItem>
-                <DropdownMenuItem role="menuitemradio" aria-checked={labelFilter === ""} onSelect={() => setLabelFilter("")}>
-                  <span className="kanban-filter-check">{labelFilter === "" && <Check className="kanban-icon" />}</span>
-                  {t("noLabel")}
-                </DropdownMenuItem>
-                {board.labels.map((label) => (
-                  <DropdownMenuItem key={label.name} role="menuitemradio" aria-checked={labelFilter === label.name} onSelect={() => setLabelFilter(label.name)}>
-                    <span className="kanban-filter-check">{labelFilter === label.name && <Check className="kanban-icon" />}</span>
-                    <span className="kanban-label-dot" style={{ background: label.color }} />
-                    {label.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className={`kanban-toolbar-button${dueDateFilter ? " is-active" : ""}`}
-                  title={t("dueDateFilter")} aria-label={t("dueDateFilter")} aria-pressed={Boolean(dueDateFilter)}>
-                  <CalendarDays className="kanban-icon" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {(["", "today", "overdue"] as const).map((value) => (
-                  <DropdownMenuItem key={value} role="menuitemradio" aria-checked={dueDateFilter === value} onSelect={() => setDueDateFilter(value)}>
-                    <span className="kanban-filter-check">{dueDateFilter === value && <Check className="kanban-icon" />}</span>
-                    {t(value === "today" ? "dueToday" : value === "overdue" ? "overdue" : "all")}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="kanban-toolbar-divider" role="separator" />
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button asChild variant="ghost" size="icon" className="kanban-toolbar-button">
-                    <a href="https://github.com/alpacachen/dsh-kanban/issues/new/choose" target="_blank" rel="noopener noreferrer" aria-label={t("feedback")}>
-                      <MessageSquare className="kanban-icon" />
-                    </a>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{t("feedback")}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-
           {/* Horizontally scrollable board columns. */}
           <div className="kanban-board-scroll">
             {board.columns.map((col) => {
               const cards = board.cards.filter(
                 (c) => c.columnId === col.id
+                  && matchCardSearch(c, query)
                   && (!priorityFilter || c.priority === priorityFilter)
                   && (labelFilter === null || (c.label ?? "") === labelFilter)
                   // Keep the draggable mounted until drop, even when it enters the completed column.
@@ -625,10 +656,11 @@ export function KanbanView(props: KanbanViewProps) {
                   column={col}
                   cards={cards}
                   totalCount={board.cards.filter((card) => card.columnId === col.id).length}
-                  filtered={Boolean(priorityFilter || dueDateFilter) || labelFilter !== null}
+                  filtered={Boolean(priorityFilter || dueDateFilter || query.trim()) || labelFilter !== null}
                   completed={col.id === board.completedColumnId}
                   today={today}
                   labels={board.labels}
+                  query={query}
                   onAddCard={(c) => { setError(""); setDialog({ card: null, columnId: c.id }) }}
                   onOpenCard={(c) => { setError(""); setDialog({ card: c, columnId: c.columnId }) }}
                 />
@@ -647,6 +679,12 @@ export function KanbanView(props: KanbanViewProps) {
       </DndContext>
 
       <CardDialog
+        key={workspaceId}
+        workspaceId={workspaceId}
+        imageLimits={imageLimits}
+        images={dialogCard?.images ?? []}
+        onUploadImage={addImage}
+        onRemoveImage={(id, attachmentId) => act("removeImage", { id, attachmentId })}
         error={error}
         open={dialog !== null}
         card={dialog?.card ?? null}

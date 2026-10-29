@@ -8,7 +8,7 @@ const WIDTH_KEY = "dsh-kanban:card-drawer-width"
 function mount() {
   return render(
     <Dialog open>
-      <DrawerContent aria-describedby={undefined}>
+      <DrawerContent open onClose={() => {}} title="Task details" aria-describedby={undefined}>
         <DialogHeader><DialogTitle>Task details</DialogTitle></DialogHeader>
         <DialogBody><input aria-label="Title" /></DialogBody>
       </DrawerContent>

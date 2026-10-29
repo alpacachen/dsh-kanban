@@ -19,7 +19,8 @@ import { PRIORITY_OPTIONS, PRIORITY_META } from "@/lib/constants"
 import { localDate } from "@/lib/due-date"
 import { formatTime } from "@/lib/activity"
 import { useT } from "@/lib/i18n"
-import type { Activity, Card, Comment, Label as LabelType, Priority } from "@/lib/types"
+import type { Activity, Card, Comment, ImageLimits, ImageRef, Label as LabelType, Priority } from "@/lib/types"
+import { CardImages, type CardImagesHandle } from "./CardImages"
 import { CardActivity } from "./CardActivity"
 
 export interface CardFormValues {
@@ -34,7 +35,14 @@ export interface CardFormValues {
 /** Destination for Chat with agent: the current session or a new session. */
 export type ChatTarget = "current" | "new"
 
+type SaveResult = boolean | void | { cardId: string }
+
 interface CardDialogProps {
+  workspaceId?: string
+  imageLimits?: ImageLimits | null
+  images?: ImageRef[]
+  onUploadImage?: (cardId: string, file: File, signal: AbortSignal) => Promise<void>
+  onRemoveImage?: (cardId: string, attachmentId: string) => Promise<boolean>
   open: boolean
   error?: string | null
   card: Card | null
@@ -44,17 +52,15 @@ interface CardDialogProps {
   comments: Comment[]
   activities: Activity[]
   onOpenChange: (open: boolean) => void
-  onSave: (values: CardFormValues) => boolean | void | Promise<boolean | void>
+  onSave: (values: CardFormValues) => SaveResult | Promise<SaveResult>
   onAddComment: (cardId: string, content: string) => boolean | void | Promise<boolean | void>
   onDelete?: (card: Card) => boolean | void | Promise<boolean | void>
   onChatWithAgent: (values: CardFormValues, target: ChatTarget) => boolean | void | Promise<boolean | void>
 }
 
-export function CardDialog({ open, error, card, completed, completedAt, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
+export function CardDialog({ workspaceId = "default", imageLimits = null, images = [], onUploadImage, onRemoveImage, open, error, card, completed, completedAt, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
   const t = useT()
   const formId = useId()
-  const triggerRef = useRef<HTMLElement | null>(null)
-  const titleRef = useRef<HTMLInputElement>(null)
   const dueDateRef = useRef<HTMLInputElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const [editingNote, setEditingNote] = useState(!card)
@@ -68,8 +74,22 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
   const [confirm, setConfirm] = useState<"discard" | "delete" | ChatTarget | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const initialValues = useRef(values)
+  const imagesRef = useRef<CardImagesHandle>(null)
+  const [imagesBusy, setImagesBusy] = useState(false)
+  const [hasPendingImages, setHasPendingImages] = useState(false)
+  const [imageDraftKey, setImageDraftKey] = useState(0)
+  const previousCardId = useRef<string | undefined>(undefined)
+  const creatingCard = useRef(false)
+  const createdCardId = useRef<string | undefined>(undefined)
+  const locked = pending || imagesBusy
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
 
   useEffect(() => {
+    const previousId = previousCardId.current
+    previousCardId.current = open ? card?.id ?? "" : undefined
+    // Saving a new card changes its identity while uploads still belong to this draft.
+    if (previousId === "" && card && (creatingCard.current || createdCardId.current === card.id)) return
     if (open) {
       const next: CardFormValues = {
         id: card?.id ?? "",
@@ -84,22 +104,26 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
       setComment("")
       setFailure("")
       setConfirm(null)
+      setHasPendingImages(false)
+      setImagesBusy(false)
+      setImageDraftKey((key) => key + 1)
+      createdCardId.current = undefined
       setEditingNote(!card)
     }
-  }, [open, card])
+  }, [open, card?.id])
 
   useEffect(() => { if (confirm) cancelRef.current?.focus() }, [confirm])
 
-  const dirty = Boolean(comment.trim()) || (Object.keys(values) as (keyof CardFormValues)[])
+  const dirty = hasPendingImages || Boolean(comment.trim()) || (Object.keys(values) as (keyof CardFormValues)[])
     .some((key) => values[key] !== initialValues.current[key])
   const changeOpen = (next: boolean) => {
-    if (pendingRef.current) return
+    if (pendingRef.current || imagesBusy) return
     if (!next && confirm) { setConfirm(null); return }
     if (!next && dirty) { setConfirm("discard"); return }
     onOpenChange(next)
   }
   const run = async (action: () => boolean | void | Promise<boolean | void>) => {
-    if (pendingRef.current) return false
+    if (pendingRef.current || imagesBusy) return false
     pendingRef.current = true
     setPending(true)
     setFailure("")
@@ -117,7 +141,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
   }
   const chat = async (target: ChatTarget) => {
     if (!dueDateRef.current?.reportValidity()) return
-    if (comment.trim()) { setConfirm(target); return }
+    if (comment.trim() || hasPendingImages) { setConfirm(target); return }
     if (await run(() => onChatWithAgent(values, target))) onOpenChange(false)
   }
   const set = (patch: Partial<CardFormValues>) => setValues((v) => ({ ...v, ...patch }))
@@ -129,17 +153,13 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DrawerContent
+      <DrawerContent open={open} onClose={() => changeOpen(false)} title={t(card ? "taskDetails" : "addCard")}
         aria-describedby={undefined}
-        onOpenAutoFocus={(event) => {
-          triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-          event.preventDefault()
-          titleRef.current?.focus()
-        }}
-        onCloseAutoFocus={(e) => {
-          if (triggerRef.current?.isConnected) {
-            e.preventDefault()
-            triggerRef.current.focus()
+        onPaste={(event) => {
+          const files = Array.from(event.clipboardData.files)
+          if (files.length && imageLimits && !locked && !confirm) {
+            event.preventDefault()
+            imagesRef.current?.addFiles(files)
           }
         }}
       >
@@ -154,19 +174,19 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
               {t("fieldTitle")}
             </Label>
             <Input
-              ref={titleRef}
+              data-modal-autofocus
               id={`${formId}-title`}
               value={values.title}
               placeholder={t("titlePlaceholder")}
               maxLength={120}
-              disabled={pending || Boolean(confirm)}
+              disabled={locked || Boolean(confirm)}
               onChange={(e) => set({ title: e.target.value })}
             />
           </div>
           <div className="kanban-form-row">
             <div className="kanban-form-field">
               <Label htmlFor={`${formId}-label`}>{t("fieldLabel")}</Label>
-              <Select disabled={pending || Boolean(confirm)} value={values.label || "__none__"} onValueChange={(v) => set({ label: v === "__none__" ? "" : v })}>
+              <Select disabled={locked || Boolean(confirm)} value={values.label || "__none__"} onValueChange={(v) => set({ label: v === "__none__" ? "" : v })}>
                 <SelectTrigger id={`${formId}-label`}>
                   <SelectValue placeholder={t("noLabel")} />
                 </SelectTrigger>
@@ -180,7 +200,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
             </div>
             <div className="kanban-form-field">
               <Label htmlFor={`${formId}-priority`}>{t("fieldPriority")}</Label>
-              <Select disabled={pending || Boolean(confirm)} value={values.priority || "__none__"} onValueChange={(v) => set({ priority: v === "__none__" ? "" : (v as Priority) })}>
+              <Select disabled={locked || Boolean(confirm)} value={values.priority || "__none__"} onValueChange={(v) => set({ priority: v === "__none__" ? "" : (v as Priority) })}>
                 <SelectTrigger id={`${formId}-priority`}>
                   <SelectValue placeholder={t("noPriority")} />
                 </SelectTrigger>
@@ -206,14 +226,14 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
               <Label htmlFor={`${formId}-due-date`}>{t("fieldDueDate")}</Label>
               <div className="kanban-due-date-controls">
                 <Input ref={dueDateRef} id={`${formId}-due-date`} type="date" min="0001-01-01" max="9999-12-31"
-                  value={values.dueDate} disabled={pending || Boolean(confirm)}
+                  value={values.dueDate} disabled={locked || Boolean(confirm)}
                   onChange={(e) => set({ dueDate: e.target.value })} />
                 <div className="kanban-date-shortcuts">
                   {([["today", 0], ["tomorrow", 1], ["nextWeek", 7]] as const).map(([key, offset]) => (
-                    <Button key={key} type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm)}
+                    <Button key={key} type="button" variant="ghost" size="sm" disabled={locked || Boolean(confirm)}
                       onClick={() => set({ dueDate: localDate(new Date(), offset) })}>{t(key)}</Button>
                   ))}
-                  <Button type="button" variant="ghost" size="sm" disabled={pending || Boolean(confirm) || !values.dueDate}
+                  <Button type="button" variant="ghost" size="sm" disabled={locked || Boolean(confirm) || !values.dueDate}
                     onClick={() => set({ dueDate: "" })}>{t("clearDate")}</Button>
                 </div>
               </div>
@@ -236,7 +256,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={pending || Boolean(confirm)}
+                disabled={locked || Boolean(confirm)}
                 aria-controls={`${formId}-description`}
                 onClick={() => {
                   setEditingNote(!editingNote)
@@ -257,7 +277,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
                   placeholder={t("notePlaceholder")}
                   rows={12}
                   maxLength={2000}
-                  disabled={pending || Boolean(confirm)}
+                  disabled={locked || Boolean(confirm)}
                   onChange={(e) => set({ note: e.target.value })}
                 />
                 <p className="kanban-note-hint">{t("markdownEditHint")} <span className="kanban-tabular">{values.note.length}/2000</span></p>
@@ -271,6 +291,14 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
               )}
             </div>
           </div>
+          <CardImages key={imageDraftKey} ref={imagesRef} workspaceId={workspaceId} cardId={values.id || card?.id} images={images} limits={imageLimits}
+            disabled={locked || Boolean(confirm)}
+            onUpload={onUploadImage ?? (async () => { throw new Error(t("imagesUnavailable")) })}
+            onRemove={onRemoveImage ?? (async () => false)}
+            onBusyChange={setImagesBusy} onPendingChange={(hasPending) => {
+              setHasPendingImages(hasPending)
+              if (!hasPending) setFailure((current) => current === t("imageUploadPartial") ? "" : current)
+            }} />
           {card && (
             <div className="kanban-comments-box">
               <Label htmlFor={`${formId}-comment`}>
@@ -307,7 +335,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
                   placeholder={t("commentPlaceholder")}
                   rows={3}
                   maxLength={2000}
-                  disabled={pending || Boolean(confirm)}
+                  disabled={locked || Boolean(confirm)}
                   onChange={(e) => setComment(e.target.value)}
                   onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -319,7 +347,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={pending || Boolean(confirm) || !comment.trim()}
+                  disabled={locked || Boolean(confirm) || !comment.trim()}
                   onClick={() => void submitComment()}
                 >
                   <Send className="kanban-icon" />
@@ -340,10 +368,10 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
         <DialogFooter>
           {confirm ? (
             <div className="kanban-dialog-confirm">
-              <p role="alert">{t(confirm === "discard" ? "discardChangesDesc" : confirm === "delete" ? "deleteCardDesc" : "discardCommentDesc")}</p>
+              <p role="alert">{t(confirm === "discard" ? "discardChangesDesc" : confirm === "delete" ? "deleteCardDesc" : hasPendingImages ? "discardImagesDesc" : "discardCommentDesc")}</p>
               <div className="kanban-confirm-actions">
-                <Button ref={cancelRef} variant="outline" disabled={pending} onClick={() => setConfirm(null)}>{t("cancel")}</Button>
-                <Button variant="destructive" disabled={pending} onClick={async () => {
+                <Button ref={cancelRef} variant="outline" disabled={locked} onClick={() => setConfirm(null)}>{t("cancel")}</Button>
+                <Button variant="destructive" disabled={locked} onClick={async () => {
                   if (confirm === "discard") { onOpenChange(false); return }
                   if (confirm === "delete") {
                     if (card && onDelete && await run(() => onDelete(card))) onOpenChange(false)
@@ -358,7 +386,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
               <Button
                 variant="ghost"
                 className="kanban-dialog-delete"
-                disabled={pending}
+                disabled={locked}
                 onClick={() => setConfirm("delete")}
               >
                 <Trash2 className="kanban-icon" />
@@ -369,7 +397,7 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
-                  disabled={pending || (!values.title.trim() && !values.note.trim())}
+                  disabled={locked || (!values.title.trim() && !values.note.trim())}
                 >
                   <MessageSquare className="kanban-icon" />
                   {t("chatWithAgent")}
@@ -389,13 +417,30 @@ export function CardDialog({ open, error, card, completed, completedAt, labels, 
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
-              disabled={pending || !values.title.trim()}
+              disabled={locked || !values.title.trim()}
               onClick={async () => {
                 if (!dueDateRef.current?.reportValidity()) return
-                if (await run(() => onSave(values))) {
-                  initialValues.current = values
-                  if (!comment.trim()) onOpenChange(false)
-                }
+                await run(async () => {
+                  creatingCard.current = !values.id
+                  let result: SaveResult
+                  try {
+                    result = await onSave(values)
+                    if (creatingCard.current && typeof result === "object") createdCardId.current = result.cardId
+                  } finally {
+                    creatingCard.current = false
+                  }
+                  if (!alive.current || result === false) return false
+                  const next = { ...values, ...(typeof result === "object" ? { id: result.cardId } : {}) }
+                  setValues(next)
+                  initialValues.current = next
+                  if (hasPendingImages) {
+                    if (!next.id || !await imagesRef.current?.uploadPending(next.id)) {
+                      if (alive.current) setFailure(t("imageUploadPartial"))
+                      return
+                    }
+                  }
+                  if (alive.current && !comment.trim()) onOpenChange(false)
+                })
               }}
             >
               {t("save")}
