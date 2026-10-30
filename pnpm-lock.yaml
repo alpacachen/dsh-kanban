@@ -43,7 +43,7 @@ importers:
         version: 2.1.1
       lucide-react:
         specifier: ^1.34.0
-        version: 1.59.0(@types/react@18.3.31)(react@18.3.1)
+        version: 1.61.0(@types/react@18.3.31)(react@18.3.1)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ~4.0.4
@@ -1902,8 +1902,8 @@ packages:
     resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
     engines: {node: 20 || >=22}
 
-  lucide-react@1.59.0:
-    resolution: {integrity: sha512-5qgMyyCPU6OvnKpLS2t693+ZtiqA8oaSweWoUows0BLFKFf6V75m4+CptpmohZHpD5IuOVIBXHBBiv2vpLJmtw==}
+  lucide-react@1.61.0:
+    resolution: {integrity: sha512-v2SQPPPNjnr+BlhL9Spuzmo5yR+hLkftfuE4E3jaxdNPgSH0hJKPcLJBP7yAta87jQNPsSERS59PJjCJ/CorBA==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -3872,7 +3872,7 @@ snapshots:
 
   lru-cache@11.5.3: {}
 
-  lucide-react@1.59.0(@types/react@18.3.31)(react@18.3.1):
+  lucide-react@1.61.0(@types/react@18.3.31)(react@18.3.1):
     dependencies:
       react: 18.3.1
     optionalDependencies:
