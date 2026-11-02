@@ -1,178 +1,88 @@
-<div align="center">
+<p align="center">
+  <picture>
+    <source media="(max-width: 600px)" srcset="docs/readme/cover-zh-mobile.png">
+    <img src="docs/readme/cover-zh.png" alt="dsh-kanban — 一起规划，让进展可见。你与 Agent 共用的 DeepSeek Harness 看板。" width="100%">
+  </picture>
+</p>
 
-# dsh-kanban
+<p align="center">
+  <a href="https://www.npmjs.com/package/@alpacachen/dsh-kanban"><img src="https://img.shields.io/npm/v/@alpacachen/dsh-kanban?style=flat-square&color=3867e8&label=npm" alt="npm 版本"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3867e8?style=flat-square" alt="MIT 许可"></a>
+  <a href="https://awesome-dsh-plugin.com"><img src="https://awesome-dsh-plugin.com/badge.svg" alt="Awesome DSH Plugin"></a>
+</p>
 
-### 和 AI 一起规划，让每一步进展清晰可见。
+<p align="center">
+  <strong>简体中文</strong> · <a href="README.md">English</a><br>
+  <a href="#开始使用">开始使用</a> · <a href="docs/guide.zh.md">使用指南</a> · <a href="docs/guide.zh.md#agent-工具参考">Agent 工具</a>
+</p>
 
-一块真正由你和 AI Agent 共同维护的项目看板——从想法、任务拆解到推进交付，全程无需离开 DeepSeek Harness。
+<br>
 
-[![npm version](https://img.shields.io/npm/v/@alpacachen/dsh-kanban?color=5b8def&label=npm)](https://www.npmjs.com/package/@alpacachen/dsh-kanban)
-![DeepSeek Harness Plugin](https://img.shields.io/badge/DeepSeek%20Harness-Plugin-7c5cff)
-[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
-![License](https://img.shields.io/badge/license-MIT-22c55e)
+把对话里的计划变成可推进的任务。你和 Agent 在同一块看板上拆解工作、补充上下文、更新进度，始终留在 DeepSeek Harness 中。
 
-**简体中文** · [English](README.md)
+![Kanban 看板：顶部搜索与筛选，下方展示待办、进行中、待验收和已完成四列任务](docs/readme/board-zh.png)
 
-</div>
+<p align="center"><sub>当前插件界面 · 隔离示例数据 · 每个工作区独立保存</sub></p>
 
-<table>
-  <tr>
-    <td width="50%"><img src="./image.png" alt="浅色模式下的完整 dsh-kanban 看板，展示英文任务、标签与优先级" width="100%"></td>
-    <td width="50%"><img src="./docs/screenshots/card-details-dark.png" alt="深色模式下的完整 dsh-kanban 看板，打开的任务详情抽屉展示 Markdown 描述" width="100%"></td>
-  </tr>
-</table>
+## 从一句话，到下一步行动
 
-## 1.10：搜索、图片与对话附件
+### 说清目标，Agent 来建卡
 
-- 在顶部搜索任务，紧接搜索框按**优先级、标签、截止日期**筛选；其余操作集中在右侧**设置**菜单。
-- 在任务中上传、粘贴或拖入图片，使用 DSH 原生图片预览查看大图。
-- 点击「与 Agent 聊一聊」，把任务文字和已保存的图片一起带入聊天框，确认后再发送。
-- Agent 可从工作区文件或当前会话附件添加图片，也能读取图片内容。
+让 Agent 拆解需求，写下实现步骤与验收标准，安排标签和优先级。19 个内置工具，让规划直接落到看板上。
 
-## 💡 你可以直接这样说
+> 把手机号登录拆成可验收的任务，先检查已有卡片，避免重复。每张卡写清实现步骤和验收标准，把上线阻塞项标为 P0。
 
-从你正在做的事开始。把下面例子里的项目名称和背景换成自己的，就可以直接发给 Agent。
+### 看清进展，随时接手
 
-**把需求拆成可验收的任务**
+拖动卡片调整阶段，用搜索和筛选找到下一件事。任务描述支持 Markdown，评论和活动记录留下推进过程。
 
-> 下周要上线手机号登录。先看看已有卡片，再为缺少的接口、验证码、防刷、前端交互和测试工作建卡。写清依赖关系，并在描述里用 Markdown 列出实现步骤和验收标准。影响上线的任务标为 P0，其余排好优先级。
+| 关注什么 | 怎么找到 |
+| --- | --- |
+| 重要的事 | P0 / P1 / P2 优先级与自定义标签 |
+| 快到期的事 | 截止日期、今天到期与逾期筛选 |
+| 已有的结论 | 搜索卡片 ID、标题、完整描述和评论 |
 
-**接手一项正在做的工作**
+### 带上上下文，继续对话
 
-> 接着处理「登录后跳回登录页」。先读完整描述和评论，梳理已有结论与下一步，移到 In Progress。推进过程和测试结果记到评论，完成后移到 Review 等我验收。
+把截图粘贴或拖进任务，点击「与 Agent 聊一聊」，将任务文字和已保存的图片一起带到当前或新会话。内容先进入可编辑草稿，由你确认发送。
 
-**跟进被外部依赖卡住的事项**
+[查看图片与保存规则 →](docs/guide.zh.md#使用规则) · [更多对话示例 →](docs/guide.zh.md#对话示例)
 
-> 「支付联调」还在等对方提供测试账号。建一个 Blocked 列表（已有就复用），把任务移过去，并在评论里记录阻塞原因、待确认的联系人，以及拿到账号后的下一步。
+## 开始使用
 
-**用现有看板准备周会**
+**桌面端** — 打开「插件」，添加并启用 `@alpacachen/dsh-kanban`。
 
-> 根据当前卡片的状态、描述和评论，整理周会提纲：已完成什么、哪些工作还在推进、有哪些阻塞需要协调。引用相关卡片，给出接下来最值得推进的三件事；信息不全的地方列成待确认项。
-
-**为自己的职业建立工作流**
-
-> 我是一名律师，要同时跟进合同审查和案件材料准备。帮我整理适合的阶段列表与标签，把我下面提供的事项逐一建卡，在描述里记录交付要求、材料清单和约定时间；缺少材料的放到「等待补充」。
-
-## ✨ 从一句话，到一块能执行的看板
-
-不必再把 AI 生成的计划手动搬进项目管理工具。告诉 Agent 你想完成什么，它就能在 **「看板」** 标签页中拆分任务、创建卡片、设置优先级和更新进度。
-
-你也可以随时接手：拖动卡片、补充备注、调整列表。你和 Agent 始终面对同一块看板、同一份进度。
-
-| 💬 自然对话 | 🧭 随时掌控 | ⚡ 开箱即用 |
-| --- | --- | --- |
-| 通过 19 个 `kanban_*` 工具直接管理任务。 | 在界面中编辑、评论、拖拽、搜索、筛选和添加图片。 | 浏览器端已预构建，无需配置前端环境。 |
-| **🗂️ 项目隔离** | **🌓 原生体验** | **🤝 实时协作** |
-| 每个 DSH 工作区都有自己的独立看板。 | 自动跟随 DSH 的语言、主题与暗色模式。 | 你做的调整，Agent 立即可见；反之亦然。 |
-
-## 🚀 三步开始使用
-
-### 1. 安装
-
-已验证：Web Host **0.2.0-rc.2**、桌面端 **0.2.1-rc.3**。1.10 使用新版 DSH 原生预览和对话附件接口；旧版 0.1.5 用户应先升级 DSH。
-
-**桌面端：**打开「插件」，添加 `@alpacachen/dsh-kanban` 并启用，由桌面端管理安装。
-
-**Web：**
+**Web** — 运行以下命令，安装后重启 `dsh web` 以加载插件。
 
 ```sh
 dsh plugin --profile web add @alpacachen/dsh-kanban
 ```
 
-安装后重启 `dsh web`，让插件 bundle 完成加载。你可以用下面的命令确认安装结果：
+进入工作区，打开会话视图旁的 **「看板」**，即可从四个默认阶段开始：
+
+**Todo → In Progress → Review → Done**
+
+兼容声明：DSH **0.2.0-rc.2 / 0.2.1-rc.3**，支持 Web 与桌面端。1.10 依赖新版图片预览与对话附件接口，0.1.5 用户需先升级。
+
+<details>
+<summary>确认 Web 插件配置</summary>
 
 ```sh
 dsh --profile web --dump-config
 ```
 
-如果输出中包含 `dsh-kanban` 配置层，就说明安装成功。
+输出中应包含 `dsh-kanban` 配置层。配置存在不代表当前服务已加载，安装后仍需重启 Web 服务。
 
-### 2. 打开看板
+</details>
 
-进入任意工作区，点击会话视图旁的 **「看板」** 标签页。新看板已经准备好四个常用阶段：
+## 继续了解
 
-`Todo` → `In Progress` → `Review` → `Done`
+- [使用指南](docs/guide.zh.md) — 编辑、搜索、图片与协作。
+- [Agent 工具参考](docs/guide.zh.md#agent-工具参考) — 全部 19 个工具、参数与完成状态规则。
+- [数据与备份](docs/guide.zh.md#数据与备份) — 图片备份需同时保留看板文件和 DSH 附件存储。
+- [开发与验证](docs/testing-images.md) — Node.js 26、pnpm 11.8.0，构建和测试说明。
+- [问题与建议](https://github.com/alpacachen/dsh-kanban/issues) — 提交问题或分享使用反馈。
 
-### 3. 让 Agent 开始规划
+---
 
-试试这样说：
-
-> 把登录功能拆成具体的实现任务，每一步创建一张卡片，并把安全审查标为 P0。
-
-任务会直接出现在看板中。你可以继续通过对话推进，也可以切换到看板，用拖拽和编辑完善计划。
-
-## 🧩 推进工作需要的能力，都在这里
-
-### 在「看板」标签页中
-
-| 操作 | 使用方式 |
-| --- | --- |
-| 查找任务 | 顶部搜索卡片 ID、标题、描述、评论；右侧三个按钮按优先级、标签、截止日期筛选。 |
-| 管理看板 | 右上角**设置**菜单提供刷新、列编辑、标签编辑和「反馈与建议 · GitHub」。 |
-| 推进任务 | 创建、编辑、删除卡片，拖动排序或移到其他列，添加彩色标签与 P0 / P1 / P2 优先级。 |
-| 查看详情 | 可调整宽度的侧边抽屉，窄屏自动铺满；描述支持 Markdown 编辑与预览。 |
-| 添加图片 | 文件选择、剪贴板粘贴、拖拽上传；卡片展示图片数量，详情中可预览、移除和重试。 |
-| 跟踪时间 | 设置截止日期，查看今天到期或逾期任务；进入完成列后自动记录完成日期。 |
-| 协作记录 | 与 Agent 互相评论，查看活动时间线，或将任务带入当前／新会话继续处理。 |
-
-文字和 Markdown 描述编辑后点击**保存**；**完成编辑**只切回预览。筛选条件在工具栏下方显示，点击条件的 × 或在对应菜单选择「全部」即可清除。
-
-### 从任意卡片继续与 Agent 协作
-
-打开卡片并选择 **「与 Agent 聊一聊」**，dsh-kanban 会把卡片 ID、标题、标签、截止日期和备注带入当前会话或一个新会话。已保存的图片会一起加入目标聊天框，显示为可预览、可移除的附件。文字和图片都只进入草稿，由你确认后发送，不会自动提交；读取图片失败时会保留任务详情并提示重试。
-
-### 搜索任务
-
-搜索范围是当前工作区的卡片 ID、标题、完整描述和评论正文，按连续子串匹配，忽略大小写及首尾空格。搜索与所有已选筛选条件取交集，保留原有卡片顺序，切换工作区后清空。Agent 通过 `kanban_get` 的 `{"query":"登录"}` 参数使用相同规则。
-
-### 添加与查看图片
-
-支持 PNG、JPEG、WebP，每张最多 10 MiB，每张卡片最多 10 张；DSH Host 可进一步限制格式或大小。新建卡片时，选中的图片先保留在浏览器，点击**「保存」**成功创建任务后再上传。部分上传失败时，任务和成功的图片已保存，详情保留失败文件供重试，不会重复建卡。创建前取消不会上传。已有卡片的图片上传和移除立即保存，文字修改仍需点击**「保存」**。Host 不支持图片或工作区无法持久保存时，界面会提示无法上传。
-
-点击缩略图打开 DSH 原生大图预览；按 Esc、点击关闭按钮或遮罩返回任务详情。图片不会加入文字搜索范围，暂不提供 OCR。
-
-### 数据与备份
-
-卡片的 `images` 数组中，每张图片只保存 `attachmentId`、`mediaType`、`bytes`、`width`、`height` 五个字段，不保存文件名和说明。数据格式 v6 为旧卡片补充 `images: []`，迁移前备份原看板文件。工作区的 `.dsh-kanban.json` 只保存引用，图片文件保存在 DSH home 下的原生附件存储中，独立于具体工作区或会话，可被复用。备份时需要同时保留看板文件与 DSH 附件存储。移除图片或删除卡片只解除关联，不物理删除共享图片。
-
-### 在对话中
-
-插件会自动为每个工作区中的 Agent 提供以下工具：
-
-| 范围 | 工具 |
-| --- | --- |
-| **看板** | `kanban_get`、`kanban_set_completed_column` |
-| **卡片** | `kanban_get_card`、`kanban_add_comment`、`kanban_add_card`、`kanban_update_card`、`kanban_delete_card`、`kanban_move_card` |
-| **图片** | `kanban_add_image`、`kanban_read_image`、`kanban_remove_image` |
-| **列表** | `kanban_add_column`、`kanban_rename_column`、`kanban_delete_column`、`kanban_move_column` |
-| **标签** | `kanban_get_label`、`kanban_add_label`、`kanban_update_label`、`kanban_delete_label` |
-
-Agent 添加图片时，先创建卡片，再把返回的 `cardId` 作为 `id`。调用 `kanban_add_image`，参数任选一种来源：
-
-```json
-{"id":"k1","source":{"kind":"workspace_file","path":"screenshots/login.png"}}
-```
-
-```json
-{"id":"k1","source":{"kind":"session_attachment","attachmentId":"sha256:<实际附件哈希>"}}
-```
-
-文件路径必须相对于当前工作区，且不能越过工作区边界。会话附件必须真实存在于执行 Agent 的当前会话中，使用真实 ID，不猜测哈希；不传 base64 或远程 URL。重复添加同一图片不会重复关联。`kanban_get` 返回图片数量，`kanban_get_card` 返回五字段图片引用。查看图片时调用 `kanban_read_image`，参数为 `{"id":"k1","attachmentId":"sha256:<实际附件哈希>"}`；移除时用相同参数调用 `kanban_remove_image`。两者都会校验图片属于当前工作区的指定卡片。
-
-`kanban_add_card` 和 `kanban_update_card` 的任务描述仍使用 `note` 字段，传入保留换行的 Markdown 原文，不传 HTML。任务详情会渲染标题、列表、表格和代码块。原文最多 2,000 字符，Markdown 标记和换行也计入长度，超出会截断并返回警告。修改已有描述前，应先调用 `kanban_get_card` 读取完整原文（`kanban_get` 只返回摘要）。传入 `note` 会替换整段描述；省略则保留原文，传空字符串则清空。评论仍为纯文本。
-
-完成日期在卡片进入完成列时自动记录（包括直接在完成列创建），移出时清空，再次完成时记录新时间。修改内容、评论、同列排序和列改名／排序不影响完成日期。卡片详情在截止日期旁以本地时区只读展示；两个读取工具均返回 UTC ISO 时间戳 `completedAt` 或 `null`，已完成卡片的 `null` 表示时间未知。更换或清除完成列会重置完成时间，新完成列中已有卡片显示未知；删除列引发自动移动时也遵循进入／离开完成状态的规则。从 v5 之前的数据升级时，历史完成时间保留未知，不根据活动日志推测。
-
-`kanban_add_card` 和 `kanban_update_card` 可通过 `dueDate` 设置截止日期，值为真实有效的 `YYYY-MM-DD` 日期。省略则保留原日期（新卡片默认为无日期），传 `null` 或空字符串则清空。日期不含时间和时区：今天到期的任务到本地次日才算逾期。「本周五」等相对日期应由 Agent 按用户本地日期换算，并向用户确认具体日期，不要直接传相对文本或 UTC 时间戳。`kanban_get` 和 `kanban_get_card` 都会返回截止日期与看板的 `completedColumnId`。
-
-使用 `kanban_set_completed_column`，传已有的 `columnId` 指定完成列，传 `null` 清除设置。新看板默认使用 Done，已有看板需要明确选择一次。设置跟随列 ID，改名和排序不影响；删除完成列会清除设置。完成列中的卡片保留日期，但不计入「今天到期」和「已逾期」筛选，移回其他列后恢复判断。暂不包含自动提醒和按日期自动排序。
-
-> 把「支付联调」的截止日期设为本周五，再列出今天到期和已经逾期的未完成任务，方便我安排先做哪几件事。
-
-## 开发与验证
-
-使用 Node.js 26 与 pnpm 11.8.0。构建、回归测试及隔离图片集成检查见[验证说明](docs/testing-images.md)。
-
-## 开源许可
-
-MIT
+[MIT](LICENSE) · 为 DeepSeek Harness 构建
