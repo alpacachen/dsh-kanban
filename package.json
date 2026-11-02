@@ -1,6 +1,6 @@
 {
   "name": "@alpacachen/dsh-kanban",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "A collaborative kanban board for DeepSeek Harness with text search, native image attachments, due dates, comments and 19 agent tools.",
   "type": "module",
   "main": "index.js",
@@ -20,6 +20,9 @@
     "image.png",
     "docs/screenshots/card-details-dark.png",
     "docs/testing-images.md",
+    "docs/guide.md",
+    "docs/guide.zh.md",
+    "docs/readme/*.png",
     "LICENSE"
   ],
   "scripts": {
