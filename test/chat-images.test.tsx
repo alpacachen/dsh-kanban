@@ -14,23 +14,21 @@ const store = () => ({ createDrafts: vi.fn((_id, files) => files.map((file, i) =
 const input = () => ({ setDraft: vi.fn(), addAttachments: vi.fn(() => true), submit: vi.fn() })
 afterEach(() => { consumeDraft("next-image-session"); vi.restoreAllMocks() })
 
-it.each(["current", "new"])("attaches saved image bytes to the %s composer without sending", async target => {
+it("attaches saved image bytes to a new composer without sending", async () => {
   const user = userEvent.setup(), attachmentDrafts = store(), actions = input()
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => String(url).startsWith('/api/kanban/image?')
     ? { ok: true, blob: async () => new Blob(["png"], { type: "image/png" }) } as Response
     : { ok: true, json: async () => ({ board }) } as Response)
-  const openWorkspace = vi.fn(async (_id, cb) => cb("next-image-session"))
-  render(<KanbanView {...{ sessionId: "current", inputActions: actions, attachmentDrafts, uiWorkspace: { openWorkspace } } as any} />)
+  const onCreateConversation = vi.fn(async (_id, draft) => { queueDraft("next-image-session", draft.text, draft.files); return true })
+  render(<KanbanView workspaceId={"image-workspace" as any} onCreateConversation={onCreateConversation} />)
   await user.click(await screen.findByText(card.title))
   await user.click(screen.getByRole("button", { name: t("chatWithAgent") }))
-  await user.click(screen.getByRole("menuitem", { name: t(target === 'current' ? 'chatCurrentSession' : 'chatNewSession') }))
-  if (target === 'new') {
-    expect(actions.setDraft).not.toHaveBeenCalled()
-    render(<StrictMode><ChatDraftInjector {...{ sessionId: "next-image-session", inputActions: actions, attachmentDrafts } as any} /></StrictMode>)
-  }
+  await waitFor(() => expect(onCreateConversation).toHaveBeenCalledTimes(1))
+  expect(actions.setDraft).not.toHaveBeenCalled()
+  render(<StrictMode><ChatDraftInjector {...{ sessionId: "next-image-session", inputActions: actions, attachmentDrafts } as any} /></StrictMode>)
   await waitFor(() => expect(actions.addAttachments).toHaveBeenCalledExactlyOnceWith(["draft-0"]))
   expect(attachmentDrafts.createDrafts).toHaveBeenCalledTimes(1)
-  expect(attachmentDrafts.createDrafts.mock.calls[0][0]).toBe(target === 'current' ? 'current' : 'next-image-session')
+  expect(attachmentDrafts.createDrafts.mock.calls[0][0]).toBe('next-image-session')
   const file = attachmentDrafts.createDrafts.mock.calls[0][1][0]
   expect([file.name, file.type, file.size]).toEqual(['k1-1.png', 'image/png', 3])
   expect(actions.setDraft.mock.calls[0][0]).toContain(card.note)
@@ -38,19 +36,16 @@ it.each(["current", "new"])("attaches saved image bytes to the %s composer witho
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('attachmentId=sha256%3A'))).toBe(true)
 })
 
-it('keeps the task dialog and composer unchanged when an image cannot be read', async () => {
-  const user = userEvent.setup(), actions = input(), attachmentDrafts = store(), openWorkspace = vi.fn()
+it('keeps the task dialog unchanged and creates no session when an image cannot be read', async () => {
+  const user = userEvent.setup(), onCreateConversation = vi.fn()
   vi.spyOn(globalThis, 'fetch').mockImplementation(async url => String(url).startsWith('/api/kanban/image?')
     ? { ok: false, status: 404 } as Response : { ok: true, json: async () => ({ board }) } as Response)
-  render(<KanbanView {...{ sessionId: 'current', inputActions: actions, attachmentDrafts, uiWorkspace: { openWorkspace } } as any} />)
+  render(<KanbanView workspaceId={"image-workspace" as any} onCreateConversation={onCreateConversation} />)
   await user.click(await screen.findByText(card.title))
   await user.click(screen.getByRole('button', { name: t('chatWithAgent') }))
-  await user.click(screen.getByRole('menuitem', { name: t('chatNewSession') }))
   expect(await screen.findByText(/Image 1: HTTP 404/)).toBeTruthy()
   expect(screen.getByRole('dialog')).toBeTruthy()
-  expect(openWorkspace).not.toHaveBeenCalled()
-  expect(actions.setDraft).not.toHaveBeenCalled()
-  expect(attachmentDrafts.createDrafts).not.toHaveBeenCalled()
+  expect(onCreateConversation).not.toHaveBeenCalled()
 })
 
 it('releases rejected draft objects, retains a retryable new-session handoff, and never duplicates accepted attachments', async () => {

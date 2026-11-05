@@ -65,7 +65,7 @@ try {
   assert.ok(sheets.length >= 6, 'Host theme sheets must be available')
   await page.addStyleTag({ content: sheets.join('\n') })
   await page.evaluate(async () => {
-    await window.__testModules.prefetch('@alpacachen/dsh-kanban')
+    if (window.__testModules.manifest.modules.some(row => row.id === '@alpacachen/dsh-kanban')) await window.__testModules.prefetch('@alpacachen/dsh-kanban')
     window.__testModules.invalidate('@alpacachen/dsh-kanban')
   })
   await page.addScriptTag({ path: fileURLToPath(new URL('../lib/client.js', import.meta.url)) })
@@ -74,22 +74,24 @@ try {
     const dictionaries = {}
     const components = {}
     const services = {
+      sessions: { async create() { throw new Error("Session creation is disabled in this fixture") } },
+      layout: { beginNavigation: () => new AbortController().signal, panelInfo: { getSnapshot: () => ({ activePanelId: null }) }, selectPanel() {} },
       locale: {
         register(_namespace, language, values) { dictionaries[language] = values },
         bind() { return key => dictionaries.zh[key] ?? key },
         subscribe() { return () => {} }, getSnapshot() { return 'zh' },
       },
-      slots: { inject(_name, install) { install() }, register(meta, component) { components[meta.id] = component } },
+      slots: { inject(_name, install) { install() }, register(meta, component) { if (meta.name !== "sidebar.panellist") components[meta.key ?? meta.id] = component } },
       uiWorkspace: {},
     }
-    plugin.apply({ get: name => services[name], effect: setup => setup() })
+    plugin.apply({ ...services, get: name => services[name], effect: setup => setup() })
     document.body.replaceChildren()
     document.body.removeAttribute('data-ds-dark-theme')
     const root = document.createElement('div')
     root.style.height = '100dvh'
     document.body.style.margin = '0'
     document.body.append(root)
-    window.__testSeeds['react-dom/client'].createRoot(root).render(window.__testSeeds.react.createElement(components.kanban, { sessionId: 'fixture' }))
+    window.__testSeeds['react-dom/client'].createRoot(root).render(window.__testSeeds.react.createElement(components.kanban, { useWorkspaces: select => select({ items: [{ workspaceId: 'fixture-workspace', title: 'Fixture workspace', path: '/fixtures/workspace', sessionIds: [] }], phase: 'ready', state: 'idle' }), useSessions: select => select({ byId: {} }) }))
   })
   const titles = () => page.locator('.kanban-card-title').allTextContents()
   const chooseLabel = async name => {

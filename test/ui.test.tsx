@@ -5,8 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { CardDialog, type CardFormValues } from "../src/client/components/CardDialog"
 import { ColumnDialog } from "../src/client/components/ColumnDialog"
 import { KanbanView, placeCard } from "../src/client/KanbanView"
-import { ChatDraftInjector } from "../src/client/components/ChatDraftInjector"
-import { cardToChatText, consumeDraft } from "../src/client/lib/chat-bridge"
+import { cardToChatText } from "../src/client/lib/chat-bridge"
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -17,86 +16,23 @@ function cardValues(overrides: Partial<CardFormValues> = {}): CardFormValues {
   return { id: "", title: "", note: "", label: "", priority: "", dueDate: "", ...overrides }
 }
 
-describe("DSH 0.1.5 workspace navigation", () => {
-  it.each([false, true])("hands off a new-session draft, navigation failure: %s", async (fails) => {
+describe("new conversation draft", () => {
+  it.each([false, true])("hands off a draft, creation failure: %s", async (fails) => {
     const user = userEvent.setup()
-    const card = { id: "k1", columnId: "c1", title: "Upgrade DSH", note: "Check the new API", label: null, priority: null, dueDate: null, completedAt: null, createdAt: null, createdBy: null, comments: [] }
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [card], labels: [], activities: [] } }),
-    } as Response)
-    const openWorkspace = vi.fn(async (_id: string, beforeOpen: (id: string) => void) => {
-      if (fails) throw new Error("Navigation failed")
-      beforeOpen("next-session")
+    const card = { id: "k1", columnId: "c1", title: "Upgrade DSH", note: "Check the new API", label: null, comments: [] }
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [card], labels: [], activities: [] } }) } as Response)
+    const onCreateConversation = vi.fn(async () => {
+      if (fails) throw new Error("Creation failed")
+      return true
     })
-    render(<KanbanView {...{
-      sessionId: "current-session",
-      useWorkspaces: (select: (state: unknown) => unknown) => select({ items: [{ workspaceId: "ws-1", sessionIds: ["current-session"] }] }),
-      uiWorkspace: { openWorkspace },
-    } as unknown as React.ComponentProps<typeof KanbanView>} />)
-
+    render(<KanbanView workspaceId={"ws-1" as any} onCreateConversation={onCreateConversation} />)
     await user.click(await screen.findByText(card.title))
+    await user.click(screen.getByRole("button", { name: t("chatWithAgent") }))
+    await waitFor(() => expect(onCreateConversation).toHaveBeenCalledWith("ws-1", { text: cardToChatText({ ...card, label: "" }), files: [] }, expect.any(AbortSignal)))
     if (fails) {
-      await user.click(screen.getByRole("button", { name: t("editNote"), exact: true }))
-      await user.type(screen.getByRole("textbox", { name: t("fieldNote") }), " Keep this draft")
-    }
-    await user.click(screen.getByRole("button", { name: new RegExp(t("chatWithAgent")) }))
-    await user.click(screen.getByRole("menuitem", { name: t("chatNewSession") }))
-    expect(openWorkspace).toHaveBeenCalledWith("ws-1", expect.any(Function))
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).args.workspaceId).toBe("ws-1")
-
-    if (fails) {
-      expect(await screen.findByText(/Navigation failed/)).toBeTruthy()
+      expect(await screen.findByText(/Creation failed/)).toBeTruthy()
       expect(screen.getByRole("dialog")).toBeTruthy()
-      expect((screen.getByLabelText(t("fieldNote")) as HTMLTextAreaElement).value).toBe("Check the new API Keep this draft")
-      expect(consumeDraft("next-session")).toBeNull()
-      return
-    }
-    const setDraft = vi.fn()
-    const injectorProps = { sessionId: "current-session", inputActions: { setDraft } } as unknown as React.ComponentProps<typeof ChatDraftInjector>
-    const injector = render(<ChatDraftInjector {...injectorProps} />)
-    expect(setDraft).not.toHaveBeenCalled()
-    injector.rerender(<ChatDraftInjector {...injectorProps} sessionId="next-session" />)
-    await waitFor(() => expect(setDraft).toHaveBeenCalledExactlyOnceWith(cardToChatText({ ...card, label: "" })))
-    expect(consumeDraft("next-session")).toBeNull()
-  })
-})
-
-describe("board viewport height", () => {
-  it("ignores a restored conversation scroll offset and reserves the composer", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [], labels: [], activities: [] } }),
-    } as Response)
-    const scrollport = document.createElement("div")
-    scrollport.style.overflowY = "auto"
-    scrollport.scrollTop = 3515
-    const container = document.createElement("div")
-    const composer = document.createElement("div")
-    composer.setAttribute("data-composer-seat", "")
-    Object.defineProperty(composer, "offsetHeight", { value: 100 })
-    scrollport.append(container, composer)
-    document.body.append(scrollport)
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
-      if (this.classList.contains("kanban-view")) return new DOMRect(0, 76 - scrollport.scrollTop, 1000, 624)
-      if (this === composer) return new DOMRect(0, 700, 1000, 100)
-      if (this === scrollport) return new DOMRect(0, 40, 1000, 760)
-      return new DOMRect()
-    })
-    const observe = vi.spyOn(ResizeObserver.prototype, "observe")
-    const view = render(<KanbanView {...{ sessionId: "height-fixture" } as React.ComponentProps<typeof KanbanView>} />, { container })
-    try {
-      await screen.findByText("Todo")
-      const board = container.querySelector<HTMLElement>(".kanban-view")!
-      expect(board.style.height).toBe("624px") // 700px composer top minus unscrolled 76px board top.
-      expect(observe).toHaveBeenCalledWith(composer)
-      scrollport.scrollTop = 0
-      fireEvent(window, new Event("resize"))
-      expect(board.style.height).toBe("624px")
-    } finally {
-      view.unmount()
-      scrollport.remove()
-    }
+    } else await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
   })
 })
 
@@ -113,7 +49,7 @@ describe("board label filter", () => {
       { id: "e", columnId: "c2", title: "Legacy unlabeled card", priority: null, dueDate: null },
     ].map((card) => ({ ...card, note: "", comments: [] })),
   })
-  const props = { sessionId: "label-filter-fixture" } as React.ComponentProps<typeof KanbanView>
+  const props = { workspaceId: "default" } as React.ComponentProps<typeof KanbanView>
   const titles = () => Array.from(document.querySelectorAll(".kanban-card-title"), (node) => node.textContent)
   const selectLabel = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
     await user.click(screen.getByRole("button", { name: t("labelFilter") }))
@@ -185,15 +121,11 @@ describe("board label filter", () => {
     const user = userEvent.setup()
     const board = makeBoard()
     vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ board }) } as Response)
-    let workspaceId = "ws-a"
-    const workspaceProps = { ...props, useWorkspaces: (select: (state: unknown) => unknown) =>
-      select({ items: [{ workspaceId, sessionIds: [props.sessionId] }] }),
-    } as React.ComponentProps<typeof KanbanView>
+    const workspaceProps = { ...props, workspaceId: "ws-a" } as React.ComponentProps<typeof KanbanView>
     const view = render(<KanbanView {...workspaceProps} />)
     await screen.findByText("Urgent bug")
     await selectLabel(user, "bug")
-    workspaceId = "ws-b"
-    view.rerender(<KanbanView {...workspaceProps} />)
+    view.rerender(<KanbanView {...workspaceProps} workspaceId={"ws-b" as any} />)
     await waitFor(() => expect(titles()).toHaveLength(5))
     expect(screen.getByRole("button", { name: t("labelFilter") }).className).toContain("kanban-button--ghost")
   })
@@ -245,7 +177,7 @@ describe("CardDialog user flows", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it("sends the current-card action to the selected chat target", async () => {
+  it("creates a new conversation directly with the current card draft", async () => {
     const user = userEvent.setup()
     const onChatWithAgent = vi.fn()
     const onOpenChange = vi.fn()
@@ -265,11 +197,9 @@ describe("CardDialog user flows", () => {
 
     await user.type(screen.getByLabelText(t("fieldNote")), "Investigate the failing build")
     await user.click(screen.getByRole("button", { name: new RegExp(t("chatWithAgent")) }))
-    await user.click(screen.getByRole("menuitem", { name: t("chatCurrentSession") }))
 
     expect(onChatWithAgent).toHaveBeenCalledWith(
       cardValues({ note: "Investigate the failing build" }),
-      "current",
     )
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
@@ -411,7 +341,7 @@ describe("saving while a comment draft keeps the editor open", () => {
         json: async () => ({ board: { columns: [{ id: "c1", title: "Todo" }], cards: [savedCard], labels: [], activities: [] } }),
       } as Response
     })
-    render(<KanbanView {...{ sessionId: "save-comment-draft" } as React.ComponentProps<typeof KanbanView>} />)
+    render(<KanbanView {...{ workspaceId: "default" } as React.ComponentProps<typeof KanbanView>} />)
     await user.click(await screen.findByRole("button", { name: "Original title" }))
     const title = screen.getByLabelText(t("fieldTitle"))
     const comment = screen.getByLabelText(new RegExp(t("commentsTitle"))) as HTMLTextAreaElement

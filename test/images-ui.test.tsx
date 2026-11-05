@@ -14,7 +14,7 @@ const card = (id: string, fields: Partial<Card> = {}): Card => ({
   createdAt: null, createdBy: null, comments: [], images: [], ...fields,
 })
 const board = (cards: Card[] = []): Board => ({ completedColumnId: "done", columns: [{ id: "todo", title: "Todo" }, { id: "done", title: "Done" }], labels: [], cards, activities: [] })
-const props = { sessionId: "image-test" } as React.ComponentProps<typeof KanbanView>
+const props = { workspaceId: "default" } as React.ComponentProps<typeof KanbanView>
 const reply = (json: unknown, ok = true) => ({ ok, status: ok ? 200 : 500, json: async () => json } as Response)
 
 beforeEach(() => {
@@ -33,7 +33,7 @@ describe("board text search", () => {
     ])
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(reply({ board: value, imageLimits: limits }))
     let workspaceId = "ws-a"
-    const mappedProps = { ...props, useWorkspaces: (select: (s: unknown) => unknown) => select({ items: [{ workspaceId, sessionIds: [props.sessionId] }] }) } as React.ComponentProps<typeof KanbanView>
+    const mappedProps = { ...props, workspaceId } as React.ComponentProps<typeof KanbanView>
     const view = render(<KanbanView {...mappedProps} />)
     await screen.findByText("First task")
     const search = screen.getByRole("searchbox", { name: t("searchCards") })
@@ -49,7 +49,7 @@ describe("board text search", () => {
     await user.click(screen.getByRole("button", { name: t("clearSearch") }))
     expect(screen.getByText("First task")).toBeTruthy()
     workspaceId = "ws-b"
-    view.rerender(<KanbanView {...mappedProps} />)
+    view.rerender(<KanbanView {...mappedProps} workspaceId={workspaceId as any} />)
     await screen.findByText("Different task")
     expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("")
     expect(fetchMock).toHaveBeenCalledTimes(2)

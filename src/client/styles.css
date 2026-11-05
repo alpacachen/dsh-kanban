@@ -47,10 +47,106 @@
 }
 
 /* Main board */
+.kanban-panel {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  max-width: 1056px;
+  margin-inline: auto;
+  padding: 28px clamp(24px, 4vw, 48px) 48px;
+}
+
+/* Match DSH entry pages while keeping window chrome outside the content. */
+html[data-platform="darwin"] .kanban-panel {
+  padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px));
+}
+
+.kanban-workspace-trigger {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kanban-workspace-trigger:hover:not(:disabled),
+.kanban-workspace-trigger[data-state="open"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.kanban-workspace-trigger:disabled {
+  cursor: default;
+}
+
+.kanban-workspace-trigger svg {
+  width: 18px;
+  height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.kanban-workspace-trigger span,
+.kanban-workspace-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-workspace-name {
+  flex: 1;
+}
+
+.kanban-dropdown-content.kanban-workspace-menu {
+  width: 280px;
+  max-width: calc(100vw - 48px);
+}
+
+.kanban-panel-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kanban-panel-header {
+  flex-shrink: 0;
+  padding: 0 0 8px;
+}
+
+.kanban-panel-header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.kanban-panel-empty {
+  padding: 32px 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.kanban-panel-body > .kanban-view {
+  height: auto;
+  flex: 1;
+  padding: 8px 0 0;
+}
+
 .kanban-loading {
   display: flex;
   height: 100%;
-  min-height: 420px;
+  min-height: 0;
+  flex: 1;
   align-items: center;
   justify-content: center;
   padding: 20px;
@@ -60,6 +156,7 @@
   display: flex;
   height: 100%;
   min-height: 0;
+  min-width: 0;
   flex-direction: column;
   gap: 12px;
   padding: 16px;
@@ -845,7 +942,7 @@
 
 .kanban-input::placeholder,
 .kanban-textarea::placeholder {
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .kanban-input:focus,

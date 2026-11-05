@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, closestCorners,
   getFirstCollision, pointerWithin, rectIntersection,
@@ -6,7 +6,7 @@ import {
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
 import { CalendarDays, Check, Filter, List, MessageSquare, RefreshCw, Search, Settings2, Tag, X } from "lucide-react"
-import { CardDialog, type CardFormValues, type ChatTarget } from "./components/CardDialog"
+import { CardDialog, type CardFormValues } from "./components/CardDialog"
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
 import { LabelDialog } from "./components/LabelDialog"
@@ -19,17 +19,14 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { matchesDueDate, useLocalDate, type DueDateFilter } from "@/lib/due-date"
 import { callKanban, readChatImages, uploadImage } from "@/lib/api"
-import { cardToChatText, fillChatDraft, queueDraft, type AttachmentDrafts } from "@/lib/chat-bridge"
+import { cardToChatText, type ChatDraft } from "@/lib/chat-bridge"
 import { PRIORITY_META, PRIORITY_OPTIONS } from "@/lib/constants"
 import { useT } from "./lib/i18n"
 import type { Board, Card as CardType, ImageLimits, Priority } from "@/lib/types"
-import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
-import type { UiWorkspace } from "@deepseek-ai/dsh-client-ui-workspace/client"
-import type {} from "@deepseek-ai/dsh-client-ui-conversation/client"
-
-type KanbanViewProps = PropsRuntime<"conversation.view"> & {
-  uiWorkspace?: UiWorkspace
-  attachmentDrafts?: AttachmentDrafts
+import type { WorkspaceId } from "@deepseek-ai/dsh-api-workspace-controller/client"
+export interface KanbanViewProps {
+  workspaceId: WorkspaceId
+  onCreateConversation: (workspaceId: WorkspaceId, draft: ChatDraft, signal: AbortSignal) => Promise<boolean>
 }
 
 export function placeCard(
@@ -70,17 +67,7 @@ export function placeCard(
   return { cards: unchanged ? cards : next, toIndex }
 }
 
-export function KanbanView(props: KanbanViewProps) {
-  const { sessionId } = props
-  const useWorkspaces = props.useWorkspaces
-  const inputActions = props.inputActions
-  const uiWorkspace = props.uiWorkspace
-  const attachmentDrafts = props.attachmentDrafts
-  const items = useWorkspaces ? useWorkspaces((s) => s.items) : []
-  const workspace = Array.isArray(items)
-    ? items.find((w) => Array.isArray(w.sessionIds) && w.sessionIds.includes(sessionId))
-    : undefined
-  const workspaceId = workspace ? workspace.workspaceId : "default"
+export function KanbanView({ workspaceId, onCreateConversation }: KanbanViewProps) {
   const t = useT()
 
   const [board, setBoard] = useState<Board | null>(null)
@@ -99,17 +86,15 @@ export function KanbanView(props: KanbanViewProps) {
   // null means all labels; an empty string means unlabeled cards.
   const [labelFilter, setLabelFilter] = useState<string | null>(null)
 
-  const rootRef = useRef<HTMLDivElement | null>(null)
   const boardRef = useRef<Board | null>(board)
   const dragCardsRef = useRef<CardType[] | null>(null)
   const workspaceIdRef = useRef(workspaceId)
   const chatAbort = useRef<AbortController | null>(null)
-  useEffect(() => () => { chatAbort.current?.abort() }, [workspaceId, sessionId])
+  useEffect(() => () => { chatAbort.current?.abort() }, [workspaceId])
   const issuedRequestRef = useRef(0)
   const appliedRequestRef = useRef(0)
   boardRef.current = board
   workspaceIdRef.current = workspaceId
-  const [viewHeight, setViewHeight] = useState<number | null>(null)
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -159,8 +144,8 @@ export function KanbanView(props: KanbanViewProps) {
     setRefreshing(true)
     callKanban("get", {}, workspaceId)
       .then((res) => applyBoard(res, workspaceId, requestId))
-      .catch((e) => setError(t("loadFailed") + String((e && e.message) || e)))
-      .finally(() => setRefreshing(false))
+      .catch((e) => { if (workspaceIdRef.current === workspaceId) setError(t("loadFailed") + String((e && e.message) || e)) })
+      .finally(() => { if (workspaceIdRef.current === workspaceId) setRefreshing(false) })
   }, [workspaceId, applyBoard, t])
 
   useEffect(() => {
@@ -194,60 +179,6 @@ export function KanbanView(props: KanbanViewProps) {
       selected && !board.labels.some((label) => label.name === selected) ? null : selected,
     )
   }, [board?.labels])
-
-  // Keep the board within the visible session scroll container. An active conversation.view
-  // grows its parent with min-height:auto, so h-full has no bounded height and long lists
-  // stretch the page. Measure the available height explicitly to enable scrolling within lists.
-  useLayoutEffect(() => {
-    const findScrollport = (node: HTMLElement | null): HTMLElement | null => {
-      let cursor: HTMLElement | null = node
-      while (cursor) {
-        const overflowY = getComputedStyle(cursor).overflowY
-        if (overflowY === "auto" || overflowY === "scroll") return cursor
-        cursor = cursor.parentElement
-      }
-      return null
-    }
-
-    const measure = () => {
-      const el = rootRef.current
-      if (!el) return
-      const scrollport = findScrollport(el.parentElement)
-      // The Host restores the conversation's scroll offset on tab changes.
-      // Measure the board's unscrolled origin; otherwise a negative viewport top
-      // adds that old offset to the board height and stretches every column.
-      const top = el.getBoundingClientRect().top + (scrollport?.scrollTop ?? 0)
-      let bottom = window.innerHeight
-      if (scrollport) {
-        // Reserve space for the composer stuck to the bottom of the scroll container.
-        const composer = scrollport.querySelector<HTMLElement>("[data-composer-seat]")
-        const composerTop = composer ? composer.getBoundingClientRect().top : 0
-        if (composer && composer.offsetHeight > 0 && composerTop > top) {
-          bottom = composerTop
-        } else {
-          bottom = scrollport.getBoundingClientRect().bottom
-        }
-      }
-      setViewHeight(Math.max(0, Math.floor(bottom - top)))
-    }
-
-    measure()
-
-    const scrollport = findScrollport(rootRef.current?.parentElement ?? null)
-    const observer = new ResizeObserver(measure)
-    observer.observe(document.documentElement)
-    if (scrollport) {
-      observer.observe(scrollport)
-      const composer = scrollport.querySelector<HTMLElement>("[data-composer-seat]")
-      if (composer) observer.observe(composer)
-    }
-    window.addEventListener("resize", measure)
-
-    return () => {
-      observer.disconnect()
-      window.removeEventListener("resize", measure)
-    }
-  }, [board !== null])
 
   // Prefer pointerWithin for empty columns, then closestCorners for sorting cards.
   const collisionDetection: CollisionDetection = useCallback(
@@ -405,7 +336,7 @@ export function KanbanView(props: KanbanViewProps) {
 
   // Fill the conversation draft without sending it.
   const handleChatWithAgent = useCallback(
-    async (values: CardFormValues, target: ChatTarget): Promise<boolean> => {
+    async (values: CardFormValues): Promise<boolean> => {
       const current = boardRef.current
       const card = current?.cards.find((item) => item.id === values.id)
       const text = cardToChatText({ ...values, imageCount: card?.images?.length, completedAt: card?.completedAt,
@@ -419,29 +350,20 @@ export function KanbanView(props: KanbanViewProps) {
         chatAbort.current = controller
         const files = await readChatImages(workspaceId, card?.id ?? "", card?.images ?? [], AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]))
         if (controller.signal.aborted) return false
-        if (files.length && (!attachmentDrafts?.createDrafts || !attachmentDrafts.releaseDraftAttachments)) throw new Error(t("chatImagesUnavailable"))
-        if (target === "current") {
-          if (!inputActions) return false
-          fillChatDraft(sessionId, inputActions, { text, files }, attachmentDrafts)
-          return true
-        }
-        // Queue before DSH switches sessions; canceled navigation must not leave a pending draft.
-        if (!uiWorkspace?.openWorkspace) return false
-        await uiWorkspace.openWorkspace(workspaceId, (nextId) => queueDraft(nextId, text, files))
-        return true
+        return await onCreateConversation(workspaceId, { text, files }, controller.signal)
       } catch (e: any) {
         setError(t("actionFailed") + String((e && e.message) || e))
         return false
       }
     },
-    [inputActions, uiWorkspace, workspaceId, sessionId, attachmentDrafts, t],
+    [onCreateConversation, workspaceId, t],
   )
 
   if (!board) {
     return (
       <div className="kanban-root kanban-loading">
         {error ? (
-          <p className="kanban-error">{error}</p>
+          <div role="alert"><p className="kanban-error">{error}</p><Button variant="outline" onClick={refreshBoard} disabled={refreshing}>{t("retry")}</Button></div>
         ) : (
           <p className="kanban-muted-text">{t("loading")}</p>
         )}
@@ -453,9 +375,7 @@ export function KanbanView(props: KanbanViewProps) {
 
   return (
     <div
-      ref={rootRef}
       className="kanban-root kanban-view"
-      style={viewHeight != null ? { height: viewHeight } : undefined}
     >
       {error && !dialog && !columnDialogOpen && !labelDialogOpen && <p className="kanban-error" role="alert">{error}</p>}
 

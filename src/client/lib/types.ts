@@ -97,12 +97,6 @@ export interface Board {
   activities: Activity[]
 }
 
-export interface WorkspaceItem {
-  workspaceId: string
-  title: string
-  sessionIds: string[]
-}
-
 export interface KanbanResponse {
   cardId?: string
   imageLimits?: ImageLimits | null

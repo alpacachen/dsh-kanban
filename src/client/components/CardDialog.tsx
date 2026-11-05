@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { Check, MessageSquare, Pencil, Send, Trash2 } from "lucide-react"
 import { MarkdownText } from "@deepseek-ai/dsh-client-ui-primitives"
 import { Button } from "@/components/ui/button"
@@ -6,9 +6,6 @@ import {
   Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { DrawerContent } from "@/components/ui/drawer"
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -32,9 +29,6 @@ export interface CardFormValues {
   dueDate: string
 }
 
-/** Destination for Chat with agent: the current session or a new session. */
-export type ChatTarget = "current" | "new"
-
 type SaveResult = boolean | void | { cardId: string }
 
 interface CardDialogProps {
@@ -55,7 +49,7 @@ interface CardDialogProps {
   onSave: (values: CardFormValues) => SaveResult | Promise<SaveResult>
   onAddComment: (cardId: string, content: string) => boolean | void | Promise<boolean | void>
   onDelete?: (card: Card) => boolean | void | Promise<boolean | void>
-  onChatWithAgent: (values: CardFormValues, target: ChatTarget) => boolean | void | Promise<boolean | void>
+  onChatWithAgent: (values: CardFormValues) => boolean | void | Promise<boolean | void>
 }
 
 export function CardDialog({ workspaceId = "default", imageLimits = null, images = [], onUploadImage, onRemoveImage, open, error, card, completed, completedAt, labels, comments, activities, onOpenChange, onSave, onAddComment, onDelete, onChatWithAgent }: CardDialogProps) {
@@ -71,7 +65,7 @@ export function CardDialog({ workspaceId = "default", imageLimits = null, images
   const [pending, setPending] = useState(false)
   const pendingRef = useRef(false)
   const [failure, setFailure] = useState("")
-  const [confirm, setConfirm] = useState<"discard" | "delete" | ChatTarget | null>(null)
+  const [confirm, setConfirm] = useState<"discard" | "delete" | "chat" | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const initialValues = useRef(values)
   const imagesRef = useRef<CardImagesHandle>(null)
@@ -85,7 +79,8 @@ export function CardDialog({ workspaceId = "default", imageLimits = null, images
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
 
-  useEffect(() => {
+  // Reset before the newly visible form can accept files or text.
+  useLayoutEffect(() => {
     const previousId = previousCardId.current
     previousCardId.current = open ? card?.id ?? "" : undefined
     // Saving a new card changes its identity while uploads still belong to this draft.
@@ -139,10 +134,10 @@ export function CardDialog({ workspaceId = "default", imageLimits = null, images
       setPending(false)
     }
   }
-  const chat = async (target: ChatTarget) => {
+  const chat = async () => {
     if (!dueDateRef.current?.reportValidity()) return
-    if (comment.trim() || hasPendingImages) { setConfirm(target); return }
-    if (await run(() => onChatWithAgent(values, target))) onOpenChange(false)
+    if (comment.trim() || hasPendingImages) { setConfirm("chat"); return }
+    if (await run(() => onChatWithAgent(values))) onOpenChange(false)
   }
   const set = (patch: Partial<CardFormValues>) => setValues((v) => ({ ...v, ...patch }))
   const submitComment = async () => {
@@ -377,7 +372,7 @@ export function CardDialog({ workspaceId = "default", imageLimits = null, images
                     if (card && onDelete && await run(() => onDelete(card))) onOpenChange(false)
                     return
                   }
-                  if (await run(() => onChatWithAgent(values, confirm))) onOpenChange(false)
+                  if (await run(() => onChatWithAgent(values))) onOpenChange(false)
                 }}>{t(confirm === "discard" ? "discardChanges" : confirm === "delete" ? "confirmDelete" : "discardAndContinue")}</Button>
               </div>
             </div>
@@ -393,29 +388,14 @@ export function CardDialog({ workspaceId = "default", imageLimits = null, images
                 {t("delete")}
               </Button>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  disabled={locked || (!values.title.trim() && !values.note.trim())}
-                >
-                  <MessageSquare className="kanban-icon" />
-                  {t("chatWithAgent")}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => void chat("current")}
-                >
-                  {t("chatCurrentSession")}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => void chat("new")}
-                >
-                  {t("chatNewSession")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="outline"
+              disabled={locked || (!values.title.trim() && !values.note.trim())}
+              onClick={() => void chat()}
+            >
+              <MessageSquare className="kanban-icon" />
+              {t("chatWithAgent")}
+            </Button>
             <Button
               disabled={locked || !values.title.trim()}
               onClick={async () => {

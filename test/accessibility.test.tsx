@@ -21,7 +21,7 @@ function renderBoard() {
     ok: true,
     json: async () => ({ board: { columns: [{ id: "todo", title: "Todo" }], cards: [card], labels, activities: [] } }),
   } as Response)
-  return render(<KanbanView {...{ sessionId: "test" } as React.ComponentProps<typeof KanbanView>} />)
+  return render(<KanbanView {...{ workspaceId: "default" } as React.ComponentProps<typeof KanbanView>} />)
 }
 
 describe("card keyboard and focus", () => {

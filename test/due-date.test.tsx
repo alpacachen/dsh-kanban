@@ -12,7 +12,7 @@ import { t } from "../src/client/lib/i18n"
 import type { Board, Card } from "../src/client/lib/types"
 
 const card: Card = { id: "k1", columnId: "todo", title: "Payment integration", note: "", priority: "high", label: "release", dueDate: "2026-10-21", comments: [], completedAt: null, createdAt: null, createdBy: null }
-const props = { sessionId: "deadline-fixture" } as React.ComponentProps<typeof KanbanView>
+const props = { workspaceId: "default" } as React.ComponentProps<typeof KanbanView>
 const dialogProps = () => ({ open: true, card, labels: [], comments: [], activities: [], onOpenChange: vi.fn(), onSave: vi.fn().mockResolvedValue(true), onAddComment: vi.fn(), onChatWithAgent: vi.fn() })
 const titles = () => Array.from(document.querySelectorAll(".kanban-card-title"), (node) => node.textContent)
 
