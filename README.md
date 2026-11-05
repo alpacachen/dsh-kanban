@@ -44,7 +44,7 @@ Drag cards between stages, then use search and filters to find the next task. Ma
 
 ### Bring the context back into conversation.
 
-Paste or drop screenshots into a task, then choose **Chat with agent** to bring its text and saved images into the current conversation or a new one. Everything starts as an editable draft for you to review and send.
+Paste or drop screenshots into a task, then choose **Create new conversation** to bring its text and saved images into a new conversation in the selected workspace. Everything starts as an editable draft for you to review and send.
 
 [Image and saving rules →](docs/guide.md#usage-details) · [More prompt examples →](docs/guide.md#prompt-examples)
 
@@ -58,7 +58,7 @@ Paste or drop screenshots into a task, then choose **Chat with agent** to bring 
 dsh plugin --profile web add @alpacachen/dsh-kanban
 ```
 
-Enter a workspace and open the **Board** tab beside the conversation views. Start with four default stages:
+Open **Board** in the upper-left sidebar, then select a workspace in the board’s left navigation. Start with four default stages:
 
 **Todo → In Progress → Review → Done**
 

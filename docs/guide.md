@@ -4,6 +4,8 @@
 
 ## Using the board
 
+Open **Board** in the upper-left sidebar and select a workspace in the board’s left navigation. It starts as an initial-letter icon rail; use its top arrow to expand the names. The board remembers your selection. Switching workspaces does not create or navigate to a conversation; each workspace keeps its own board.
+
 | Action | How it works |
 | --- | --- |
 | Find tasks | Search card IDs, titles, descriptions, and comments; the three adjacent buttons filter by priority, label, and due date. |
@@ -12,13 +14,13 @@
 | Read task details | A resizable side drawer remembers its width and fills narrow screens; descriptions support Markdown editing and preview. |
 | Attach images | Choose files, paste from the clipboard, or drag images in; see counts on cards and preview, remove, or retry in task details. |
 | Track dates | Set due dates, find tasks due today or overdue, and record completion dates automatically when cards enter the completion column. |
-| Collaborate | Exchange comments, inspect the activity timeline, or continue a task in the current conversation or a new one. |
+| Collaborate | Exchange comments, inspect the activity timeline, or continue a task in a new conversation in the selected workspace. |
 
 Click **Save** to apply text and Markdown edits; **Done editing** only switches back to preview. Active filters appear below the toolbar. Remove a filter with its × button or choose **All** in its menu.
 
 ### Continue any card with your agent
 
-Open a card and choose **Chat with agent**. dsh-kanban carries its ID, title, label, due date, and notes into either the current conversation or a fresh one. Saved images are also added to the target composer as previewable, removable attachments. Text and images remain an editable draft until you choose to send it. An image-read failure keeps the task dialog open with an error for retry.
+Open a card and choose **Create new conversation**. dsh-kanban carries its ID, title, label, due date, and notes into a new conversation in the selected workspace, without reusing an existing blank session. Saved images are also added to the target composer as previewable, removable attachments. Text and images remain an editable draft until you choose to send it. An image-read failure keeps the task dialog open with an error for retry.
 
 <details>
 <summary>Earlier dark-mode and Markdown task details</summary>

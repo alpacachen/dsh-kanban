@@ -43,7 +43,7 @@ describe("dragging with a deadline filter", () => {
     })
 
     const user = userEvent.setup()
-    render(<KanbanView {...{ sessionId: "deadline-drag" } as React.ComponentProps<typeof KanbanView>} />)
+    render(<KanbanView {...{ workspaceId: "default" } as React.ComponentProps<typeof KanbanView>} />)
     const task = await screen.findByRole("button", { name: card.title })
     const todo = task.closest(".kanban-column")!
     await user.click(screen.getByRole("button", { name: t("dueDateFilter") }))

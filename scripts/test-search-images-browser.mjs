@@ -182,11 +182,13 @@ try {
     const ReactDOM = window.__kanbanTestSeeds['react-dom/client']
     const components = {}, dictionaries = {}, snapshot = { active: 'zh' }
     const services = {
+      sessions: { async create() { throw new Error("Session creation is disabled in this fixture") } },
+      layout: { beginNavigation: () => new AbortController().signal, panelInfo: { getSnapshot: () => ({ activePanelId: null }) }, selectPanel() {} },
       locale: { register(_namespace, language, values) { dictionaries[language] = values }, bind() { return key => dictionaries.zh[key] ?? key }, subscribe() { return () => {} }, getSnapshot() { return snapshot } },
-      slots: { inject(_name, install) { return install() }, register(meta, Component) { components[meta.id] = Component; return () => {} } },
-      uiWorkspace: { async openWorkspace() { throw new Error('Workspace navigation is not part of this fixture') } },
+      slots: { inject(_name, install) { return install() }, register(meta, Component) { if (meta.name !== "sidebar.panellist") components[meta.key ?? meta.id] = Component; return () => {} } },
+      uiWorkspace: { openSession() { throw new Error('Session navigation is disabled in this fixture') } },
     }
-    mod.apply({ get: name => services[name], effect: setup => setup() })
+    mod.apply({ ...services, get: name => services[name], effect: setup => setup() })
     document.body.replaceChildren()
     document.body.style.margin = '0'
     document.body.style.background = 'var(--dsw-alias-bg-base)'
@@ -194,9 +196,8 @@ try {
     root.style.height = '100dvh'
     document.body.append(root)
     ReactDOM.createRoot(root).render(React.createElement(components.kanban, {
-      sessionId: 'fixture-session',
-      useWorkspaces: select => select({ items: [{ workspaceId: 'fixture-workspace', sessionIds: ['fixture-session'] }] }),
-      inputActions: { setDraft() {} },
+      useSessions: select => select({ byId: { 'fixture-session': { id: 'fixture-session', retainedBy: { mainView: 1 } } } }),
+      useWorkspaces: select => select({ items: [{ workspaceId: 'fixture-workspace', title: '产品研发', path: '/fixtures/workspace', sessionIds: ['fixture-session'] }, { workspaceId: 'fixture-design', title: '设计规范', path: '/fixtures/design', sessionIds: [] }, { workspaceId: 'fixture-docs', title: '官网迭代', path: '/fixtures/docs', sessionIds: [] }], phase: 'ready', state: 'idle' }),
     }))
   })
   await page.getByRole('button', { name: '完善验证码失效提示', exact: true }).waitFor()

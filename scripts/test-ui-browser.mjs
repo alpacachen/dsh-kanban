@@ -127,6 +127,8 @@ try {
     const dictionaries = {}
     const snapshot = { active: 'en' }
     const services = {
+      sessions: { async create() { throw new Error("Session creation is disabled in this fixture") } },
+      layout: { beginNavigation: () => new AbortController().signal, panelInfo: { getSnapshot: () => ({ activePanelId: null }) }, selectPanel() {} },
       locale: {
         register(_namespace, language, values) { dictionaries[language] = values },
         bind() { return (key) => dictionaries.en[key] ?? key },
@@ -134,11 +136,11 @@ try {
       },
       slots: {
         inject(_name, install) { return install() },
-        register(meta, Component) { components[meta.id] = Component; return () => {} },
+        register(meta, Component) { if (meta.name !== "sidebar.panellist") components[meta.key ?? meta.id] = Component; return () => {} },
       },
-      uiWorkspace: { async openWorkspace() { throw new Error('Workspace navigation is not part of this fixture') } },
+      uiWorkspace: { openSession() { throw new Error('Session navigation is disabled in this fixture') } },
     }
-    mod.apply({ get: (name) => services[name], effect: setup => setup() })
+    mod.apply({ ...services, get: (name) => services[name], effect: setup => setup() })
     document.body.replaceChildren()
     document.body.style.margin = '0'
     document.body.style.background = 'var(--dsw-alias-bg-base)'
@@ -146,9 +148,8 @@ try {
     root.style.height = '100dvh'
     document.body.append(root)
     ReactDOM.createRoot(root).render(React.createElement(components.kanban, {
-      sessionId: 'fixture-session',
-      useWorkspaces: (select) => select({ items: [{ workspaceId: 'fixture-workspace', sessionIds: ['fixture-session'] }] }),
-      inputActions: { setDraft() {} },
+      useSessions: select => select({ byId: { 'fixture-session': { id: 'fixture-session', retainedBy: { mainView: 1 } } } }),
+      useWorkspaces: (select) => select({ items: [{ workspaceId: 'fixture-workspace', title: 'Product', path: '/fixtures/workspace', sessionIds: ['fixture-session'] }, { workspaceId: 'fixture-design', title: 'Design', path: '/fixtures/design', sessionIds: [] }, { workspaceId: 'fixture-docs', title: 'Docs', path: '/fixtures/docs', sessionIds: [] }], phase: 'ready', state: 'idle' }),
     }))
   })
   await page.getByRole('button', { name: 'Keyboard fixture', exact: true }).waitFor()
@@ -239,9 +240,10 @@ try {
   }
   const assertDrawer = async () => {
     const drawer = page.getByRole('dialog', { name: 'Task details', exact: true })
+    await drawer.evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => {}))))
     const bounds = await drawer.boundingBox()
     const viewport = page.viewportSize()
-    assert.ok(Math.abs(bounds.y) <= 1 && Math.abs(bounds.height - viewport.height) <= 1 && Math.abs(bounds.x + bounds.width - viewport.width) <= 1, 'Task details use the full-height right drawer')
+    assert.ok(Math.abs(bounds.y) <= 1 && Math.abs(bounds.height - viewport.height) <= 1 && Math.abs(bounds.x + bounds.width - viewport.width) <= 1, `Task details use the full-height right drawer: ${JSON.stringify({ bounds, viewport })}`)
     if (viewport.width <= 600) {
       assert.ok(Math.abs(bounds.width - viewport.width) <= 1, 'Narrow screens use the full available width')
       assert.equal(await drawer.getByRole('separator').count(), 0, 'Mobile drawer has no unusable resize handle')
@@ -271,6 +273,19 @@ try {
   }
   const viewports = { desktop: { width: 1280, height: 900 }, narrow: { width: 390, height: 844 }, short: { width: 800, height: 360 } }
   const checked = []
+  const workspaceNavigation = page.getByRole('navigation', { name: 'Workspace', exact: true })
+  assert.equal(await page.getByRole('button', { name: 'Expand workspaces', expanded: false }).count(), 1, 'Workspace navigation starts collapsed')
+  assert.equal((await workspaceNavigation.boundingBox()).width, 56)
+  await page.evaluate(() => document.documentElement.style.setProperty('--dsh-frame-top-clearance', '48px'))
+  assert.equal((await styles(page.locator('.kanban-panel'), ['paddingTop'])).paddingTop, '0px', 'Board does not add the 48px frame clearance')
+  await page.evaluate(() => document.documentElement.style.removeProperty('--dsh-frame-top-clearance'))
+  await page.getByRole('button', { name: 'Expand workspaces', exact: true }).click()
+  assert.equal((await workspaceNavigation.boundingBox()).width, 164)
+  assert.equal(await workspaceNavigation.locator('.kanban-workspace-name').first().isVisible(), true)
+  await shot('workspaces-expanded-desktop')
+  await page.getByRole('button', { name: 'Collapse workspaces', exact: true }).click()
+  assert.equal((await workspaceNavigation.boundingBox()).width, 56)
+  checked.push('No extra 48px top padding; workspace navigation defaults collapsed and expands or collapses explicitly')
   for (const scheme of ['light', 'dark']) {
     await page.evaluate(scheme => {
       document.body.toggleAttribute('data-ds-dark-theme', scheme === 'dark')
@@ -279,7 +294,7 @@ try {
     for (const [size, viewport] of Object.entries(viewports)) {
       await page.setViewportSize(viewport)
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-      const boardGeometry = await page.locator('.kanban-root').evaluate(el => {
+      const boardGeometry = await page.locator('.kanban-panel').evaluate(el => {
         const rect = el.getBoundingClientRect()
         return { bottom: rect.bottom, height: innerHeight, width: el.scrollWidth, clientWidth: el.clientWidth }
       })
@@ -318,10 +333,10 @@ try {
         await shot(`${name.toLowerCase()}-select-${scheme}-${size}`)
         await page.keyboard.press('Escape')
       }
-      await page.getByRole('button', { name: 'Chat with agent', exact: true }).click()
-      await assertSurface(page.getByRole('menu'))
-      await shot(`chat-menu-${scheme}-${size}`)
-      await page.keyboard.press('Escape')
+      await page.getByRole('button', { name: 'Create new conversation', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'Session creation is disabled in this fixture' }).waitFor()
+      assert.equal(await page.getByRole('menu').count(), 0, 'New conversation has no destination menu')
+      await shot(`create-conversation-error-${scheme}-${size}`)
       await closeDialog()
       await page.getByRole('button', { name: 'Add card', exact: true }).first().click()
       await assertDialog()
@@ -335,7 +350,7 @@ try {
         await page.keyboard.press('Escape')
       }
       await page.locator('.kanban-dropdown-content').waitFor({ state: 'detached' })
-      checked.push(`${scheme}/${size}: board, task drawer with real Markdown, list/label dialogs, six menus`)
+      checked.push(`${scheme}/${size}: board, task drawer with real Markdown, list/label dialogs, filter/settings menus, direct conversation action`)
     }
   }
 

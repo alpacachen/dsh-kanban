@@ -15,6 +15,13 @@ const NS = "dsh-kanban"
 type Dict = Record<string, string>
 
 const zh: Dict = {
+  expandWorkspaces: "展开工作区列表",
+  collapseWorkspaces: "折叠工作区列表",
+  workspace: "工作区",
+  selectWorkspace: "选择工作区",
+  selectWorkspaceHint: "选择一个工作区，查看和管理它的任务。",
+  noWorkspaces: "暂无工作区，请先在左侧添加工作区。",
+  loadingWorkspaces: "正在加载工作区…",
   searchCards: "搜索任务",
   cardNoLongerExists: "这张卡片已被删除，无法保存修改。",
   searchPlaceholder: "搜索标题、描述、评论或 ID…",
@@ -129,9 +136,7 @@ const zh: Dict = {
   sendComment: "发送评论",
   cancel: "取消",
   save: "保存",
-  chatWithAgent: "与 agent 聊一聊",
-  chatCurrentSession: "当前对话",
-  chatNewSession: "新建对话",
+  chatWithAgent: "创建新对话",
   delete: "删除",
   add: "添加",
   close: "关闭",
@@ -174,6 +179,13 @@ const zh: Dict = {
 }
 
 const en: Dict = {
+  expandWorkspaces: "Expand workspaces",
+  collapseWorkspaces: "Collapse workspaces",
+  workspace: "Workspace",
+  selectWorkspace: "Select workspace",
+  selectWorkspaceHint: "Select a workspace to view and manage its tasks.",
+  noWorkspaces: "No workspaces yet. Add one in the sidebar first.",
+  loadingWorkspaces: "Loading workspaces…",
   searchCards: "Search tasks",
   cardNoLongerExists: "This card was deleted. Changes cannot be saved.",
   searchPlaceholder: "Search titles, descriptions, comments or IDs…",
@@ -288,9 +300,7 @@ const en: Dict = {
   sendComment: "Send comment",
   cancel: "Cancel",
   save: "Save",
-  chatWithAgent: "Chat with agent",
-  chatCurrentSession: "Current session",
-  chatNewSession: "New session",
+  chatWithAgent: "Create new conversation",
   delete: "Delete",
   add: "Add",
   close: "Close",

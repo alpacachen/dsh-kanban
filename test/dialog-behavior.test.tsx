@@ -92,12 +92,11 @@ describe("dialog draft safety", () => {
     render(<CardDialog completed={false} completedAt={null} {...props} />)
     await user.type(screen.getByLabelText(new RegExp(t("commentsTitle"))), "Keep this comment")
     await user.click(screen.getByRole("button", { name: t("chatWithAgent") }))
-    await user.click(screen.getByRole("menuitem", { name: t("chatNewSession") }))
     expect(props.onChatWithAgent).not.toHaveBeenCalled()
     expect(props.onOpenChange).not.toHaveBeenCalled()
     expect(screen.getByText(t("discardCommentDesc"))).toBeTruthy()
     await user.click(screen.getByRole("button", { name: t("discardAndContinue") }))
-    expect(props.onChatWithAgent).toHaveBeenCalledWith(expect.objectContaining({ title: card.title }), "new")
+    expect(props.onChatWithAgent).toHaveBeenCalledWith(expect.objectContaining({ title: card.title }))
     expect(props.onOpenChange).toHaveBeenCalledExactlyOnceWith(false)
   })
 
