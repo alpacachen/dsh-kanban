@@ -273,30 +273,31 @@ try {
   }
   const viewports = { desktop: { width: 1280, height: 900 }, narrow: { width: 390, height: 844 }, short: { width: 800, height: 360 } }
   const checked = []
-  const workspaceNavigation = page.getByRole('navigation', { name: 'Workspace', exact: true })
-  assert.equal(await page.getByRole('button', { name: 'Expand workspaces', expanded: false }).count(), 1, 'Workspace navigation starts collapsed')
-  assert.equal((await workspaceNavigation.boundingBox()).width, 56)
+  const workspaceTrigger = page.getByRole('button', { name: 'Select workspace: Product', exact: true })
+  assert.equal(await page.getByRole('navigation').count(), 0, 'Workspace selection lives in the title instead of a side rail')
+  assert.equal(await workspaceTrigger.getAttribute('aria-expanded'), 'false')
   await page.evaluate(() => document.documentElement.style.setProperty('--dsh-frame-top-clearance', '48px'))
   for (const platform of ['web', 'win32', 'darwin']) {
     await page.evaluate(platform => document.documentElement.setAttribute('data-platform', platform), platform)
     const topInset = platform === 'darwin' ? '76px' : '28px'
     assert.deepEqual(await styles(page.locator('.kanban-panel'), ['paddingTop', 'paddingLeft', 'paddingRight']), { paddingTop: topInset, paddingLeft: '48px', paddingRight: '48px' }, `${platform}: page follows DSH entry-page insets`)
     assert.equal((await styles(page.locator('.kanban-panel-header'), ['paddingTop'])).paddingTop, '0px', 'Window clearance is applied once around the page')
-    assert.equal((await styles(workspaceNavigation, ['borderRightWidth'])).borderRightWidth, '0px', 'Workspace navigation has no full-height separator')
-    assert.ok((await workspaceNavigation.boundingBox()).height < 300, 'Workspace navigation follows its contents instead of spanning the page')
   }
-  await shot('board-macos-collapsed')
-  await page.getByRole('button', { name: 'Expand workspaces', exact: true }).click()
-  assert.equal((await workspaceNavigation.boundingBox()).width, 164)
-  assert.equal(await workspaceNavigation.locator('.kanban-workspace-name').first().isVisible(), true)
-  await shot('board-macos-expanded')
-  await page.getByRole('button', { name: 'Collapse workspaces', exact: true }).click()
-  assert.equal((await workspaceNavigation.boundingBox()).width, 56)
+  await shot('board-macos-title')
+  await workspaceTrigger.focus()
+  await page.keyboard.press('Enter')
+  await assertSurface(page.getByRole('menu'))
+  assert.equal(await page.getByRole('menuitem', { name: 'Product', current: 'page' }).count(), 1)
+  assert.equal(await page.getByRole('combobox').count(), 0, 'Workspace title opens a menu, not a Select')
+  await shot('board-macos-workspace-menu')
+  await page.keyboard.press('Escape')
+  await page.getByRole('menu').waitFor({ state: 'hidden' })
+  assert.equal(await workspaceTrigger.evaluate(el => document.activeElement === el), true, 'Escape returns focus to the workspace title')
   await page.evaluate(() => {
     document.documentElement.removeAttribute('data-platform')
     document.documentElement.style.removeProperty('--dsh-frame-top-clearance')
   })
-  checked.push('DSH entry-page top and horizontal insets; macOS window clearance applied once; content-height workspace navigation defaults collapsed and expands or collapses explicitly')
+  checked.push('DSH entry-page top and horizontal insets; title menu with selected workspace, keyboard opening and Escape focus restoration; no side rail or Select')
   for (const scheme of ['light', 'dark']) {
     await page.evaluate(scheme => {
       document.body.toggleAttribute('data-ds-dark-theme', scheme === 'dark')
@@ -315,6 +316,11 @@ try {
         assert.ok(Object.values(css).every(value => parseFloat(value) > 0), 'Columns retain all four real borders')
       }
       await shot(`board-${scheme}-${size}`)
+      await workspaceTrigger.click()
+      await assertSurface(page.getByRole('menu'))
+      await shot(`workspace-menu-${scheme}-${size}`)
+      await page.keyboard.press('Escape')
+      await page.getByRole('menu').waitFor({ state: 'hidden' })
       for (const editor of ['Edit lists', 'Edit labels']) {
         await openEditor(editor)
         await assertDialog()

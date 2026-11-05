@@ -15,8 +15,6 @@ const NS = "dsh-kanban"
 type Dict = Record<string, string>
 
 const zh: Dict = {
-  expandWorkspaces: "展开工作区列表",
-  collapseWorkspaces: "折叠工作区列表",
   workspace: "工作区",
   selectWorkspace: "选择工作区",
   selectWorkspaceHint: "选择一个工作区，查看和管理它的任务。",
@@ -179,8 +177,6 @@ const zh: Dict = {
 }
 
 const en: Dict = {
-  expandWorkspaces: "Expand workspaces",
-  collapseWorkspaces: "Collapse workspaces",
   workspace: "Workspace",
   selectWorkspace: "Select workspace",
   selectWorkspaceHint: "Select a workspace to view and manage its tasks.",

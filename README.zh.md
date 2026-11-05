@@ -58,7 +58,7 @@
 dsh plugin --profile web add @alpacachen/dsh-kanban
 ```
 
-点击左上角的 **「看板」**，在看板左侧选择工作区，即可从四个默认阶段开始：
+点击左上角的 **「看板」**，点击顶部工作区名称切换看板，即可从四个默认阶段开始：
 
 **Todo → In Progress → Review → Done**
 

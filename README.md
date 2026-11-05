@@ -58,7 +58,7 @@ Paste or drop screenshots into a task, then choose **Create new conversation** t
 dsh plugin --profile web add @alpacachen/dsh-kanban
 ```
 
-Open **Board** in the upper-left sidebar, then select a workspace in the board’s left navigation. Start with four default stages:
+Open **Board** in the upper-left sidebar, then click the workspace name at the top to switch boards. Start with four default stages:
 
 **Todo → In Progress → Review → Done**
 

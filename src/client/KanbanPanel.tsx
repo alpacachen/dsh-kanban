@@ -1,11 +1,11 @@
-import { useEffect, useId, useState } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Check, ChevronDown } from "lucide-react"
 import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots"
 import type {} from "@deepseek-ai/dsh-client-ui-layout/client"
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client"
 import type {} from "@deepseek-ai/dsh-client-ui-session/client"
 import { KanbanView, type KanbanViewProps } from "./KanbanView"
-import { Button } from "./components/ui/button"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./components/ui/dropdown-menu"
 import { useT } from "./lib/i18n"
 
 const WORKSPACE_KEY = "dsh-kanban:workspace"
@@ -14,8 +14,6 @@ type KanbanPanelProps = Pick<PropsRuntime<"main">, "useWorkspaces" | "useSession
 
 export function KanbanPanel({ useWorkspaces, useSessions, onCreateConversation }: KanbanPanelProps) {
   const t = useT()
-  const [collapsed, setCollapsed] = useState(true)
-  const workspaceListId = useId()
   const { items, phase, state, error } = useWorkspaces((state) => state)
   const currentSession = useSessions((state) => Object.values(state.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id)
   const [selected, setSelected] = useState(() => {
@@ -36,30 +34,27 @@ export function KanbanPanel({ useWorkspaces, useSessions, onCreateConversation }
   }, [workspaceId, phase])
 
   return <section className="kanban-root kanban-panel" aria-label={t("boardTab")}>
-    <nav className="kanban-workspaces" data-collapsed={collapsed} aria-label={t("workspace")}>
-      <div className="kanban-workspaces-header">
-        <p className="kanban-workspaces-heading">{t("workspace")}</p>
-        <Button variant="ghost" size="icon" className="kanban-workspaces-toggle"
-          aria-label={t(collapsed ? "expandWorkspaces" : "collapseWorkspaces")}
-          title={t(collapsed ? "expandWorkspaces" : "collapseWorkspaces")}
-          aria-expanded={!collapsed} aria-controls={workspaceListId}
-          onClick={() => setCollapsed((value) => !value)}>
-          {collapsed ? <ChevronRight /> : <ChevronLeft />}
-        </Button>
-      </div>
-      <div id={workspaceListId} className="kanban-workspaces-list">
-        {items.map((item) => <Button key={item.workspaceId} variant="ghost"
-          className="kanban-workspace-button" aria-label={item.title} title={item.title}
-          aria-current={workspaceId === item.workspaceId ? "page" : undefined}
-          onClick={() => setSelected(item.workspaceId)}>
-          <span className="kanban-workspace-icon" aria-hidden="true">{Array.from(item.title.trim())[0]?.toLocaleUpperCase() || "?"}</span>
-          <span className="kanban-workspace-name">{item.title}</span>
-        </Button>)}
-      </div>
-    </nav>
     <div className="kanban-panel-body">
       <header className="kanban-panel-header">
-        <h1 title={workspace?.title}>{workspace?.title ?? t("boardTab")}</h1>
+        <h1>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="kanban-workspace-trigger" disabled={!items.length}
+                aria-label={`${t("selectWorkspace")}: ${workspace?.title ?? t("boardTab")}`} title={workspace?.title}>
+                <span>{workspace?.title ?? t("selectWorkspace")}</span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="kanban-workspace-menu">
+              {items.map((item) => <DropdownMenuItem key={item.workspaceId}
+                aria-current={workspaceId === item.workspaceId ? "page" : undefined}
+                title={item.title} onSelect={() => setSelected(item.workspaceId)}>
+                <span className="kanban-workspace-name">{item.title}</span>
+                {workspaceId === item.workspaceId && <Check aria-hidden="true" className="kanban-icon" />}
+              </DropdownMenuItem>)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </h1>
       </header>
       {workspace ? <KanbanView key={workspaceId} workspaceId={workspace.workspaceId} onCreateConversation={onCreateConversation} />
         : <div className="kanban-panel-empty" role={state === "error" ? "alert" : "status"}>

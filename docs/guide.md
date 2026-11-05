@@ -4,7 +4,7 @@
 
 ## Using the board
 
-Open **Board** in the upper-left sidebar and select a workspace in the board’s left navigation. It starts as an initial-letter icon rail; use its top arrow to expand the names. The board remembers your selection. Switching workspaces does not create or navigate to a conversation; each workspace keeps its own board.
+Open **Board** in the upper-left sidebar and click the workspace name at the top to switch boards. The board remembers your selection. Switching workspaces does not create or navigate to a conversation; each workspace keeps its own board.
 
 | Action | How it works |
 | --- | --- |
