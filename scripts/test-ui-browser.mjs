@@ -277,15 +277,26 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Expand workspaces', expanded: false }).count(), 1, 'Workspace navigation starts collapsed')
   assert.equal((await workspaceNavigation.boundingBox()).width, 56)
   await page.evaluate(() => document.documentElement.style.setProperty('--dsh-frame-top-clearance', '48px'))
-  assert.equal((await styles(page.locator('.kanban-panel'), ['paddingTop'])).paddingTop, '0px', 'Board does not add the 48px frame clearance')
-  await page.evaluate(() => document.documentElement.style.removeProperty('--dsh-frame-top-clearance'))
+  for (const platform of ['web', 'win32', 'darwin']) {
+    await page.evaluate(platform => document.documentElement.setAttribute('data-platform', platform), platform)
+    const topInset = platform === 'darwin' ? '76px' : '28px'
+    assert.deepEqual(await styles(page.locator('.kanban-panel'), ['paddingTop', 'paddingLeft', 'paddingRight']), { paddingTop: topInset, paddingLeft: '48px', paddingRight: '48px' }, `${platform}: page follows DSH entry-page insets`)
+    assert.equal((await styles(page.locator('.kanban-panel-header'), ['paddingTop'])).paddingTop, '0px', 'Window clearance is applied once around the page')
+    assert.equal((await styles(workspaceNavigation, ['borderRightWidth'])).borderRightWidth, '0px', 'Workspace navigation has no full-height separator')
+    assert.ok((await workspaceNavigation.boundingBox()).height < 300, 'Workspace navigation follows its contents instead of spanning the page')
+  }
+  await shot('board-macos-collapsed')
   await page.getByRole('button', { name: 'Expand workspaces', exact: true }).click()
   assert.equal((await workspaceNavigation.boundingBox()).width, 164)
   assert.equal(await workspaceNavigation.locator('.kanban-workspace-name').first().isVisible(), true)
-  await shot('workspaces-expanded-desktop')
+  await shot('board-macos-expanded')
   await page.getByRole('button', { name: 'Collapse workspaces', exact: true }).click()
   assert.equal((await workspaceNavigation.boundingBox()).width, 56)
-  checked.push('No extra 48px top padding; workspace navigation defaults collapsed and expands or collapses explicitly')
+  await page.evaluate(() => {
+    document.documentElement.removeAttribute('data-platform')
+    document.documentElement.style.removeProperty('--dsh-frame-top-clearance')
+  })
+  checked.push('DSH entry-page top and horizontal insets; macOS window clearance applied once; content-height workspace navigation defaults collapsed and expands or collapses explicitly')
   for (const scheme of ['light', 'dark']) {
     await page.evaluate(scheme => {
       document.body.toggleAttribute('data-ds-dark-theme', scheme === 'dark')

@@ -55,6 +55,15 @@
   min-height: 0;
   overflow: hidden;
   container-type: inline-size;
+  max-width: 1056px;
+  margin-inline: auto;
+  gap: 16px;
+  padding: 28px clamp(24px, 4vw, 48px) 48px;
+}
+
+/* Match DSH entry pages while keeping window chrome outside the content. */
+html[data-platform="darwin"] .kanban-panel {
+  padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px));
 }
 
 .kanban-workspaces {
@@ -64,9 +73,9 @@
   flex: 0 0 auto;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 8px;
-  border-right: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-module-platform);
+  max-height: 100%;
+  align-self: flex-start;
+  padding: 0 8px;
 }
 
 .kanban-workspaces-heading {
@@ -161,39 +170,33 @@
 
 .kanban-panel-header {
   flex-shrink: 0;
-  padding: 16px 20px 8px;
+  padding: 0 0 8px;
 }
 
 .kanban-panel-header h1 {
   margin: 0;
   overflow: hidden;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 500;
-  line-height: 24px;
+  line-height: 28px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .kanban-panel-empty {
-  padding: 32px 20px;
+  padding: 32px 0;
   color: var(--dsw-alias-label-secondary);
 }
 
 .kanban-panel-body > .kanban-view {
   height: auto;
   flex: 1;
-  padding: 8px 20px 16px;
+  padding: 8px 0 0;
 }
 
 @container (max-width: 720px) {
   .kanban-workspace-button {
     height: 44px;
-  }
-  .kanban-panel-header {
-    padding-inline: 12px;
-  }
-  .kanban-panel-body > .kanban-view {
-    padding-inline: 12px;
   }
 }
 
