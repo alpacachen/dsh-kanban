@@ -9,7 +9,8 @@ export interface ChatDraft { text: string; files: File[] }
 export function fillChatDraft(sessionId: string, input: InputActions, draft: ChatDraft, store?: AttachmentDrafts): void {
   if (draft.files.length) {
     if (!store?.createDrafts || !store.releaseDraftAttachments || !input.addAttachments) throw new Error(t("chatImagesUnavailable"))
-    const attachments = store.createDrafts(sessionId as Parameters<AttachmentDrafts["createDrafts"]>[0], draft.files)
+    // Kanban creates ordinary sessions, which accept background image uploads.
+    const attachments = store.createDrafts(sessionId as Parameters<AttachmentDrafts["createDrafts"]>[0], draft.files, true)
     try {
       if (!input.addAttachments(attachments.map((item) => item.id))) throw new Error(t("chatImagesBusy"))
     } catch (error) {

@@ -28,7 +28,7 @@ it("attaches saved image bytes to a new composer without sending", async () => {
   render(<StrictMode><ChatDraftInjector {...{ sessionId: "next-image-session", inputActions: actions, attachmentDrafts } as any} /></StrictMode>)
   await waitFor(() => expect(actions.addAttachments).toHaveBeenCalledExactlyOnceWith(["draft-0"]))
   expect(attachmentDrafts.createDrafts).toHaveBeenCalledTimes(1)
-  expect(attachmentDrafts.createDrafts.mock.calls[0][0]).toBe('next-image-session')
+  expect(attachmentDrafts.createDrafts).toHaveBeenCalledWith('next-image-session', expect.any(Array), true)
   const file = attachmentDrafts.createDrafts.mock.calls[0][1][0]
   expect([file.name, file.type, file.size]).toEqual(['k1-1.png', 'image/png', 3])
   expect(actions.setDraft.mock.calls[0][0]).toContain(card.note)
