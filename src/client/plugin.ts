@@ -46,7 +46,7 @@ export const KanbanPlugin = {
     )
     slots.inject("sidebar.panellist", () => slots.register(
       { name: "sidebar.panellist", id: "kanban", order: 30, label: () => t("boardTab") },
-      ({ size }: PropsRuntime<"sidebar.panellist">) => h(PanelsTopLeft, { size }),
+      ({ size }: PropsRuntime<"sidebar.panellist">) => h(PanelsTopLeft, { size, strokeWidth: 1.5 }),
     ))
     // Keep a session-scoped injector mounted to fill queued drafts in new sessions.
     slots.inject("conversation.input.dock", () =>
