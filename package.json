@@ -60,7 +60,7 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "@xyflow/react": "^12.12.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.34.0"
+    "lucide-react": "^1.72.0"
   },
   "peerDependencies": {
     "react": "^18.2.0",
