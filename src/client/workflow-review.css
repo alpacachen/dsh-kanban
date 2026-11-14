@@ -1,0 +1,96 @@
+/* Keep the decision and its target together before the reports at every width. */
+.kanban-root .workflow-task-workbench > .workflow-page-header { padding-bottom:16px; }
+.kanban-root .workflow-task-workbench .workflow-task-meta { margin:5px 0 0; font-size:12px; }
+/* Reports and review controls follow the page scroll. */
+.kanban-root .workflow-review-layout { display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"reports"; gap:28px; align-items:start; }
+.kanban-root .workflow-review-layout[data-reviewing="true"] { grid-template-columns:minmax(0,1fr); grid-template-areas:"decisions" "reports"; }
+.kanban-root .workflow-review-layout > .workflow-results { grid-area:reports; }
+.kanban-root .workflow-review-decision { grid-area:decisions; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 24px; align-items:start; min-width:0; padding:0 0 16px; border-bottom:1px solid var(--dsw-alias-border-l2); }
+.kanban-root .workflow-review-decision > h3 { grid-column:1 / -1; margin:0; font-size:13px; font-weight:500; }
+.kanban-root .workflow-review-context { min-height:0; overflow:visible; }
+.kanban-root .workflow-review-criteria { margin-top:8px; }
+.kanban-root .workflow-review-criteria summary { cursor:pointer; margin-bottom:6px; font-size:13px; }
+.kanban-root .workflow-review-criteria p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.75; }
+.kanban-root .workflow-review-destination { display:flex; gap:8px; margin:8px 0; font-size:12px; }
+.kanban-root .workflow-review-destination dt { color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-review-destination dd { margin:0; font-size:12px; font-weight:400; overflow-wrap:anywhere; }
+.kanban-root .workflow-review-binding { margin:0 0 14px; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:1.75; }
+.kanban-root .workflow-review-context .workflow-error { font-size:12px; line-height:1.75; margin-bottom:14px; }
+.kanban-root .workflow-review-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.kanban-root .workflow-review-primary-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.kanban-root .workflow-review-controls > .workflow-terminate { margin-left:auto; }
+.kanban-root .workflow-review-feedback > p { margin-bottom:12px; }
+.kanban-root .workflow-review-feedback > label { margin-bottom:6px; }
+.kanban-root .workflow-review-feedback > textarea { margin-bottom:10px; }
+.kanban-root .workflow-review-feedback .workflow-actions { gap:6px; }
+.kanban-root .workflow-task-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:20px; }
+.kanban-root .workflow-task-attempts { list-style:none; padding:0; }
+.kanban-root .workflow-task-attempts > li { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:10px 0; border-bottom:1px solid var(--dsw-alias-border-l1); }
+.kanban-root .workflow-task-attempts time { color:var(--dsw-alias-label-secondary); font-size:12px; font-variant-numeric:tabular-nums; }
+.kanban-root .workflow-task-attempts .workflow-error { flex-basis:100%; margin:0; }
+@container workflow (max-width:780px) {
+  .kanban-root .workflow-review-layout[data-reviewing="true"] { grid-template-columns:minmax(0,1fr); grid-template-areas:"decisions" "reports"; gap:24px; }
+  .kanban-root .workflow-review-decision { position:static; max-height:none; }
+  .kanban-root .workflow-review-decision { grid-template-columns:minmax(0,1fr); }
+  .kanban-root .workflow-review-primary-actions { flex-direction:row; flex-wrap:wrap; }
+  .kanban-root .workflow-review-primary-actions > button { flex:1; width:auto; }
+  .kanban-root .workflow-review-controls > .workflow-terminate { width:auto; margin-inline:auto; }
+}
+@container workflow (max-width:520px) {
+  .kanban-root .workflow-review-decision { padding:14px; }
+}
+
+/* The graph stays visible; the selected stage owns one scroll surface. */
+.kanban-root .workflow-task-workbench > .wf-diagram { flex:none; margin:0 0 14px; }
+.kanban-root .workflow-task-title { flex:1; min-width:0; }
+.kanban-root .workflow-task-title h2 { max-width:64ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kanban-root .workflow-task-workbench > .workflow-page-header > .workflow-heading { flex:1; min-width:0; flex-wrap:nowrap; }
+.kanban-root .workflow-stage-inspector { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.kanban-root .workflow-stage-header { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; flex-shrink:0; min-height:40px; padding:0 0 8px; border-bottom:1px solid var(--dsw-alias-border-l1); }
+.kanban-root .workflow-stage-header > h3 { font-weight:500; }
+.kanban-root .workflow-stage-header > .workflow-actions { margin-left:auto; }
+.kanban-root .workflow-stage-model { display:inline-flex; align-items:center; flex-wrap:wrap; gap:7px; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-stage-model strong { font:inherit; color:var(--dsw-alias-label-primary); }
+.kanban-root .workflow-stage-context { flex:none; padding:0 0 12px; }
+.kanban-root .workflow-stage-context > .workflow-disclosure { margin:0; padding:10px 0; }
+.kanban-root .workflow-stage-content { padding-top:6px; }
+.kanban-root .workflow-stage-content > .workflow-review-layout { margin-top:14px; }
+.kanban-root .workflow-stage-content .workflow-review-history { padding-left:20px; }
+.kanban-root .workflow-review-history time { margin-left:12px; color:var(--dsw-alias-label-secondary); font-size:12px; font-variant-numeric:tabular-nums; }
+.kanban-root .workflow-recovery-confirm { display:flex; align-items:flex-start; gap:8px; font-size:13px; line-height:20px; }
+.kanban-root .workflow-recovery-confirm input { margin-top:3px; accent-color:var(--dsw-alias-brand-primary); }
+/* The native transcript or the document owns the modal body scroll. */
+
+.kanban-root.workflow-execution-modal .workflow-modal-content > :last-child > .workflow-root { flex:1; min-height:0; padding:0; }
+.kanban-root.workflow-execution-modal .workflow-stage-header { padding-right:0; }
+.kanban-root.workflow-execution-modal .workflow-root[data-live] > .workflow-stage-inspector { flex:1; min-height:0; }
+.kanban-root.workflow-execution-modal .workflow-root:not([data-live]) { overflow:auto; padding-bottom:0; }
+.kanban-root.workflow-execution-modal .workflow-review-layout[data-reviewing="true"] { gap:20px; }
+
+.kanban-root .workflow-live-session { display:flex; flex:1; min-width:0; min-height:0; --dsh-composer-side-clearance:0px; --dsh-chat-content-width:100%; }
+.kanban-root .workflow-live-session > [data-slot] { display:contents; }
+.kanban-root .workflow-live-session .workflow-stage-context { padding:0 16px 12px; }
+.kanban-root .workflow-execution-fallback { flex:1; min-width:0; min-height:0; overflow:auto; padding:12px 0; }
+/* Keep native tool authorization visible; task scheduling owns the fallback input. */
+.kanban-root .workflow-live-session :is([data-slot="conversation.composer.bar"],[data-slot="conversation.input.dock"]) > * { display:none; }
+.kanban-root .workflow-live-session [data-step-process-body] { max-height:none; overflow:visible; scrollbar-gutter:auto; }
+@container workflow (max-width:520px) {
+  .kanban-root .workflow-task-workbench > .workflow-page-header { flex-wrap:wrap; gap:4px; }
+  .kanban-root .workflow-task-workbench > .workflow-page-header > .workflow-heading { flex-basis:100%; }
+  .kanban-root .workflow-task-workbench > .workflow-page-header > .workflow-actions { margin-left:auto; }
+  .kanban-root .workflow-task-title h2 { max-width:100%; }
+  .kanban-root .workflow-task-workbench > .workflow-page-header .workflow-actions { flex-wrap:nowrap; gap:2px; }
+  .kanban-root .workflow-task-workbench > .workflow-page-header .workflow-terminate { padding:4px; font-size:12px; }
+  .kanban-root .workflow-stage-header > .workflow-actions { margin-left:0; }
+}
+
+
+
+.kanban-root .workflow-stage-header [data-modal-autofocus]:focus { outline:0; }
+
+.kanban-root .workflow-modal-content .workflow-root { flex:1; min-height:0; padding-top:0; }
+.kanban-root .workflow-modal-content .workflow-review-decision { padding:0 0 16px; }
+.kanban-root .workflow-report-disclosure { padding:10px 0; border-bottom:1px solid var(--dsw-alias-border-l1); }
+.kanban-root .workflow-report-disclosure > summary { cursor:pointer; font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.kanban-root .workflow-report-disclosure > .workflow-output { margin-top:12px; }
+.kanban-root .workflow-modal-content .workflow-stage-header { padding:0 0 12px; margin-bottom:4px; }

@@ -4,3 +4,5 @@
 - insert:
     - id: dsh-kanban
       name: "@alpacachen/dsh-kanban"
+    - id: dsh-kanban-workflow
+      name: "@alpacachen/dsh-kanban/workflow"

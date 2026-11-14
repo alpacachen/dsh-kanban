@@ -54,7 +54,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 28px clamp(24px, 4vw, 48px) 48px;
+  padding: 28px clamp(24px, 4vw, 48px) 0;
 }
 
 /* Match DSH entry pages while keeping window chrome outside the content. */
@@ -64,7 +64,7 @@ html[data-platform="darwin"] .kanban-panel {
 
 .kanban-workspace-trigger {
   display: inline-flex;
-  max-width: 100%;
+  max-width: calc(100% + 12px);
   align-items: center;
   gap: 8px;
   margin: -4px -6px;
@@ -118,11 +118,17 @@ html[data-platform="darwin"] .kanban-panel {
 }
 
 .kanban-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
   flex-shrink: 0;
   padding: 0 0 8px;
 }
 
 .kanban-panel-header h1 {
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   font-size: 20px;
   font-weight: 500;
@@ -1706,6 +1712,7 @@ html[data-platform="darwin"] .kanban-panel {
 
 /* Search and actions share one compact row, wrapping when the pane is narrow. */
 .kanban-search-row {
+  font: var(--dsw-font-xs-13);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1790,3 +1797,5 @@ html[data-platform="darwin"] .kanban-panel {
   .kanban-search-field { flex-basis: 100%; max-width: none; }
   .kanban-image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.kanban-filter-count { margin-left:auto; padding-left:16px; font-variant-numeric:tabular-nums; }

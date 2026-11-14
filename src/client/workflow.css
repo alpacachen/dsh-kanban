@@ -1,0 +1,227 @@
+/* Kanban and Workflow share the exact same panel frame. */
+.kanban-root .workflow-switch { display:inline-flex; flex-shrink:0; align-items:center; gap:2px; padding:3px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-1); }
+.kanban-root .workflow-switch button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:28px; padding:4px 10px; border:0; border-radius:5px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; font:inherit; font-size:12px; white-space:nowrap; }
+.kanban-root .workflow-switch button > svg { width:14px; height:14px; }
+.kanban-root .workflow-switch button[aria-pressed="true"] { background:color-mix(in srgb,var(--dsw-alias-label-primary) 10%,var(--dsw-alias-bg-base)); color:var(--dsw-alias-label-primary); font-weight:500; }
+.kanban-root .workflow-switch button:last-child[aria-pressed="true"] > svg { color:var(--dsw-alias-label-primary); }
+.kanban-root.workflow-shell { --wf-accent:#7045ce; --wf-current-fill:#7045ce; --wf-on-accent:#fff; --wf-gradient:linear-gradient(125deg,#7750d8,#a04ed0); --wf-accent-soft:color-mix(in srgb, var(--wf-accent) 7%, transparent); }
+body[data-ds-dark-theme] .kanban-root.workflow-shell { --wf-accent:#b69af3; --wf-on-accent:#fff; }
+.kanban-root .workflow-root { display:flex; flex:none; flex-direction:column; min-width:0; min-height:0; font:inherit; font-size:14px; line-height:1.5; container:workflow / inline-size; margin-top:0; padding:8px 0 0; background:transparent; }
+.kanban-root .workflow-root :where(h2,h3,h4,p,ol,dl,dd):not(:where(.workflow-live-session *,.workflow-result-document *)) { margin:0; }
+.kanban-root .workflow-root h2:not(:where(.workflow-live-session *,.workflow-result-document *)) { font-size:16px; line-height:24px; font-weight:500; letter-spacing:-.025em; overflow-wrap:anywhere; }
+.kanban-root .workflow-root h3:not(:where(.workflow-live-session *,.workflow-result-document *)) { font-size:14px; line-height:24px; font-weight:600; }
+.kanban-root .workflow-root h4:not(:where(.workflow-live-session *,.workflow-result-document *)) { font-size:14px; line-height:22px; font-weight:600; }
+.kanban-root .workflow-root :where(button,input,textarea,select) { font-family:inherit; }
+.kanban-root .workflow-root button { touch-action:manipulation; }
+.kanban-root .workflow-root ::selection { background:color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent); }
+.kanban-root .workflow-root :where(input,textarea) { caret-color:var(--dsw-alias-brand-primary); }
+.kanban-root .workflow-root :focus-visible:not(.kanban-search-row *), .kanban-root.workflow-shell .kanban-panel-header :focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+.kanban-root .workflow-root [data-workflow-heading]:focus:not(:focus-visible) { outline:0; }
+/* Do not inherit private/old host variables from the Kanban primitives. */
+.kanban-root .workflow-root .kanban-button--default { background:var(--wf-gradient); color:var(--wf-on-accent); }
+.kanban-root .workflow-root :is(.kanban-input,.kanban-textarea,.workflow-select):not(.kanban-search-field .kanban-input):not(:where(.workflow-composer *)) { width:100%; min-width:0; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font:inherit; font-size:14px; }
+.kanban-root .workflow-root :is(.kanban-input,.workflow-select):not(.kanban-search-field .kanban-input):not(:where(.workflow-composer *)) { min-height:38px; height:auto; padding:8px 11px; }
+.kanban-root .workflow-root .workflow-select { padding-right:26px; }
+.kanban-root .workflow-root .kanban-textarea { padding:12px 14px; line-height:1.75; resize:vertical; }
+.kanban-root .workflow-root :is(.kanban-input,.kanban-textarea,.workflow-select):not(.kanban-search-field .kanban-input):not(:where(.workflow-composer *)):focus { border-color:var(--dsw-alias-brand-primary); outline:1px solid var(--dsw-alias-brand-primary); outline-offset:0; box-shadow:none; }
+.kanban-root .workflow-root :is(input,textarea)[aria-invalid="true"] { border-color:var(--dsw-alias-state-error-primary); }
+.kanban-root .workflow-root label { display:flex; flex-direction:column; gap:8px; font-size:13px; font-weight:500; line-height:1.5; }
+.kanban-root .workflow-root label :is(input,textarea,select) { font-weight:400; }
+
+.kanban-root .workflow-count { min-width:18px; padding:1px 5px; border-radius:5px; background:var(--dsw-alias-bg-layer-2); text-align:center; font-size:11px; font-variant-numeric:tabular-nums; }
+.kanban-root .workflow-page { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; padding-top:0; }
+.kanban-root .workflow-page-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; flex-shrink:0; gap:12px; padding-bottom:12px; }
+.kanban-root .workflow-heading { display:flex; align-items:center; min-width:0; gap:10px; flex-wrap:wrap; }
+.kanban-root .workflow-heading-copy { min-width:0; }
+.kanban-root .workflow-heading-copy > p { margin-top:7px; color:var(--dsw-alias-label-secondary); font-size:13px; line-height:1.65; }
+.kanban-root .workflow-page-scroll { min-width:0; overflow:visible; padding:0; }
+.kanban-root .workflow-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.kanban-root .workflow-muted, .kanban-root .workflow-note, .kanban-root .workflow-task-meta { color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-note { font-size:12px; line-height:1.75; }
+.kanban-root .workflow-note p + p { margin-top:5px; }
+.kanban-root .workflow-error { margin:0 0 16px; color:var(--dsw-alias-state-error-primary); overflow-wrap:anywhere; font-size:13px; line-height:1.7; }
+.kanban-root .workflow-connection { display:flex; flex-shrink:0; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; margin-top:16px; background:var(--dsw-alias-bg-layer-2); border:1px solid var(--dsw-alias-border-l1); border-radius:10px; font-size:13px; }
+.kanban-root .workflow-connection > span { min-width:0; overflow-wrap:anywhere; }
+.kanban-root .workflow-notice { padding:16px 18px; margin-bottom:20px; border-radius:10px; background:var(--dsw-alias-bg-layer-2); line-height:1.75; font-size:13px; overflow-wrap:anywhere; }
+.kanban-root .workflow-notice > h3 { margin-bottom:5px; }
+.kanban-root .workflow-notice p + p, .kanban-root .workflow-notice > button, .kanban-root .workflow-notice > .workflow-actions { margin-top:10px; }
+.kanban-root .workflow-attention > h3 { color:var(--dsw-alias-state-error-primary); }
+
+
+.kanban-root .workflow-state { --wf-state-color:var(--dsw-alias-label-secondary); display:inline-flex; align-items:center; gap:6px; color:var(--dsw-alias-label-primary); font-size:12px; font-weight:400; white-space:nowrap; }
+.kanban-root .workflow-state::before { width:6px; height:6px; flex:0 0 6px; border-radius:50%; background:var(--wf-state-color); content:""; }
+.kanban-root .workflow-state[data-state="waiting_review"], .kanban-root .workflow-state[data-state="terminating"] { --wf-state-color:var(--dsw-alias-state-warn-primary); }
+.kanban-root .workflow-state[data-state="needs_attention"], .kanban-root .workflow-state[data-state="failed"] { --wf-state-color:var(--dsw-alias-state-error-primary); }
+.kanban-root .workflow-state[data-state="completed"], .kanban-root .workflow-state[data-state="succeeded"], .kanban-root .workflow-state[data-state="published"] { --wf-state-color:var(--dsw-alias-state-success-primary); }
+.kanban-root .workflow-state[data-state="running"] { --wf-state-color:var(--dsw-alias-state-success-primary); }
+.kanban-root .workflow-no-review-hint { display:flex; align-items:center; gap:12px; margin:0 0 20px; padding:14px 16px; border-radius:8px; background:var(--dsw-alias-bg-layer-2); font-size:13px; }
+.kanban-root .workflow-no-review-hint > svg { width:18px; height:18px; }
+.kanban-root .workflow-no-review-hint > p { flex:1; min-width:0; line-height:1.7; }
+.kanban-root .workflow-preserve { margin-top:10px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; }
+.kanban-root .workflow-results { min-width:0; }
+.kanban-root .workflow-results > h3 { margin-bottom:8px; }
+.kanban-root .workflow-output { margin:22px 0 28px; }
+.kanban-root .workflow-output > header { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.kanban-root .workflow-output > header > span { font-size:11px; }
+.kanban-root .workflow-output > header .workflow-actions { margin-left:auto; }
+.kanban-root .workflow-result-text { max-width:100%; padding:22px 24px; margin:0; border:1px solid var(--dsw-alias-border-l1); border-radius:10px; background:var(--dsw-alias-bg-layer-1); white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; font-size:14px; line-height:1.9; }
+
+/* One vertical scroll surface fills the panel all the way to the bottom. */
+.kanban-root.kanban-panel[data-kanban-mode="workflow"] { display:block; overflow-y:auto; overflow-x:hidden; }
+.kanban-root.kanban-panel[data-kanban-mode="workflow"] > .kanban-panel-body { width:100%; min-height:100%; flex:none; }
+.kanban-root.kanban-panel[data-kanban-mode="workflow"] .workflow-page { flex:none; }
+.kanban-root .workflow-switch button { border:1px solid transparent; }
+.kanban-root .workflow-switch button[aria-pressed="true"] { border-color:var(--dsw-alias-border-l1); }
+.kanban-root .workflow-switch button:last-child[aria-pressed="true"] { color:var(--wf-accent,#7045ce); background:color-mix(in srgb,var(--wf-accent,#7045ce) 9%,var(--dsw-alias-bg-base)); }
+.kanban-root .workflow-switch button > svg { color:var(--dsw-alias-label-primary); }
+.kanban-root .workflow-empty { display:flex; flex-direction:column; align-items:flex-start; gap:12px; padding:32px 0; color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-library-start { padding:32px 0; }
+.kanban-root .workflow-library-start-copy { display:flex; flex-direction:column; align-items:flex-start; gap:14px; }
+.kanban-root .workflow-library-start-copy p { color:var(--dsw-alias-label-secondary); font-size:13px; }
+.kanban-root .workflow-tree { width:100%; border-collapse:collapse; table-layout:fixed; font-size:13px; margin-top:0; }
+.kanban-root .workflow-tree th { font-size:12px; font-weight:400; color:var(--dsw-alias-label-secondary); text-align:left; height:36px; border-bottom:1px solid var(--dsw-alias-border-l1); }
+.kanban-root .workflow-tree th:first-child { width:46%; padding-left:12px; }
+.kanban-root .workflow-tree th:nth-child(2) { width:14%; }
+.kanban-root .workflow-tree th:nth-child(3) { width:20%; }
+.kanban-root .workflow-tree th:nth-child(4) { width:20%; text-align:right; padding-right:12px; }
+.kanban-root .workflow-tree td { height:46px; padding:0 12px 0 0; border-bottom:1px solid var(--dsw-alias-border-l1); overflow-wrap:anywhere; }
+.kanban-root .workflow-tree-parent { display:flex; align-items:center; min-width:0; gap:4px; padding:6px 0; }
+.kanban-root .workflow-tree-name { display:flex; align-items:center; min-width:0; flex:1; gap:9px; padding:8px 4px; border:0; border-radius:4px; background:transparent; color:var(--dsw-alias-label-primary); text-align:left; font:inherit; cursor:pointer; }
+.kanban-root .workflow-tree-name > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kanban-root .workflow-tree-name > svg { flex:0 0 16px; width:16px; height:16px; color:var(--dsw-alias-label-primary); stroke-width:1.5; }
+.kanban-root .workflow-tree-flow .workflow-tree-name { flex:0 1 auto; font-weight:500; }
+.kanban-root .workflow-tree-flow td { border-bottom:0; }
+.kanban-root .workflow-tree-toggle { display:grid; place-items:center; flex:0 0 28px; height:28px; padding:4px; border:0; border-radius:4px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; }
+.kanban-root .workflow-tree-toggle svg { width:14px; height:14px; }
+.kanban-root .workflow-tree-count { flex-shrink:0; margin-left:7px; color:var(--dsw-alias-label-secondary); font-size:12px; font-variant-numeric:tabular-nums; }
+.kanban-root .workflow-tree-task td:first-child { padding-left:8px; }
+.kanban-root .workflow-tree-task[data-nested="true"] td:first-child { position:relative; padding-left:43px; }
+.kanban-root .workflow-tree-task[data-nested="true"] td:first-child::before { position:absolute; left:14px; top:0; bottom:0; width:14px; border-left:1px solid var(--dsw-alias-border-l2); content:""; }
+.kanban-root .workflow-tree-task[data-nested="true"] td:first-child::after { position:absolute; left:14px; top:50%; width:15px; border-top:1px solid var(--dsw-alias-border-l2); content:""; }
+.kanban-root .workflow-tree-task[data-nested="true"]:last-child td:first-child::before { bottom:50%; }
+.kanban-root .workflow-tree-stage, .kanban-root .workflow-tree-time { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.kanban-root .workflow-tree-time { text-align:right; font-variant-numeric:tabular-nums; }
+.kanban-root .workflow-tree-empty { padding-left:48px; color:var(--dsw-alias-label-secondary); font-size:12px; }
+.kanban-root .workflow-breadcrumb { display:flex; align-items:center; gap:7px; min-width:0; padding:0 0 20px; color:var(--dsw-alias-label-secondary); font-size:12px; }
+.kanban-root .workflow-breadcrumb button { max-width:35ch; padding:3px 0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kanban-root .workflow-breadcrumb > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kanban-root .workflow-breadcrumb > svg { flex:0 0 12px; width:12px; height:12px; }
+.kanban-root .workflow-flow-description { max-width:72ch; margin-top:6px; color:var(--dsw-alias-label-secondary); font-size:13px; }
+.kanban-root .workflow-flow-overview { margin:8px 0 24px; }
+.kanban-root .workflow-flow-overview .wf-diagram { border:1px solid var(--dsw-alias-border-l1); border-radius:8px; overflow:hidden; }
+.kanban-root .workflow-detail-delete { display:flex; justify-content:flex-end; margin-bottom:8px; }
+.kanban-root .workflow-task-workbench > .workflow-page-header > .kanban-button { margin-left:0; }
+@media (hover:hover) and (pointer:fine) {
+  .kanban-root .workflow-tree tr:hover { background:var(--dsw-alias-bg-layer-1); }
+  .kanban-root .workflow-tree-toggle:hover { background:var(--dsw-alias-bg-layer-2); }
+  .kanban-root .workflow-breadcrumb button:hover { color:var(--dsw-alias-label-primary); text-decoration:underline; text-underline-offset:3px; }
+}
+@media (max-width:760px) {
+  .kanban-root .workflow-tree .workflow-tree-time { display:none; }
+  .kanban-root .workflow-tree th:first-child { width:56%; }
+  .kanban-root .workflow-tree th:nth-child(2) { width:24%; }
+  .kanban-root .workflow-tree th:nth-child(3) { width:20%; }
+}
+@media (max-width:520px) {
+  .kanban-root .workflow-tree .workflow-tree-stage { display:none; }
+  .kanban-root .workflow-tree th:first-child { width:72%; }
+  .kanban-root .workflow-tree th:nth-child(2) { width:28%; }
+  .kanban-root .workflow-page-header { align-items:flex-start; }
+  .kanban-root .workflow-tree td { padding-right:4px; }
+  .kanban-root .workflow-tree-task[data-nested="true"] td:first-child { padding-left:33px; }
+}
+.kanban-root .workflow-tree-toggle:disabled { visibility:hidden; }
+.kanban-root .workflow-results > .workflow-output:first-of-type { margin-top:0; }
+.kanban-root .workflow-tree-create-row > td { padding:0 0 8px; border-bottom:0; }
+.kanban-root .workflow-tree-parent > .workflow-tree-name { max-width:min(64ch,70%); }
+.kanban-root .workflow-tree-task .workflow-tree-name { max-width:100%; width:100%; }
+.kanban-root .workflow-compose-row > td { padding:6px 0 18px 34px; border-bottom:0; }
+.kanban-root .workflow-composer { max-width:760px; padding:12px 14px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+.kanban-root .workflow-composer:focus-within { border-color:var(--wf-accent); }
+.kanban-root .workflow-compose-input { display:flex; align-items:flex-start; gap:8px; }
+.kanban-root .workflow-composer .workflow-compose-input textarea { min-height:68px; max-height:220px; field-sizing:content; flex:1; width:100%; padding:2px 0; border:0; border-radius:0; background:transparent; outline:0; box-shadow:none; resize:none; font-size:14px; line-height:1.65; }
+.kanban-root .workflow-composer .workflow-compose-input textarea:focus { border:0; outline:0; box-shadow:none; }
+.kanban-root .workflow-compose-input > button { flex-shrink:0; width:26px; height:26px; color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-compose-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:8px; }
+.kanban-root .workflow-compose-send { flex:0 0 30px; width:30px; height:30px; border-radius:50%; }
+.kanban-root .workflow-composer > .workflow-error { margin:10px 0 0; }
+@media (max-width:520px) {
+  .kanban-root .workflow-tree-parent > .workflow-tree-name { max-width:60%; }
+  .kanban-root .workflow-compose-row > td { padding-left:0; }
+}
+
+.kanban-root .workflow-breadcrumb > button:first-child { flex-shrink:0; }
+.kanban-root .workflow-breadcrumb > button:not(:first-child) { min-width:0; max-width:20ch; }
+.kanban-root .workflow-breadcrumb > span { flex:1; min-width:60px; }
+
+.kanban-root .workflow-tree-create-row .workflow-tree-create { padding-inline:4px; gap:9px; }
+
+.kanban-root .workflow-create-flow-row > td { height:60px; padding:0; text-align:center; border-bottom:0; border-top:1px solid var(--dsw-alias-border-l1); }
+.kanban-root .workflow-create-flow-row .kanban-button { color:var(--wf-accent); }
+.kanban-root .workflow-tree-flow { background:color-mix(in srgb,var(--wf-accent) 3%,var(--dsw-alias-bg-base)); }
+.kanban-root .workflow-tree-flow .workflow-tree-parent { padding:4px 8px; }
+.kanban-root .workflow-tree-time time { white-space:nowrap; }
+.kanban-root .workflow-flow-description { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; }
+.kanban-root .workflow-compose-footer { justify-content:flex-end; }
+.kanban-root .workflow-result-text { max-width:75ch; padding:0; border:0; border-radius:0; background:transparent; font-size:13px; line-height:1.75; }
+.kanban-root .workflow-output { margin:16px 0 24px; }
+.kanban-root.workflow-stage-modal { width:min(1040px,100%); max-height:100%; padding-bottom:0; gap:0; }
+.kanban-root.workflow-config-modal { width:min(760px,100%); }
+.kanban-root.workflow-execution-modal { max-height:min(760px,100%); }
+.kanban-root.workflow-live-modal { height:min(760px,100%); }
+.kanban-root .workflow-modal-content { min-height:0; flex:1; }
+.kanban-root .workflow-modal-content > :first-child { flex:none; }
+.kanban-root .workflow-modal-content > :first-child > h2 { min-width:0; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow-wrap:anywhere; font-size:16px; line-height:24px; font-weight:500; }
+.kanban-root .workflow-modal-content > :last-child { display:flex; flex:1; min-height:0; margin-top:0; padding:0 24px 24px; overflow:hidden; }
+.kanban-root .workflow-config-content { min-height:0; overflow:auto; padding:0; gap:20px; }
+
+.kanban-root .workflow-flow-heading { flex:1; min-width:0; }
+.kanban-root .workflow-flow-heading > h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kanban-root .workflow-tree-stage { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.kanban-root .workflow-stage-model { max-width:45ch; }
+.kanban-root .workflow-stage-model strong { max-width:32ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.kanban-root .workflow-result-document { max-width:75ch; overflow-wrap:anywhere; font-size:13px; line-height:1.75; }
+.kanban-root .workflow-result-document > * { color:var(--dsw-alias-label-primary); }
+
+.kanban-root .workflow-stage-editor { display:flex; flex-direction:column; min-width:0; min-height:0; gap:12px; }
+.kanban-root.workflow-config-modal .workflow-root .workflow-stage-editor > .kanban-textarea { height:auto; field-sizing:content; min-height:180px; max-height:clamp(220px,45vh,440px); padding:14px; resize:none; background:var(--dsw-alias-bg-base); font-size:13px; line-height:1.75; font-weight:400; }
+.kanban-root .workflow-stage-editor-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
+.kanban-root .workflow-stage-editor-toolbar > .workflow-actions { margin-left:auto; gap:4px; }
+.kanban-root .workflow-model-trigger { min-width:0; max-width:min(360px,100%); }
+
+.kanban-root .workflow-task-files { margin-top:24px; border-top:1px solid var(--dsw-alias-border-l1); padding-top:12px; }
+.kanban-root .workflow-task-files > header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.kanban-root .workflow-root .workflow-task-files h3 { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; }
+.kanban-root .workflow-task-files h3 > span { color:var(--dsw-alias-label-secondary); font-size:12px; font-weight:400; }
+.kanban-root .workflow-task-files ul { list-style:none; margin:8px 0 0; padding:0; }
+.kanban-root .workflow-task-files li { display:flex; align-items:center; gap:16px; min-width:0; border-bottom:1px solid var(--dsw-alias-border-l1); }
+.kanban-root .workflow-file-name { display:flex; align-items:center; gap:8px; flex:1; min-width:0; padding:10px 0; border:0; background:transparent; text-align:left; color:var(--dsw-alias-label-primary); font:inherit; font-size:13px; cursor:pointer; }
+.kanban-root .workflow-file-name > span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.kanban-root .workflow-file-name svg { width:15px; height:15px; flex-shrink:0; color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-file-name svg:last-child { margin-left:auto; }
+.kanban-root .workflow-file-size { flex-shrink:0; padding-right:4px; font-size:12px; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; }
+@media (hover:hover) and (pointer:fine) { .kanban-root .workflow-file-name:hover { color:var(--wf-accent); } }
+
+.kanban-root.workflow-file-modal { width:min(880px,100%); }
+.kanban-root.workflow-file-modal-wide { width:min(1040px,100%); }
+.kanban-root .workflow-file-path { margin-bottom:14px; overflow-wrap:anywhere; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-file-preview { min-width:0; font-size:13px; line-height:1.75; }
+.kanban-root .workflow-file-preview > img, .kanban-root .workflow-file-preview > video { display:block; max-width:100%; max-height:65vh; margin:auto; object-fit:contain; }
+.kanban-root .workflow-file-preview > iframe { width:100%; height:65vh; border:0; }
+.kanban-root .workflow-file-preview > audio { width:100%; }
+
+.kanban-root .workflow-file-preview > * { color:var(--dsw-alias-label-primary); }
+
+.kanban-root.workflow-file-modal { max-height:calc(100dvh - 48px); }
+.kanban-root.workflow-file-modal .workflow-modal-content > :last-child { display:block; overflow:auto; overscroll-behavior:contain; }
+.kanban-root .workflow-file-delete { flex-shrink:0; color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-file-delete:hover { color:var(--dsw-alias-state-error-primary); }
+.kanban-root .workflow-tree-name > .workflow-tree-version { flex:0 0 auto; margin-left:auto; padding-left:8px; color:var(--dsw-alias-label-secondary); font-size:11px; }
+.kanban-root .workflow-flow-heading > h2 > small { margin-left:8px; color:var(--dsw-alias-label-secondary); font-size:12px; font-weight:400; }
+
+.kanban-root .workflow-tree-activity { display:flex; flex-wrap:wrap; gap:6px 16px; margin-left:auto; padding-left:12px; font-size:12px; font-variant-numeric:tabular-nums; color:var(--dsw-alias-label-secondary); }
+.kanban-root .workflow-tree-activity [data-kind="attention"] { color:var(--dsw-alias-state-warn-primary); }
+@container workflow (max-width:520px) {
+  .kanban-root .workflow-tree-activity { gap:4px 8px; padding-left:0; }
+}

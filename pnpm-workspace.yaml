@@ -1,6 +1,6 @@
 allowBuilds:
   esbuild: true
-# Allow the pinned DSH update before pnpm's default 24-hour release age.
+# Allow only these pinned DSH SDK versions before pnpm’s release-age threshold.
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent-default-model@0.2.2-rc.3'
   - '@deepseek-ai/dsh-agent-preset-registry@0.2.2-rc.3'
@@ -19,6 +19,7 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-client-store@0.2.2-rc.3'
   - '@deepseek-ai/dsh-client-ui-conversation@0.2.2-rc.3'
   - '@deepseek-ai/dsh-client-ui-layout@0.2.2-rc.3'
+  - '@deepseek-ai/dsh-client-ui-model-selection@0.2.2-rc.3'
   - '@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.3'
   - '@deepseek-ai/dsh-client-ui-renderer@0.2.2-rc.3'
   - '@deepseek-ai/dsh-client-ui-session@0.2.2-rc.3'

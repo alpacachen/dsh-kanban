@@ -1,0 +1,72 @@
+/* Real sequential geometry shared by definitions, editing and task progress. */
+.kanban-root .wf-diagram { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.kanban-root .wf-diagram-zoom { display:flex; flex-shrink:0; gap:2px; align-items:center; border:1px solid var(--dsw-alias-border-l2); border-radius:7px; padding:2px; background:var(--dsw-alias-bg-base); }
+.kanban-root .wf-diagram-zoom button { display:inline-flex; justify-content:center; align-items:center; gap:5px; min-width:28px; min-height:28px; padding:4px 6px; border:0; border-radius:4px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; font:inherit; font-size:12px; }
+.kanban-root .wf-diagram-zoom button:disabled { opacity:.4; cursor:not-allowed; }
+.kanban-root .wf-diagram-zoom svg { width:14px; height:14px; }
+.kanban-root .wf-diagram-zoom output { min-width:42px; text-align:center; color:var(--dsw-alias-label-secondary); font-size:11px; font-variant-numeric:tabular-nums; }
+.kanban-root .wf-diagram-zoom .wf-diagram-fit { margin-left:4px; padding-left:9px; border-left:1px solid var(--dsw-alias-border-l1); border-radius:0 4px 4px 0; }
+.kanban-root .wf-diagram-viewport { position:relative; height:clamp(240px, 36vh, 360px); min-height:0; overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
+.kanban-root .wf-diagram-edge { fill:none; stroke:var(--dsw-alias-label-secondary); stroke-width:1.3; }
+.kanban-root .wf-diagram-return-edge { fill:none; stroke:var(--dsw-alias-state-warn-primary); stroke-width:1.4; stroke-dasharray:5 4; }
+.kanban-root .wf-diagram-edge-label, .kanban-root .wf-diagram-return-label { fill:var(--dsw-alias-label-secondary); font-family:inherit; font-size:11px; }
+.kanban-root .wf-diagram-endpoint { display:flex; align-items:center; justify-content:center; gap:7px; width:124px; height:34px; padding:0 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:20px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-secondary); font-size:12px; }
+.kanban-root .wf-diagram-endpoint svg { width:13px; height:13px; }
+.kanban-root .wf-diagram-node { width:100%; height:100%; display:flex; flex-direction:column; gap:5px; padding:11px 14px; margin:0; border:1px solid var(--dsw-alias-border-l2); border-radius:10px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); text-align:left; font:inherit; }
+.kanban-root button.wf-diagram-node { cursor:pointer; }
+.kanban-root .wf-diagram-node[data-kind="review"] { border-color:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 45%, var(--dsw-alias-border-l2)); }
+.kanban-root .wf-diagram-node[data-selected="true"] { border-color:var(--dsw-alias-brand-primary); background:color-mix(in srgb, var(--dsw-alias-brand-primary) 5%, var(--dsw-alias-bg-base)); outline:1px solid var(--dsw-alias-brand-primary); outline-offset:0; }
+.kanban-root .wf-diagram-node[data-invalid="true"] { border-color:var(--dsw-alias-state-error-primary); }
+.kanban-root .wf-diagram-node:disabled { opacity:.65; cursor:not-allowed; }
+.kanban-root .wf-diagram-node-kind { display:flex; align-items:center; gap:6px; width:100%; color:var(--dsw-alias-label-secondary); font-size:11px; line-height:16px; }
+.kanban-root .wf-diagram-node-kind > svg { width:15px; height:15px; }
+.kanban-root .wf-diagram-node-number { margin-left:auto; font-variant-numeric:tabular-nums; }
+.kanban-root .wf-diagram-node-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; min-height:20px; max-height:40px; width:100%; font-size:14px; line-height:20px; font-weight:500; overflow-wrap:anywhere; }
+.kanban-root .wf-diagram-node-footer { display:flex; align-items:center; gap:6px; min-width:0; width:100%; margin-top:auto; font-size:11px; line-height:15px; color:var(--dsw-alias-label-secondary); }
+.kanban-root .wf-diagram-return-target, .kanban-root .wf-diagram-node-invalid { display:flex; align-items:center; gap:5px; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.kanban-root .wf-diagram-return-target { display:block; }
+.kanban-root .wf-diagram-return-target svg { vertical-align:-2px; margin-right:4px; }
+.kanban-root .wf-diagram-node-footer svg { width:12px; height:12px; }
+.kanban-root .wf-diagram-node-invalid { color:var(--dsw-alias-state-error-primary); }
+.kanban-root .wf-diagram-current { margin-left:auto; flex-shrink:0; font-size:11px; color:var(--dsw-alias-brand-primary); }
+.kanban-root .wf-diagram-node-state { display:inline-flex; align-items:center; gap:5px; min-width:0; }
+.kanban-root .wf-diagram-node-state::before { content:""; flex:0 0 5px; width:5px; height:5px; border-radius:50%; background:var(--dsw-alias-label-secondary); }
+.kanban-root .wf-diagram-node-state[data-state="waiting_review"]::before { background:var(--dsw-alias-state-warn-primary); }
+.kanban-root .wf-diagram-node-state:is([data-state="completed"],[data-state="succeeded"])::before { background:var(--dsw-alias-state-success-primary); }
+.kanban-root .wf-diagram-node-state:is([data-state="failed"],[data-state="needs_attention"])::before { background:var(--dsw-alias-state-error-primary); }
+.kanban-root .wf-diagram-node-state[data-state="running"]::before { background:var(--dsw-alias-state-success-primary); }
+.kanban-root .wf-diagram-issues { display:flex; flex-direction:column; flex-shrink:0; gap:8px; list-style:none; margin:0; padding:12px 16px; color:var(--dsw-alias-state-error-primary); font-size:12px; line-height:1.65; border-bottom:1px solid var(--dsw-alias-border-l1); }
+.kanban-root .wf-diagram-issues li { display:flex; align-items:flex-start; gap:7px; min-width:0; }
+.kanban-root .wf-diagram-issues span { overflow-wrap:anywhere; }
+.kanban-root .wf-diagram-issues svg { width:14px; height:14px; margin-top:3px; flex-shrink:0; }
+.kanban-root .wf-diagram-empty { position:absolute; margin:0; text-align:center; color:var(--dsw-alias-label-secondary); font-size:13px; line-height:1.7; }
+.kanban-root .wf-diagram :is(button,.wf-diagram-viewport):focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+@media (hover:hover) and (pointer:fine) {
+  .kanban-root button.wf-diagram-node:hover:not(:disabled):not([data-selected="true"]), .kanban-root .wf-diagram-zoom button:hover:not(:disabled) { background:var(--dsw-alias-bg-layer-2); }
+}
+@media (pointer:coarse) { .kanban-root .wf-diagram-zoom button { min-width:36px; min-height:36px; } }
+
+.kanban-root .wf-diagram-node-excerpt { display:block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
+
+/* Theme-aware canvas; purple marks executable structure. */
+.kanban-root .workflow-root .wf-diagram { --dsw-alias-brand-primary:var(--wf-accent); background:linear-gradient(130deg,var(--wf-accent-soft),transparent); }
+.kanban-root .workflow-root .wf-diagram-node { border-radius:8px; }
+
+.kanban-root .wf-diagram[data-compact="true"] { border-radius:8px; }
+.kanban-root .wf-diagram[data-compact="true"] .wf-diagram-node { padding:9px 12px; }
+.kanban-root .wf-diagram[data-compact="true"] .wf-diagram-node-kind { font-size:11px; line-height:16px; }
+.kanban-root .wf-diagram[data-compact="true"] .wf-diagram-node-title { font-size:13px; line-height:20px; }
+.kanban-root .wf-diagram[data-compact="true"] .wf-diagram-node-footer { margin-top:2px; }
+
+.kanban-root .wf-diagram .react-flow { --xy-edge-stroke:var(--dsw-alias-label-secondary); --xy-edge-stroke-width:1.3; --xy-background-color:transparent; --xy-attribution-background-color:var(--dsw-alias-bg-base); }
+.kanban-root .wf-diagram .react-flow__handle { opacity:0; pointer-events:none; min-width:1px; min-height:1px; width:1px; height:1px; border:0; }
+.kanban-root .wf-diagram .react-flow__attribution { font-size:9px; line-height:14px; }
+.kanban-root .wf-diagram .react-flow__attribution a { color:var(--dsw-alias-label-secondary); }
+.kanban-root .wf-diagram[data-compact="true"] .wf-diagram-viewport { height:240px; border:1px solid var(--dsw-alias-border-l1); border-radius:8px; }
+.kanban-root .wf-diagram .wf-diagram-zoom { background:var(--dsw-alias-bg-base); }
+
+/* The active task stage stays filled even while another stage is inspected. */
+.kanban-root .wf-diagram-node[data-current="true"] { background:var(--wf-current-fill); color:var(--wf-on-accent); border-color:var(--wf-current-fill); }
+.kanban-root .wf-diagram-node[data-current="true"] :is(.wf-diagram-node-kind,.wf-diagram-node-footer,.wf-diagram-node-excerpt,.wf-diagram-current) { color:inherit; }
+.kanban-root .wf-diagram-node[data-current="true"][data-selected="true"] { outline:2px solid var(--wf-accent); outline-offset:3px; }
+@media (hover:hover) and (pointer:fine) { .kanban-root button.wf-diagram-node[data-current="true"]:hover:not(:disabled) { background:var(--wf-current-fill); } }

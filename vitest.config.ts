@@ -5,9 +5,11 @@ import { defineConfig } from "vitest/config"
 const root = fileURLToPath(new URL(".", import.meta.url))
 
 export default defineConfig({
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: {
       "@": resolve(root, "src/client"),
+      "@deepseek-ai/dsh-client-ui-model-selection/src": resolve(root, "node_modules/@deepseek-ai/dsh-client-ui-model-selection/src"),
     },
   },
   test: {

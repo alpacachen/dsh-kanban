@@ -1,18 +1,29 @@
 {
   "name": "@alpacachen/dsh-kanban",
-  "version": "1.11.3",
-  "description": "A collaborative kanban board for DeepSeek Harness with text search, native image attachments, due dates, comments and 19 agent tools.",
+  "version": "1.12.0",
+  "description": "Human-led Kanban and AI-run workflows for DeepSeek Harness, with native execution, human review and task artifacts.",
   "type": "module",
+  "engines": {
+    "dsh": "0.2.2-rc.3"
+  },
   "main": "index.js",
   "exports": {
     ".": "./index.js",
     "./client": "./lib/client.js",
+    "./workflow": "./workflow/index.js",
+    "./workflow/locale/*.json": "./workflow/locale/*.json",
+    "./workflow/icon": "./image.png",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "search.js",
+    "workflow",
+    "docs/workflow-model.schema.sql",
+    "docs/workflow-validation.md",
+    "docs/workflow-guide.md",
+    "docs/workflow-guide.en.md",
     "lib/client.js",
     "cordis.patch.yml",
     "README.md",
@@ -22,7 +33,8 @@
     "docs/testing-images.md",
     "docs/guide.md",
     "docs/guide.zh.md",
-    "docs/readme/*.png",
+    "docs/readme/board-*.png",
+    "docs/readme/*.svg",
     "LICENSE"
   ],
   "scripts": {
@@ -46,6 +58,7 @@
     "@radix-ui/react-separator": "^1.1.2",
     "@radix-ui/react-slot": "^1.1.2",
     "@radix-ui/react-tooltip": "^1.1.8",
+    "@xyflow/react": "^12.12.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.34.0"
   },
@@ -59,8 +72,10 @@
     "@deepseek-ai/dsh-api-workspace-controller": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-locale": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-store": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-chat": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-ui-layout": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-model-selection": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-ui-session": "0.2.2-rc.3",
@@ -97,7 +112,10 @@
     "dsh",
     "dsh-plugin",
     "kanban",
-    "plugin"
+    "plugin",
+    "workflow",
+    "ai-agent",
+    "human-in-the-loop"
   ],
   "dsh": {
     "bundle": {
@@ -115,7 +133,8 @@
         "@deepseek-ai/dsh-client-ui-primitives",
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-session",
-        "@deepseek-ai/dsh-client-ui-workspace"
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-store"
       ]
     },
     "compatibility": {
@@ -128,8 +147,5 @@
         "desktop"
       ]
     }
-  },
-  "engines": {
-    "dsh": "0.2.2-rc.3"
   }
 }
