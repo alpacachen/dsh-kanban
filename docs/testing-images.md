@@ -34,3 +34,15 @@ Keep authentication logs, generated reports, and personal-workspace screenshots 
 ## Desktop acceptance
 
 Verify the actual installed plugin: search and the three adjacent filters, Settings actions, image selection/paste/drop, native full-size preview, Escape/close/backdrop behavior, and task-draft preservation. Check both current- and new-conversation handoff: saved task images must appear as removable composer attachments without submitting the message. Use disposable test tasks for writes.
+
+## Local Workflow build
+
+The 1.12.0 source includes both Kanban and Workflow. Before the npm release is available, build this checkout with the commands above, then install it into your intended profile using DSH's normal local-plugin flow. For example, for a separate Web profile:
+
+```sh
+dsh plugin --profile web add file:/absolute/path/to/dsh-kanban
+```
+
+Reload the plugin or restart that Web instance after installation. Do not restart a DSH instance that is executing work without checking its tasks first. Use a separate disposable profile for fault injection.
+
+`node scripts/check-workflow-executor.mjs` exercises an installed DSH kernel with a local model fixture; configure `DSH_INSTALL_DIR` to its DSH package directory. It does not call a paid model. Real-model, human-review and interruption checks are recorded in [Workflow validation](workflow-validation.md).

@@ -4,7 +4,7 @@
 
 ## Using the board
 
-Open **Board** in the upper-left sidebar and click the workspace name at the top to switch boards. The board remembers your selection. Switching workspaces does not create or navigate to a conversation; each workspace keeps its own board.
+Open **Kanban · Workflow** in the upper-left sidebar and click the workspace name at the top to switch boards. The board remembers your selection. Switching workspaces does not create or navigate to a conversation; each workspace keeps its own board.
 
 | Action | How it works |
 | --- | --- |

@@ -30,6 +30,16 @@ describe("locale lifecycle", () => {
     const first = context()
     initial.installLocale(first.ctx)
     expect(dictionaries.size).toBe(2)
+    expect(Object.keys(dictionaries.get("dsh-kanban:zh")!).sort()).toEqual(Object.keys(dictionaries.get("dsh-kanban:en")!).sort())
+    for (const key of ["wfReviewsNav", "wfReviewsHelp", "wfDiagram", "wfDiagramInvalidReturn", "wfReviewMissingReport", "wfReviewBoundReport"]) {
+      expect(dictionaries.get("dsh-kanban:zh")?.[key]).toBeTruthy()
+      expect(dictionaries.get("dsh-kanban:en")?.[key]).toBeTruthy()
+    }
+    for (const [key, english] of Object.entries(dictionaries.get("dsh-kanban:en")!)) {
+      expect(english, key).not.toMatch(/[\p{Script=Han}]/u)
+      const placeholders = (value: string) => [...value.matchAll(/\{[A-Za-z][A-Za-z0-9_]*\}/g)].map(match => match[0]).sort()
+      expect(placeholders(english), key).toEqual(placeholders(dictionaries.get("dsh-kanban:zh")![key]))
+    }
     expect(initial.t("taskDetails")).toBe("任务详情")
     language = "en"
     expect(initial.t("taskDetails")).toBe("Task details")

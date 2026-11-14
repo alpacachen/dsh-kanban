@@ -5,13 +5,14 @@ import {
   useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
-import { CalendarDays, Check, Filter, List, MessageSquare, RefreshCw, Search, Settings2, Tag, X } from "lucide-react"
+import { CalendarDays, Check, Filter, List, MessageSquare, RefreshCw, Settings2, Tag, X } from "lucide-react"
 import { CardDialog, type CardFormValues } from "./components/CardDialog"
 import { Column } from "./components/Column"
 import { ColumnDialog } from "./components/ColumnDialog"
 import { LabelDialog } from "./components/LabelDialog"
 import { KanbanCard } from "./components/SortableCard"
-import { Input } from "@/components/ui/input"
+import { SearchToolbar } from "./components/ui/search-toolbar"
+import { FilterMenu } from "./components/ui/filter-menu"
 import { matchCardSearch } from "../../search.js"
 import { Button } from "@/components/ui/button"
 import {
@@ -379,42 +380,46 @@ export function KanbanView({ workspaceId, onCreateConversation }: KanbanViewProp
     >
       {error && !dialog && !columnDialogOpen && !labelDialogOpen && <p className="kanban-error" role="alert">{error}</p>}
 
-      <div className="kanban-search-row">
-        <div className="kanban-search-field">
-          <Search aria-hidden="true" />
-          <Input type="search" aria-label={t("searchCards")} placeholder={t("searchPlaceholder")} maxLength={200}
-            value={query} onChange={(event) => setQuery(event.target.value)} />
-          {query && <Button variant="ghost" size="icon" aria-label={t("clearSearch")} onClick={() => setQuery("")}><X /></Button>}
-        </div>
-        <div className="kanban-toolbar">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`kanban-toolbar-button${priorityFilter ? " is-active" : ""}`}
-                title={t("priorityFilter")}
-                aria-label={t("priorityFilter")}
-                aria-pressed={Boolean(priorityFilter)}
-              >
-                <Filter className="kanban-icon" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem role="menuitemradio" aria-checked={!priorityFilter} onSelect={() => setPriorityFilter("")}>
-                <span className="kanban-filter-check">{!priorityFilter && <Check className="kanban-icon" />}</span>
-                {t("all")}
-              </DropdownMenuItem>
-              {PRIORITY_OPTIONS.map((p) => (
-                <DropdownMenuItem key={p} role="menuitemradio" aria-checked={priorityFilter === p} onSelect={() => setPriorityFilter(p)}>
-                  <span className="kanban-filter-check">{priorityFilter === p && <Check className="kanban-icon" />}</span>
-                  <span className="kanban-priority-dot" style={{ background: PRIORITY_META[p].color }} />
-                  {PRIORITY_META[p].label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
+      <SearchToolbar query={query} onQueryChange={setQuery} label={t("searchCards")} placeholder={t("searchPlaceholder")} actions={
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="kanban-toolbar-button kanban-toolbar-settings"
+              title={t("settings")}
+              aria-label={t("settings")}
+            >
+              <Settings2 className="kanban-icon" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={refreshing} onSelect={refreshBoard}>
+              <RefreshCw className={refreshing ? "kanban-animate-spin" : undefined} />
+              {t("refresh")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setError(""); setColumnDialogOpen(true) }}>
+              <List className="kanban-icon" />
+              {t("columnEdit")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setError(""); setLabelDialogOpen(true) }}>
+              <Tag className="kanban-icon" />
+              {t("labelEdit")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <a href="https://github.com/alpacachen/dsh-kanban/issues/new/choose" target="_blank" rel="noopener noreferrer">
+                <MessageSquare className="kanban-icon" />
+                {t("feedback")}
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      }>
+        <FilterMenu label={t("priorityFilter")} value={priorityFilter} onValueChange={setPriorityFilter} options={[
+          { value: "", label: t("all") },
+          ...PRIORITY_OPTIONS.map(p => ({ value: p, label: PRIORITY_META[p].label, leading: <span className="kanban-priority-dot" style={{ background: PRIORITY_META[p].color }} /> })),
+        ]} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -462,42 +467,7 @@ export function KanbanView({ workspaceId, onCreateConversation }: KanbanViewProp
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="kanban-toolbar-button kanban-toolbar-settings"
-              title={t("settings")}
-              aria-label={t("settings")}
-            >
-              <Settings2 className="kanban-icon" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem disabled={refreshing} onSelect={refreshBoard}>
-              <RefreshCw className={refreshing ? "kanban-animate-spin" : undefined} />
-              {t("refresh")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { setError(""); setColumnDialogOpen(true) }}>
-              <List className="kanban-icon" />
-              {t("columnEdit")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { setError(""); setLabelDialogOpen(true) }}>
-              <Tag className="kanban-icon" />
-              {t("labelEdit")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <a href="https://github.com/alpacachen/dsh-kanban/issues/new/choose" target="_blank" rel="noopener noreferrer">
-                <MessageSquare className="kanban-icon" />
-                {t("feedback")}
-              </a>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      </SearchToolbar>
 
       {(query.trim() || priorityFilter || labelFilter !== null || dueDateFilter) && (
         <div className="kanban-filter-summary" aria-label={t("clearFilter")}>

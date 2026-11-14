@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Workflows",
+    "description": "Workflows inside Kanban: Agent-authored stages with editable models, automatic execution, human review, rework and native execution chats. Uses DSH tools and authorization. Requires DSH 0.2.2-rc.3."
+  }
+}

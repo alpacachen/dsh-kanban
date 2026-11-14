@@ -12,7 +12,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "paths": {
-      "@/*": ["./src/client/*"]
+      "@/*": ["./src/client/*"],
+      "@deepseek-ai/dsh-client-ui-model-selection/src/*": ["./node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/types/*"]
     },
     "types": ["node"]
   },

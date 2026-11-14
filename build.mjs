@@ -31,13 +31,14 @@ const result = await esbuild.build({
   sourcemap: false,
   minify,
   logLevel: 'info',
-  external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom/client', '@deepseek-ai/dsh-client-ui-primitives'],
-  alias: { '@': resolve(root, 'src/client') },
+  external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom/client', '@deepseek-ai/dsh-client-ui-primitives', '@deepseek-ai/dsh-client-store'],
+  // The native model seat exposes source subpaths; TypeScript uses the package's shipped declarations.
+  alias: { '@': resolve(root, 'src/client'), '@deepseek-ai/dsh-client-ui-model-selection/src': resolve(root, 'node_modules/@deepseek-ai/dsh-client-ui-model-selection/src') },
   plugins: [
     {
       name: 'inline-native-css',
       setup(build) {
-        build.onLoad({ filter: /\.css$/ }, (args) => ({
+        build.onLoad({ filter: /\.css$/ }, (args) => args.path.endsWith(".module.css") ? undefined : ({
           contents: readFileSync(args.path, 'utf8'),
           loader: 'text',
         }))
@@ -52,12 +53,14 @@ if (result.errors.length > 0) {
 }
 
 const app = readFileSync(resolve(root, 'dist/app.cjs'), 'utf8')
+const nativeCss = readFileSync(resolve(root, 'dist/app.css'), 'utf8')
 const wrapped = [
   'window.__ModuleLoader__.load({',
   `  id: ${JSON.stringify(moduleId)},`,
   '  factory: function (require) {',
   '    var module = { exports: {} }',
   '    var exports = module.exports',
+  `if (typeof document !== 'undefined') { var style = document.querySelector('style[data-dsh-workflow-model-style]') || document.head.appendChild(document.createElement('style')); style.setAttribute('data-dsh-workflow-model-style', ''); style.textContent = ${JSON.stringify(nativeCss)}; }`,
   app,
   '    return (module.exports && module.exports.default) || module.exports',
   '  },',

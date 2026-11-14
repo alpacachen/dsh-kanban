@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="360" viewBox="0 0 1440 360" role="img" aria-labelledby="title desc">
+<title id="title">A workflow with human review</title>
+<desc id="desc">Read, draft, review, finalize. Feedback returns to drafting.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#7b7391" stroke-width="1.6"/></marker></defs>
+<rect width="1440" height="360" rx="20" fill="#f7f6fa"/>
+<g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Microsoft YaHei,sans-serif">
+<rect x="44" y="70" width="296" height="140" rx="12" fill="#fff" stroke="#ddd9e6"/>
+<text x="68" y="102" font-size="16" fill="#766785">1 · AI</text>
+<text x="68" y="142" font-size="28" font-weight="600" fill="#241d34">Read materials</text>
+<text x="68" y="175" font-size="17" fill="#625b70">Collect sources</text>
+<path d="M348 140.0H384" fill="none" stroke="#7b7391" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="396" y="70" width="296" height="140" rx="12" fill="#fff" stroke="#ddd9e6"/>
+<text x="420" y="102" font-size="16" fill="#766785">2 · AI</text>
+<text x="420" y="142" font-size="28" font-weight="600" fill="#241d34">Draft a report</text>
+<text x="420" y="175" font-size="17" fill="#625b70">Conclusions + evidence</text>
+<path d="M700 140.0H736" fill="none" stroke="#7b7391" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="748" y="70" width="296" height="140" rx="12" fill="#ebe4fb" stroke="#9b7fd1"/>
+<text x="772" y="102" font-size="16" fill="#766785">3 · Human</text>
+<text x="772" y="142" font-size="28" font-weight="600" fill="#241d34">Human review</text>
+<text x="772" y="175" font-size="17" fill="#625b70">Approve to continue</text>
+<path d="M1052 140.0H1088" fill="none" stroke="#7b7391" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1100" y="70" width="296" height="140" rx="12" fill="#fff" stroke="#ddd9e6"/>
+<text x="1124" y="102" font-size="16" fill="#766785">4 · AI</text>
+<text x="1124" y="142" font-size="28" font-weight="600" fill="#241d34">Finalize</text>
+<text x="1124" y="175" font-size="17" fill="#625b70">Save task deliverables</text>
+<path d="M896 224V282H544V224" fill="none" stroke="#8a6ab9" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+<text x="640" y="318" font-size="18" fill="#72539d">Return with feedback</text>
+</g></svg>
