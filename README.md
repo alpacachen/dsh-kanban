@@ -62,7 +62,7 @@ Open **Board** in the upper-left sidebar, then click the workspace name at the t
 
 **Todo → In Progress → Review → Done**
 
-Declared compatibility: DSH **0.2.0-rc.2 / 0.2.1-rc.3 / 0.2.2-rc.1**, on Web and desktop. Version 1.10 uses newer image-preview and conversation-attachment APIs; upgrade DSH first if you use 0.1.5.
+Requires DSH **0.2.2-rc.3**, on Web and desktop. Upgrade DSH before installing Kanban 1.11.3.
 
 <details>
 <summary>Check the Web plugin configuration</summary>

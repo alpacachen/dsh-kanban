@@ -62,7 +62,7 @@ dsh plugin --profile web add @alpacachen/dsh-kanban
 
 **Todo → In Progress → Review → Done**
 
-兼容声明：DSH **0.2.0-rc.2 / 0.2.1-rc.3 / 0.2.2-rc.1**，支持 Web 与桌面端。1.10 依赖新版图片预览与对话附件接口，0.1.5 用户需先升级。
+要求 DSH **0.2.2-rc.3**，支持 Web 与桌面端。安装 Kanban 1.11.3 前请先升级 DSH。
 
 <details>
 <summary>确认 Web 插件配置</summary>
