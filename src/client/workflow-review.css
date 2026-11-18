@@ -9,7 +9,6 @@
 .kanban-root .workflow-review-decision > h3 { grid-column:1 / -1; margin:0; font-size:13px; font-weight:500; }
 .kanban-root .workflow-review-context { min-height:0; overflow:visible; }
 .kanban-root .workflow-review-criteria { margin-top:8px; }
-.kanban-root .workflow-review-criteria summary { cursor:pointer; margin-bottom:6px; font-size:13px; }
 .kanban-root .workflow-review-criteria p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.75; }
 .kanban-root .workflow-review-destination { display:flex; gap:8px; margin:8px 0; font-size:12px; }
 .kanban-root .workflow-review-destination dt { color:var(--dsw-alias-label-secondary); }
@@ -52,7 +51,7 @@
 .kanban-root .workflow-stage-model { display:inline-flex; align-items:center; flex-wrap:wrap; gap:7px; font-size:12px; color:var(--dsw-alias-label-secondary); }
 .kanban-root .workflow-stage-model strong { font:inherit; color:var(--dsw-alias-label-primary); }
 .kanban-root .workflow-stage-context { flex:none; padding:0 0 12px; }
-.kanban-root .workflow-stage-context > .workflow-disclosure { margin:0; padding:10px 0; }
+.kanban-root .workflow-stage-context > .workflow-disclosure { margin:0; padding:3px 0; }
 .kanban-root .workflow-stage-content { padding-top:6px; }
 .kanban-root .workflow-stage-content > .workflow-review-layout { margin-top:14px; }
 .kanban-root .workflow-stage-content .workflow-review-history { padding-left:20px; }
@@ -91,6 +90,42 @@
 .kanban-root .workflow-modal-content .workflow-root { flex:1; min-height:0; padding-top:0; }
 .kanban-root .workflow-modal-content .workflow-review-decision { padding:0 0 16px; }
 .kanban-root .workflow-report-disclosure { padding:10px 0; border-bottom:1px solid var(--dsw-alias-border-l1); }
-.kanban-root .workflow-report-disclosure > summary { cursor:pointer; font-size:13px; font-weight:500; overflow-wrap:anywhere; }
-.kanban-root .workflow-report-disclosure > .workflow-output { margin-top:12px; }
+.kanban-root :is(.workflow-disclosure, .workflow-report-disclosure, .workflow-review-criteria) > summary {
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-height:30px;
+  padding:4px 8px;
+  border-radius:6px;
+  list-style:none;
+  cursor:pointer;
+  color:var(--dsw-alias-label-secondary);
+  font-size:13px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.kanban-root :is(.workflow-disclosure, .workflow-report-disclosure, .workflow-review-criteria) > summary::-webkit-details-marker { display:none; }
+.kanban-root :is(.workflow-disclosure, .workflow-report-disclosure, .workflow-review-criteria) > summary::before {
+  content:"";
+  box-sizing:border-box;
+  flex:0 0 6px;
+  height:6px;
+  margin-inline:2px;
+  border-inline-end:1.5px solid currentColor;
+  border-block-end:1.5px solid currentColor;
+  transform:rotate(-45deg);
+}
+.kanban-root :is(.workflow-disclosure, .workflow-report-disclosure, .workflow-review-criteria)[open] > summary {
+  margin-bottom:6px;
+  color:var(--dsw-alias-label-primary);
+}
+.kanban-root :is(.workflow-disclosure, .workflow-report-disclosure, .workflow-review-criteria)[open] > summary::before { transform:rotate(45deg); }
+.kanban-root :is(.workflow-disclosure, .workflow-report-disclosure, .workflow-review-criteria) > summary:is(:hover, :focus-visible) {
+  background:var(--dsw-alias-bg-layer-1);
+  color:var(--dsw-alias-label-primary);
+}
+.kanban-root :is(.workflow-disclosure, .workflow-report-disclosure, .workflow-review-criteria) > summary:focus-visible {
+  outline:2px solid var(--dsw-alias-brand-primary);
+  outline-offset:2px;
+}
 .kanban-root .workflow-modal-content .workflow-stage-header { padding:0 0 12px; margin-bottom:4px; }

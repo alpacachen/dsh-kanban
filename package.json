@@ -1,6 +1,6 @@
 {
   "name": "@alpacachen/dsh-kanban",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "description": "Human-led Kanban and AI-run workflows for DeepSeek Harness, with native execution, human review and task artifacts.",
   "type": "module",
   "engines": {

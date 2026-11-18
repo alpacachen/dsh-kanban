@@ -24,6 +24,7 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
   const id = useId()
   const [selectedStageId, setSelectedStageId] = useState(task.currentStageId)
   const [stageOpen, setStageOpen] = useState(false)
+  const [openResults, setOpenResults] = useState(false)
   const [feedback, setFeedback] = useState("")
   const [returning, setReturning] = useState(false)
   const [error, setError] = useState<string | Error>("")
@@ -42,7 +43,11 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
     else if (restoreReturnFocus.current) { returnButton.current?.focus(); restoreReturnFocus.current = false }
   }, [returning, selectedStageId, task.currentStageId])
   useEffect(() => { if (!stageOpen) setSelectedStageId(task.currentStageId) }, [task.currentStageId, stageOpen])
-  function openStage(stageId: string) { setSelectedStageId(stageId); setStageOpen(true) }
+  function openStage(stageId: string, showResults = false) {
+    setSelectedStageId(stageId)
+    setOpenResults(showResults)
+    setStageOpen(true)
+  }
   const previousReview = useRef(task.review?.id)
   const alive = useRef(true)
   const artifactRequests = useRef(new Map<string, AbortController>())
@@ -97,6 +102,9 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
       : latest?.state ?? (artifacts.some(output => output.effective) ? "succeeded" : "pending")
     return [stage.id, state]
   }))
+  const resultStageId = task.state === "completed"
+    ? [...task.stages].reverse().find(stage => stage.kind === "agent" && stageStates[stage.id] === "succeeded")?.id
+    : undefined
   async function loadArtifact(artifact: TaskArtifact | TaskOutput) {
     if (!api || artifactRequests.current.has(artifact.id)) return
     const controller = new AbortController()
@@ -171,7 +179,7 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
   const stageContext = <div className="workflow-stage-context">
     {!reviewSelected && <details className="workflow-disclosure"><summary>{t(selectedStage?.kind === "agent" ? "wfPrompt" : "wfReviewInstructions")}</summary><p className="workflow-preserve">{selectedStage?.prompt || t("wfNoStagePrompt")}</p></details>}
     {selectedAttempts.length > 1 && <details className="workflow-disclosure"><summary>{t("wfExecutionHistory")} · {selectedAttempts.length}</summary><ol className="workflow-task-attempts">{selectedAttempts.map(attempt => <li key={attempt.id}><span className="workflow-state" data-state={attempt.state}>{t(`wfState_${attempt.state}`)}</span>{attempt.startedAt && <time dateTime={new Date(attempt.startedAt).toISOString()}>{new Date(attempt.startedAt).toLocaleString(t("dateLocale"))}</time>}{attempt.sessionId && onOpenSession && <Button size="sm" variant="ghost" onClick={() => onOpenSession(attempt.sessionId!)}>{t("wfOpenExecution")}</Button>}{attempt.error && <p className="workflow-error">{workflowErrorText(attempt.error)}</p>}</li>)}</ol></details>}
-    {selectedStage?.kind === "agent" && !legacyProtocol && (visibleOutputs.length > 0 || stageArtifacts.length > 0) && <details className="workflow-disclosure"><summary>{t("wfResults")}</summary>{reports}</details>}
+    {selectedStage?.kind === "agent" && (openResults || !legacyProtocol && (visibleOutputs.length > 0 || stageArtifacts.length > 0)) && <details key={selectedStage.id} className="workflow-disclosure" open={openResults}><summary>{t("wfResults")}</summary>{reports}</details>}
   </div>
   const taskNotices = <>    {error && <p role="alert" className="workflow-error">{workflowErrorText(error)}</p>}
     {notice && <p role="status" className="workflow-notice">{notice}</p>}
@@ -180,14 +188,17 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
     {task.state === "queued" && <p className="workflow-notice" role="status">{t("wfQueueHint")}</p>}
     {task.state === "running" && task.attention?.code === "WF_SETTLEMENT_PENDING" && <p className="workflow-notice" role="status">{workflowErrorText(task.attention)}</p>}
     {task.state === "terminating" && <p className="workflow-notice" role="status">{t("wfStopping")}</p>}
-    {task.state === "needs_attention" && !(task.canReconcile && !task.canRetry) && <section className="workflow-notice workflow-attention" role="alert"><p>{task.attention?.code ? workflowErrorText(task.attention) : t(task.canRetry ? "wfRetryHint" : "wfUnknownHint")}</p>{(!task.attention?.message || task.retryBlockedReason) && <p>{task.retryBlockedReason || t(task.canRetry ? "wfRetryHint" : "wfUnknownHint")}</p>}{task.canRetry && <Button disabled={disabled || Boolean(task.retryBlockedReason)} onClick={() => void act("retryTask", { taskId: task.id, expectedRevision: task.revision })}><RotateCcw />{t("wfRetryStage")}</Button>}{task.attention?.code && <details><summary>{t("wfExecutionHistory")}</summary><code>{task.attention.code}</code></details>}</section>}
+    {task.state === "needs_attention" && !(task.canReconcile && !task.canRetry) && <section className="workflow-notice workflow-attention" role="alert"><p>{task.attention?.code ? workflowErrorText(task.attention) : t(task.canRetry ? "wfRetryHint" : "wfUnknownHint")}</p>{(!task.attention?.message || task.retryBlockedReason) && <p>{task.retryBlockedReason || t(task.canRetry ? "wfRetryHint" : "wfUnknownHint")}</p>}{task.canRetry && <Button disabled={disabled || Boolean(task.retryBlockedReason)} onClick={() => void act("retryTask", { taskId: task.id, expectedRevision: task.revision })}><RotateCcw />{t("wfRetryStage")}</Button>}{task.attention?.code && <details className="workflow-disclosure"><summary>{t("wfExecutionHistory")}</summary><code>{task.attention.code}</code></details>}</section>}
     {["running", "needs_attention", "terminating"].includes(task.state) && !task.canRetry && task.canReconcile === true && <section className="workflow-notice" aria-label={t("wfReconcile")}><p>{t("wfReconcileHint")}</p><Button disabled={disabled} onClick={() => { setConfirmedStopped(false); setConfirmingRecovery(true) }}>{t(busy ? "wfWorking" : "wfReconcile")}</Button></section>}
 </>
-  const live = selectedStage?.kind === "agent" && Boolean(execution?.sessionId && renderExecution)
+  const live = !openResults && selectedStage?.kind === "agent" && Boolean(execution?.sessionId && renderExecution)
   return <section className="workflow-page workflow-task-workbench" aria-label={t("wfDetails")}>
     <header className="workflow-page-header">
       <div className="workflow-heading">{!embedded && <Button variant="ghost" size="icon" onClick={onBack} aria-label={t("wfBack")}><ArrowLeft /></Button>}<div className="workflow-task-title"><TooltipProvider><Tooltip><TooltipTrigger asChild onFocus={event => { if (entering.current) event.preventDefault() }}><h2 ref={heading} tabIndex={0} data-workflow-heading data-modal-autofocus>{task.input.text}</h2></TooltipTrigger><TooltipContent className="workflow-input-tooltip">{task.input.text}</TooltipContent></Tooltip></TooltipProvider><p className="workflow-task-meta">{task.workflowName} · {t("wfVersion")} {task.versionNumber}</p></div><span className="workflow-state" data-state={task.state}>{t(`wfState_${task.state}`)}</span></div>
-      <div className="workflow-actions">{!reviewing && stopButton}<Button size="icon" variant="ghost" onClick={onCopyTask} aria-label={t("wfCopyTask")}><Copy /></Button>{onDelete && <Button size="icon" variant="ghost" disabled={disabled} aria-label={t("wfDeleteTask")} onClick={onDelete}><Trash2 /></Button>}</div>
+      <div className="workflow-actions">
+        {resultStageId && <Button size="sm" variant="outline" onClick={() => openStage(resultStageId, true)}>{t("wfViewResult")}</Button>}
+        {!reviewing && stopButton}<Button size="icon" variant="ghost" onClick={onCopyTask} aria-label={t("wfCopyTask")}><Copy /></Button>{onDelete && <Button size="icon" variant="ghost" disabled={disabled} aria-label={t("wfDeleteTask")} onClick={onDelete}><Trash2 /></Button>}
+      </div>
     </header>
     <WorkflowDiagram compact horizontal stages={task.stages} selectedStageId={stageOpen ? selectedStage?.id : undefined} currentStageId={task.currentStageId} states={stageStates} onSelect={openStage} />
     {api && <WorkflowTaskFiles key={task.id} taskId={task.id} api={api} active={["queued", "running", "terminating"].includes(task.state)} revision={task.revision} />}
@@ -197,7 +208,7 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
     <section className="workflow-stage-inspector" aria-label={t("wfStageReadOnly")}>
       <header className="workflow-stage-header"><span className="workflow-state" data-state={stageStates[selectedStage?.id ?? ""]}>{t(`wfState_${stageStates[selectedStage?.id ?? ""]}`)}</span>
         {selectedStage?.kind === "agent" && stageModel && <span className="workflow-stage-model" aria-label={t("wfExecutionModel")} title={`${stageModel.provider} · ${stageModel.reasoningEffort || t("wfExecutionEffortUnspecified")}`}><strong>{stageModel.model}</strong>{stageModel.reasoningEffort && <span>{stageModel.reasoningEffort}</span>}</span>}
-        <div className="workflow-actions">{selectedStage?.id !== task.currentStageId && <Button size="sm" variant="ghost" onClick={() => setSelectedStageId(task.currentStageId)}>{t("wfFollowCurrent")}</Button>}{execution?.sessionId && onOpenSession && <Button size="sm" variant="ghost" onClick={() => onOpenSession(execution.sessionId!)}><ArrowUpRight />{t("wfOpenExecution")}</Button>}{selectedStage.id === task.currentStageId && !reviewSelected && stopButton}</div>
+        <div className="workflow-actions">{selectedStage?.id !== task.currentStageId && <Button size="sm" variant="ghost" onClick={() => openStage(task.currentStageId)}>{t("wfFollowCurrent")}</Button>}{execution?.sessionId && onOpenSession && <Button size="sm" variant="ghost" onClick={() => onOpenSession(execution.sessionId!)}><ArrowUpRight />{t("wfOpenExecution")}</Button>}{selectedStage.id === task.currentStageId && !reviewSelected && stopButton}</div>
       </header>
       {live && !legacyProtocol ? <div className="workflow-live-session" key={execution?.sessionId}>{renderExecution!(execution!.sessionId!, stageContext)}</div> : <div className="workflow-stage-content">
         {!reviewSelected && stageContext}

@@ -88,10 +88,12 @@ export function makeStagePrompt(task, previousStages, outputDirectory, artifacts
   ].join('\n\n')
 }
 
+const MAX_CONCURRENT_STAGES = 2
+
 /** Host-owned scheduler. It never lives in a request or browser component. */
 export function createWorkflowRunner({ store, executor, attachments, workspaceRegistry, runtimeSnapshot = {}, onError = () => {}, onChange = () => {}, ownerInstanceId = randomUUID() }) {
   let stopped = false
-  let active = null
+  const active = new Map()
   let pumping = null
   let pumpAgain = false
   let lastError = null
@@ -212,22 +214,21 @@ export function createWorkflowRunner({ store, executor, attachments, workspaceRe
       // Retry only the recorded result; storage failures never redispatch the Agent.
       settlements.set(attempt.id, { taskId: task.id, payload: settlement, prepare })
       await flushSettlements()
-      active = null
+      active.delete(task.id)
       notify()
       if (!stopped) kick()
     }
   }
 
   async function pump() {
-    // ponytail: one live Attempt globally; per-workspace parallelism can follow
-    // measured demand without changing the durable per-workspace safety slots.
-    if (stopped || !started || active) return
+    if (stopped || !started || active.size >= MAX_CONCURRENT_STAGES) return
     await flushSettlements()
     void cleanupDeletedTasks()
     if (stopped) return
     const summaries = store.listTaskSummaries ? store.listTaskSummaries() : store.listTasks()
     for (const queued of summaries.filter((task) => task.state === 'queued')) {
-      if (stopped || active) return
+      if (stopped || active.size >= MAX_CONCURRENT_STAGES) return
+      if (active.has(queued.id)) continue
       const task = store.getTask(queued.id)
       const workspace = workspaceRegistry.get(task.workspaceId)
       let boundPath
@@ -278,10 +279,10 @@ export function createWorkflowRunner({ store, executor, attachments, workspaceRe
         continue
       }
       const controller = new AbortController()
-      active = { attemptId: attempt.id, taskId: task.id, controller, done: null }
-      active.done = execute(attempt, task, controller.signal)
+      const execution = { attemptId: attempt.id, controller, done: null }
+      active.set(task.id, execution)
+      execution.done = execute(attempt, task, controller.signal)
       notify()
-      return
     }
   }
 
@@ -292,7 +293,7 @@ export function createWorkflowRunner({ store, executor, attachments, workspaceRe
       report(error); retryLater()
     }).finally(() => {
       pumping = null
-      if (pumpAgain && !stopped && !active) kick()
+      if (pumpAgain && !stopped && active.size < MAX_CONCURRENT_STAGES) kick()
     })
     return pumping
   }
@@ -307,24 +308,24 @@ export function createWorkflowRunner({ store, executor, attachments, workspaceRe
     },
     kick,
     cleanupDeletedTasks,
-    isExecutingTask: taskId => active?.taskId === taskId,
+    isExecutingTask: taskId => active.has(taskId),
     hasPendingSettlement: taskId => [...settlements.values()].some(item => item.taskId === taskId),
     settleTask: taskId => [...settlements.values()].some(item => item.taskId === taskId) ? flushSettlements() : Promise.resolve(),
     async cancelTask(taskId) {
-      if (active?.taskId === taskId) {
-        const current = active
+      const current = active.get(taskId)
+      if (current) {
         current.controller.abort()
         return executor.cancel(current.attemptId)
       }
       if ([...settlements.values()].some(item => item.taskId === taskId)) await flushSettlements()
       return { requested: false }
     },
-    status: () => ({ policy: NATIVE_POLICY, running: active !== null, settling: settlements.size > 0, cleanupPending, stopped, lastError }),
+    status: () => ({ policy: NATIVE_POLICY, running: active.size > 0, settling: settlements.size > 0, cleanupPending, stopped, lastError }),
     async whenIdle() {
       // Deterministic test/shutdown barrier, never used as business success proof.
-      while (pumping || active || flushing || cleaning) {
+      while (pumping || active.size || flushing || cleaning) {
         await pumping
-        if (active) await active.done
+        await Promise.all([...active.values()].map(execution => execution.done))
         await flushing
         await cleaning
       }
@@ -332,14 +333,12 @@ export function createWorkflowRunner({ store, executor, attachments, workspaceRe
     async dispose() {
       stopped = true
       clearTimeout(retryTimer)
-      active?.controller.abort()
+      for (const execution of active.values()) execution.controller.abort()
       await pumping
-      if (active) {
-        const current = active
-        current.controller.abort()
-        try { await executor.cancel(current.attemptId) } catch (error) { report(error) }
-        await current.done
-      }
+      await Promise.all([...active.values()].map(async execution => {
+        try { await executor.cancel(execution.attemptId) } catch (error) { report(error) }
+        await execution.done
+      }))
       await executor.dispose()
       await flushSettlements()
       await cleaning
