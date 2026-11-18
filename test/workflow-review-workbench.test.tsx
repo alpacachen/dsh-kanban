@@ -28,6 +28,39 @@ function props() {
 afterEach(() => vi.restoreAllMocks())
 
 describe("Workflow review workbench", () => {
+  it("opens the last successful AI result from a completed task ending in review", () => {
+    const current = task({
+      state: "completed", review: null,
+      stages: [{ id: "research", kind: "agent", title: "Research" }, ...task().stages],
+      attempts: [{ id: "draft-attempt", stageId: "draft", state: "succeeded", sessionId: "draft-session" }],
+      visits: [
+        { id: "first", stageId: "research", state: "succeeded" },
+        { id: "draft", stageId: "draft", state: "succeeded" },
+        { id: "review", stageId: "review", state: "succeeded" },
+      ],
+      outputs: [
+        { id: "first-result", stageId: "research", label: "Research", contentHash: "a".repeat(64), text: "Research result" },
+        { id: "last-result", stageId: "draft", label: "Report", contentHash: "b".repeat(64), text: "Final saved report" },
+      ],
+    })
+    const renderExecution = vi.fn((_sessionId: string, context?: React.ReactNode) => <>{context}</>)
+    const view = render(<WorkflowTaskDetail {...props()} task={current} renderExecution={renderExecution} />)
+    fireEvent.click(screen.getByRole("button", { name: t("wfViewResult") }))
+    const dialog = screen.getByRole("dialog", { name: "Prepare report" })
+    const result = () => within(dialog).getByText(t("wfResults"), { selector: "summary" }).closest("details")
+    expect(result()?.open).toBe(true)
+    expect(renderExecution).not.toHaveBeenCalled()
+    expect(within(dialog).getByText("Final saved report")).toBeTruthy()
+    expect(within(dialog).queryByText("Research result")).toBeNull()
+    fireEvent.click(within(dialog).getByRole("button", { name: t("close"), exact: true }))
+    fireEvent.click(screen.getByRole("button", { name: "Prepare report", exact: true }))
+    const manual = screen.getByRole("dialog", { name: "Prepare report" })
+    expect(within(manual).getByText(t("wfResults"), { selector: "summary" }).closest("details")?.open).toBe(false)
+    expect(renderExecution).toHaveBeenCalledWith("draft-session", expect.anything())
+    view.rerender(<WorkflowTaskDetail {...props()} task={{ ...current, state: "running" }} renderExecution={renderExecution} />)
+    expect(screen.queryByRole("button", { name: t("wfViewResult") })).toBeNull()
+  })
+
   it("requires an explicit stopped-operation acknowledgement before reconciling an interrupted task", () => {
     const calls = props()
     render(<WorkflowTaskDetail {...calls} task={task({ state: "needs_attention", canRetry: false, canReconcile: true, review: null, currentStageId: "draft" })} />)

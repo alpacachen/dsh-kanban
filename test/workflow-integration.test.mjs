@@ -36,8 +36,8 @@ function temp() {
   directories.push(root)
   return root
 }
-function publication(store, root) {
-  return store.publishDefinition({ requestId: randomUUID(), workspaceId: 'workspace-test', rootPath: root,
+function publication(store, root, workspaceId = 'workspace-test') {
+  return store.publishDefinition({ requestId: randomUUID(), workspaceId, rootPath: root,
     executionScope: `test:${root}`, name: 'Text validation', definition: DEFINITION }, ACTOR)
 }
 function attachmentsFixture() {
@@ -89,13 +89,16 @@ function executorFixture(manual) {
     async dispose() { this.releaseAll() },
   }
 }
-async function boot({ root = temp(), path = ':memory:', workflow, manual = false, failSettlement = false } = {}) {
+async function boot({ root = temp(), path = ':memory:', workflow, manual = false, failSettlement = false, otherWorkspaces = {} } = {}) {
   const store = openWorkflowStore(path)
   workflow ??= publication(store, root)
   const attachments = attachmentsFixture(), executor = executorFixture(manual), errors = []
   const runnerStore = failSettlement ? { ...store, finishAttempt() { throw Object.assign(new Error('Injected SQLite settlement failure'), { code: 'WF_TEST_DB' }) } } : store
   const runner = createWorkflowRunner({ store: runnerStore, executor, attachments,
-    workspaceRegistry: { get: id => id === 'workspace-test' ? { id, path: root } : undefined },
+    workspaceRegistry: { get: id => {
+      const path = id === 'workspace-test' ? root : otherWorkspaces[id]
+      return path ? { id, path } : undefined
+    } },
     ownerInstanceId: 'integration-owner', onError: error => errors.push(error) })
   const context = new Context(), peerAbort = new AbortController()
   const connection = { browserPeer: { id: 'test-browser', principal: { kind: 'owner' }, signal: peerAbort.signal } }
@@ -148,6 +151,44 @@ afterEach(async () => {
 })
 
 describe('real Workflow store + runner + browser-only API integration', () => {
+  it('runs up to two stages across directories and targets cancellation to one task', async () => {
+    const otherWorkspaces = { 'workspace-second': temp(), 'workspace-third': temp() }
+    const host = await boot({ manual: true, otherWorkspaces })
+    const first = await host.create()
+    const sameDirectory = await host.create()
+    const [second, third] = Object.entries(otherWorkspaces).map(([id, path]) => {
+      const workflow = publication(host.store, path, id)
+      return host.store.createTask({ requestId: randomUUID(), workflowId: workflow.workflowId,
+        title: id, input: { text: id }, executionConfig: { policy: EXECUTOR_POLICY, modelSelection: MODEL } }, ACTOR)
+    })
+    await host.runner.start()
+    const firstRun = await host.executor.waitForRun(0)
+    const secondRun = await host.executor.waitForRun(1)
+    expect(host.runner.isExecutingTask(first.id)).toBe(true)
+    expect(host.runner.isExecutingTask(second.id)).toBe(true)
+    expect(host.store.getTask(sameDirectory.id).state).toBe('queued')
+    expect(host.store.getTask(third.id).state).toBe('queued')
+    expect(host.executor.calls).toHaveLength(2)
+
+    const running = host.store.getTask(first.id)
+    await host.api('terminateTask').terminateTask({ taskId: first.id, expectedRevision: running.revision, requestId: randomUUID() })
+    expect(host.executor.cancelCalls).toEqual([firstRun.attemptId])
+    expect(secondRun.signal.aborted).toBe(false)
+    expect(host.store.getTask(sameDirectory.id).state).toBe('queued')
+    host.executor.release(firstRun.attemptId)
+    const nextRun = await host.executor.waitForRun(2)
+    expect(host.runner.isExecutingTask(sameDirectory.id)).toBe(true)
+    expect(host.runner.isExecutingTask(second.id)).toBe(true)
+    expect(host.store.getTask(third.id).state).toBe('queued')
+    host.executor.release(nextRun.attemptId)
+    host.executor.release(secondRun.attemptId)
+    const lastRun = await host.executor.waitForRun(3)
+    host.executor.release(lastRun.attemptId)
+    await host.runner.whenIdle()
+    expect(host.store.getTask(first.id).state).toBe('terminated')
+    for (const task of [sameDirectory, second, third]) expect(host.store.getTask(task.id).state).toBe('waiting_review')
+  })
+
   it('stores a safe model-configuration failure without exposing native exception text or producing reviewable output', async () => {
     const host = await boot()
     const original = host.executor.run
