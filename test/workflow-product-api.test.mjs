@@ -26,6 +26,8 @@ const commands = {
   reconcileTask: { requestId: 'request-1', taskId: 'task-1', expectedRevision: 1 },
   createWorkflow: { requestId: 'request-1', workspaceId: 'workspace-1', name: 'Workflow', definition },
   updateWorkflow: { requestId: 'request-1', workflowId: 'workflow-1', expectedRevision: 1, name: 'Workflow', definition },
+  saveWorkflowSchedule: { requestId: 'request-1', workflowId: 'workflow-1', expectedRevision: 0,
+    schedule: { repeat: 'weekly', time: '09:00', weekdays: [1, 3, 5], timeZone: 'Asia/Shanghai' } },
   deleteWorkflow: { requestId: 'request-1', workflowId: 'workflow-1', expectedRevision: 1 },
 }
 const reads = { listWorkflows: ['workspace-1'], getWorkflow: ['workflow-1'], getArtifact: ['task-1', 'artifact-1'],
@@ -135,6 +137,32 @@ describe('Workflow product browser API', () => {
       await expect(view(name)[name](forged)).rejects.toMatchObject({ code: 'workflow/invalid-input' })
     }
     expect(core[name]).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed schedule times, time zones, dates, days, and task content', async () => {
+    const { core, view } = await boot()
+    const request = commands.saveWorkflowSchedule
+    for (const patch of [{ enabled: 'true' }, { time: '24:00' }, { timeZone: 'No/Such_Zone' }, { text: '  ' },
+      { weekdays: [0, 1] }, { weekdays: [1, 1] }, { weekdays: [] }, { repeat: 'daily' },
+      { repeat: 'once', weekdays: undefined, date: '2026-02-30' }]) {
+      await expect(view('saveWorkflowSchedule').saveWorkflowSchedule({ ...request, schedule: { ...request.schedule, ...patch } }))
+        .rejects.toMatchObject({ code: 'workflow/invalid-input' })
+    }
+    expect(core.saveWorkflowSchedule).not.toHaveBeenCalled()
+  })
+
+  it('still requires non-empty input when the UI creates a task manually', async () => {
+    const { core, view } = await boot()
+    await expect(view('createTask').createTask({ ...commands.createTask, text: '' }))
+      .rejects.toMatchObject({ code: 'workflow/invalid-input' })
+    expect(core.createTask).not.toHaveBeenCalled()
+  })
+
+  it('passes an explicit null plan to remove a schedule', async () => {
+    const { core, view } = await boot()
+    const request = { ...commands.saveWorkflowSchedule, schedule: null, expectedRevision: 1 }
+    await view('saveWorkflowSchedule').saveWorkflowSchedule(request)
+    expect(core.saveWorkflowSchedule).toHaveBeenCalledExactlyOnceWith(request, actor)
   })
 
   it.each(Object.entries(commands))('rejects non-record or missing required fields for %s', async (name, request) => {

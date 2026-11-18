@@ -1,13 +1,22 @@
-// Independent Workflow store; schema v1 is retained for existing data.
+// Independent Workflow store with an additive migration for existing data.
 // Domain evidence must come from the authenticated gateway and runtime, not callers.
 import { DatabaseSync } from 'node:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
+import { nextScheduleTime } from './schedule.js'
 
 const APPLICATION_ID = 0x44535746 // DSWF; never adopt another application's DB.
-const SCHEMA_VERSION = 1
-const SCHEMA = readFileSync(new URL('../docs/workflow-model.schema.sql', import.meta.url), 'utf8')
+const SCHEMA_VERSION = 2
+const SCHEMA_V1 = readFileSync(new URL('../docs/workflow-model.schema.sql', import.meta.url), 'utf8')
+const SCHEDULE_SCHEMA = `CREATE TABLE wf_schedules (
+  id TEXT PRIMARY KEY NOT NULL REFERENCES wf_workflows(id),
+  revision INTEGER NOT NULL CHECK(revision >= 1),
+  config_json TEXT NOT NULL CHECK(json_valid(config_json) AND json_type(config_json) = 'object'),
+  next_at INTEGER,
+  last_json TEXT CHECK(last_json IS NULL OR json_valid(last_json))
+);
+CREATE INDEX wf_schedules_due ON wf_schedules(next_at) WHERE next_at IS NOT NULL;`
 const SYSTEM = { kind: 'system', id: 'workflow-poc' }
 const TERMINAL = new Set(['completed', 'terminated'])
 const SETTLED = new Set(['succeeded', 'failed', 'cancelled'])
@@ -120,11 +129,12 @@ function inheritStageModels(definition, selection, previous = []) {
 function schemaSignature(db) {
   return json(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(row => ({ ...row })))
 }
-function expectedSignature() {
+function expectedSignature(schema) {
   const db = new DatabaseSync(':memory:')
-  try { db.exec(SCHEMA); return schemaSignature(db) } finally { db.close() }
+  try { db.exec(schema); return schemaSignature(db) } finally { db.close() }
 }
-const EXPECTED_SCHEMA = expectedSignature()
+const EXPECTED_V1 = expectedSignature(SCHEMA_V1)
+const EXPECTED_SCHEMA = expectedSignature(`${SCHEMA_V1}\n${SCHEDULE_SCHEMA}`)
 
 /** Trusted Host path only. Never pass a model- or browser-selected database path. */
 export function openWorkflowStore(path) {
@@ -149,12 +159,19 @@ export function openWorkflowStore(path) {
     db = new DatabaseSync(path)
     db.exec('PRAGMA busy_timeout=0; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE;')
     if (fresh) {
-      db.exec(SCHEMA)
+      db.exec(SCHEMA_V1)
+      db.exec(SCHEDULE_SCHEMA)
       db.exec(`PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=${SCHEMA_VERSION};`)
     } else {
-      check(db.prepare('PRAGMA application_id').get().application_id === APPLICATION_ID
-        && db.prepare('PRAGMA user_version').get().user_version === SCHEMA_VERSION
-        && schemaSignature(db) === EXPECTED_SCHEMA, 'DB_SCHEMA', 'Unknown application or schema: no adoption, reset, or automatic migration')
+      const version = db.prepare('PRAGMA user_version').get().user_version
+      const signature = schemaSignature(db)
+      check(db.prepare('PRAGMA application_id').get().application_id === APPLICATION_ID &&
+        (version === 1 && signature === EXPECTED_V1 || version === SCHEMA_VERSION && signature === EXPECTED_SCHEMA),
+      'DB_SCHEMA', 'Unknown workflow database schema')
+      if (version === 1) {
+        db.exec(SCHEDULE_SCHEMA)
+        db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`)
+      }
     }
     check(db.prepare('PRAGMA quick_check').get().quick_check === 'ok'
       && db.prepare('PRAGMA foreign_key_check').all().length === 0, 'DB_CORRUPT', 'Database integrity or foreign-key check failed')
@@ -249,12 +266,24 @@ export function openWorkflowStore(path) {
     const workflow = activeWorkflow(id), definition = definitionView(JSON.parse(workflow.draft_json))
     const snapshot = workflow.published_version_id && row('wf_versions', workflow.published_version_id)
     const current = snapshot && json(definitionView(JSON.parse(snapshot.definition_json))) === json(definition)
+    const schedule = get('SELECT * FROM wf_schedules WHERE id=?', id)
     return { id, workspaceId: workflow.workspace_id, name: workflow.name, description: definition.description,
       revision: workflow.draft_revision, definition, versionId: current ? snapshot.id : null,
       versionNumber: current ? snapshot.version_number : null,
       taskCount: all('SELECT id FROM wf_tasks WHERE workflow_id=?', id).filter(item => !deletedTask(item.id)).length,
-      createdAt: workflow.created_at, updatedAt: workflow.updated_at,
+      createdAt: workflow.created_at, updatedAt: workflow.updated_at, schedule: scheduleView(schedule), scheduleRevision: schedule?.revision ?? 0,
       rootPath: workflow.root_path_snapshot, executionScope: workflow.execution_scope }
+  }
+
+  function scheduleView(schedule) {
+    if (!schedule) return null
+    const { enabled, ...config } = JSON.parse(schedule.config_json)
+    return enabled === false ? null : { ...config, nextAt: schedule.next_at, last: schedule.last_json && JSON.parse(schedule.last_json) }
+  }
+  function finishWorkflowSchedule(occurrence, outcome, errorCode = null) {
+    const { workflowId, revision, scheduledAt, nextAt, timeZone } = occurrence
+    return run('UPDATE wf_schedules SET next_at=?,last_json=? WHERE id=? AND revision=? AND next_at=?',
+      nextAt, json({ scheduledAt, timeZone, outcome, errorCode }), workflowId, revision, scheduledAt).changes === 1
   }
 
   function retryBlock(task) {
@@ -390,6 +419,10 @@ export function openWorkflowStore(path) {
       decidedBy: item.decided_by_json && JSON.parse(item.decided_by_json), requestId: item.decision_request_id,
       requestedAt: item.requested_at, decidedAt: item.decided_at }))
     const currentVisit = visits.find(visit => visit.id === task.current_visit_id)
+    const events = all('SELECT * FROM wf_task_events WHERE task_id=? ORDER BY sequence', id).map(item => ({
+      id: item.id, sequence: item.sequence, taskRevision: item.task_revision, kind: item.kind,
+      actor: JSON.parse(item.actor_json), data: JSON.parse(item.data_json), requestId: item.request_id, createdAt: item.created_at }))
+    const scheduled = events[0]?.data?.scheduled
     return { id, workflowId: task.workflow_id, workflowVersionId: task.workflow_version_id,
       workflowName: workflow.name, versionNumber: version.version_number, canRetry: retryBlock(task) === null,
       workspaceId: workflow.workspace_id, rootPath: workflow.root_path_snapshot, executionScope: workflow.execution_scope,
@@ -402,9 +435,7 @@ export function openWorkflowStore(path) {
       feedback: feedbackFor(task).map(item => item.feedback), feedbackDetails: feedbackFor(task),
       review: reviews.find(review => review.state === 'pending' && review.visitId === task.current_visit_id) || null,
       reviews, attention: task.attention_json && JSON.parse(task.attention_json),
-      events: all('SELECT * FROM wf_task_events WHERE task_id=? ORDER BY sequence', id).map(item => ({
-        id: item.id, sequence: item.sequence, taskRevision: item.task_revision, kind: item.kind,
-        actor: JSON.parse(item.actor_json), data: JSON.parse(item.data_json), requestId: item.request_id, createdAt: item.created_at })),
+      events, ...(scheduled ? { scheduled } : {}),
       createdAt: task.created_at, updatedAt: task.updated_at, finishedAt: task.finished_at }
   }
   function advance(task, visit) {
@@ -508,6 +539,35 @@ export function openWorkflowStore(path) {
         return getWorkflow(workflow.id)
       })
     },
+    saveWorkflowSchedule(payload, actor) {
+      return command('saveWorkflowSchedule', payload, actor, who => {
+        check(who.kind === 'user', 'HUMAN_REQUIRED', '请在工作流页面配置定时触发。')
+        const workflow = activeWorkflow(payload.workflowId)
+        const current = get('SELECT * FROM wf_schedules WHERE id=?', workflow.id)
+        check((current?.revision ?? 0) === payload.expectedRevision, 'SCHEDULE_CHANGED', '定时设置已更新，请刷新后重试。')
+        const nextAt = payload.schedule ? nextScheduleTime(payload.schedule, Date.now()) : null
+        check(!payload.schedule || nextAt !== null, 'SCHEDULE_NO_FUTURE', '请选择有效的未来触发时间。')
+        // Keep the revision after removal so an in-flight trigger cannot match a rebuilt plan.
+        const previousText = scheduleView(current)?.text
+        const config = payload.schedule ? { ...(previousText === undefined ? {} : { text: previousText }), ...payload.schedule } : { enabled: false }
+        run(`INSERT INTO wf_schedules (id,revision,config_json,next_at) VALUES (?,?,?,?)
+          ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,config_json=excluded.config_json,next_at=excluded.next_at,
+          last_json=CASE WHEN excluded.next_at IS NULL THEN NULL ELSE wf_schedules.last_json END`,
+        workflow.id, payload.expectedRevision + 1, json(config), nextAt)
+        return getWorkflow(workflow.id)
+      })
+    },
+    nextWorkflowScheduleTime() {
+      return get('SELECT next_at FROM wf_schedules WHERE next_at IS NOT NULL ORDER BY next_at LIMIT 1')?.next_at
+    },
+    listDueWorkflowSchedules(now) {
+      return all(`SELECT s.*, w.workspace_id FROM wf_schedules s JOIN wf_workflows w ON w.id=s.id
+        WHERE s.next_at<=? ORDER BY s.next_at,s.id`, now).map(schedule => ({
+        ...JSON.parse(schedule.config_json), workflowId: schedule.id, workspaceId: schedule.workspace_id,
+        revision: schedule.revision, scheduledAt: schedule.next_at,
+      }))
+    },
+    finishWorkflowSchedule,
     deleteWorkflow(payload, actor) {
       exactKeys(payload, ['requestId', 'workflowId', 'expectedRevision'], 'deleteWorkflow')
       return command('deleteWorkflow', payload, actor, who => {
@@ -519,6 +579,7 @@ export function openWorkflowStore(path) {
         check(!get("SELECT a.id FROM wf_attempts a JOIN wf_tasks t ON t.id=a.task_id WHERE t.workflow_id=? AND a.quiesced_at IS NULL LIMIT 1", workflow.id),
           'STOP_UNCONFIRMED', '尚未确认所有执行已停止，请先核对任务状态。')
         update('wf_workflows', workflow.id, { accepting_tasks: 0, draft_revision: workflow.draft_revision + 1, updated_at: Date.now() })
+        run('DELETE FROM wf_schedules WHERE id=?', workflow.id)
         return { workflowId: workflow.id, deleted: true }
       })
     },
@@ -527,7 +588,8 @@ export function openWorkflowStore(path) {
       check(!closed, 'STORE_CLOSED', 'Workflow store is closed')
       const rows = all(`SELECT t.id,t.workflow_id,t.workflow_version_id,t.current_visit_id,t.title,t.state,t.revision,
         t.created_at,t.updated_at,w.name AS workflow_name,w.workspace_id,v.version_number,
-        json_extract(stage.value,'$.title') AS stage_title, json_extract(t.input_json,'$.text') AS input_text
+        json_extract(stage.value,'$.title') AS stage_title, json_extract(t.input_json,'$.text') AS input_text,
+        (SELECT json_extract(data_json,'$.scheduled') FROM wf_task_events WHERE task_id=t.id AND sequence=1) AS scheduled
         FROM wf_tasks t JOIN wf_workflows w ON w.id=t.workflow_id
         JOIN wf_versions v ON v.id=t.workflow_version_id JOIN wf_stage_visits visit ON visit.id=t.current_visit_id
         JOIN json_each(v.definition_json,'$.stages') stage ON json_extract(stage.value,'$.id')=visit.stage_id
@@ -536,7 +598,7 @@ export function openWorkflowStore(path) {
       return rows.filter(task => !deletedTask(task.id)).map(task => ({ id: task.id, workflowId: task.workflow_id, workflowName: task.workflow_name,
         workflowVersionId: task.workflow_version_id, versionNumber: task.version_number, workspaceId: task.workspace_id, title: task.title, inputText: task.input_text, state: task.state,
         revision: task.revision, stageTitle: task.stage_title, createdAt: task.created_at, updatedAt: task.updated_at,
-        canRetry: retryBlock(task) === null }))
+        canRetry: retryBlock(task) === null, ...(task.scheduled ? { scheduled: JSON.parse(task.scheduled) } : {}) }))
     },
     listTasks(workspaceId) {
       check(!closed, 'STORE_CLOSED', 'Workflow store is closed')
@@ -575,12 +637,19 @@ export function openWorkflowStore(path) {
         version: { id: versionId, workflowId: id, versionNumber: 1, definition, definitionHash: hash(definition) } }
       })
     },
-    createTask(payload, actor) {
+    createTask(payload, actor, occurrence) {
       exactKeys(payload, ['requestId', 'workflowId', 'expectedVersionId', 'title', 'input', 'executionConfig'], 'createTask')
       return command('createTask', payload, actor, who => {
-        text(payload.title, 'title', 200); exactKeys(payload.input, ['text'], 'input'); text(payload.input.text, 'input.text', Infinity)
+        exactKeys(payload.input, ['text'], 'input')
+        const withoutInput = occurrence && payload.input.text === ''
+        if (!withoutInput) text(payload.input.text, 'input.text', Infinity)
         object(payload.executionConfig, 'executionConfig')
         const workflow = activeWorkflow(payload.workflowId)
+        const title = withoutInput && payload.title === '' ? workflow.name : payload.title
+        text(title, 'title', 200)
+        if (occurrence) {
+          check(finishWorkflowSchedule(occurrence, 'created'), 'SCHEDULE_CHANGED', '定时设置已更新。')
+        }
         const versionId = snapshotWorkflow(workflow, who)
         if (payload.expectedVersionId !== undefined) {
           text(payload.expectedVersionId, 'expectedVersionId', 200)
@@ -589,10 +658,11 @@ export function openWorkflowStore(path) {
         const definition = JSON.parse(row('wf_versions', versionId).definition_json)
         const id = randomUUID(), visitId = randomUUID(), now = Date.now()
         insert('wf_tasks', { id, workflow_id: workflow.id, workflow_version_id: versionId,
-          title: payload.title, input_json: json(payload.input), execution_config_json: json(payload.executionConfig),
+          title, input_json: json(payload.input), execution_config_json: json(payload.executionConfig),
           state: 'queued', current_visit_id: visitId, revision: 1, queued_at: now, created_at: now, updated_at: now })
         makeVisit(id, definition.stages[0].id, null, visitId)
-        record(id, 'task.created', {}, who, undefined, payload.requestId)
+        const data = occurrence ? { scheduled: { at: occurrence.scheduledAt, timeZone: occurrence.timeZone } } : {}
+        record(id, 'task.created', data, who, undefined, payload.requestId)
         return getTask(id)
       })
     },

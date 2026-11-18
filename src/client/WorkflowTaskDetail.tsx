@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { WorkflowTaskFiles } from "./WorkflowTaskFiles"
 import { WorkflowDiagram } from "./WorkflowDiagram"
 import { useT } from "./lib/i18n"
-import { workflowReportBody } from "./lib/workflow-presentation"
+import { workflowReportBody, workflowScheduleTime } from "./lib/workflow-presentation"
 import type { TaskArtifact, TaskOutput, WorkflowApi, WorkflowCommand, WorkflowTask } from "./lib/workflow-types"
 
 export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onUpdated, onBack, onCopyTask, onDirtyChange, onOpenSession, onDelete, renderExecution, embedded = false }: {
@@ -20,6 +20,7 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
   const heading = useRef<HTMLHeadingElement>(null), entering = useRef(false)
   useEffect(() => { if (embedded) { entering.current = true; heading.current?.focus(); entering.current = false } }, [embedded, task.id])
   const t = useT()
+  const taskTitle = task.input.text || task.title
   const markdownLabels = useMemo(() => ({ code: { copyLabel: t("copyCode"), copiedLabel: t("copiedCode") }, footnotes: t("footnotes") }), [t])
   const id = useId()
   const [selectedStageId, setSelectedStageId] = useState(task.currentStageId)
@@ -168,7 +169,7 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
   const stopButton = !terminal && <Button className="workflow-terminate" size={reviewing ? "default" : "icon"} aria-label={t("wfStop")} title={t("wfStop")} variant="ghost" disabled={disabled || task.state === "terminating" && task.canReconcile !== true} onClick={() => setConfirmingStop(true)}><OctagonX aria-hidden="true" />{reviewing && t("wfStop")}</Button>
   const reports = <>          <section className="workflow-results" aria-label={t("wfResults")}><h3 className="kanban-sr-only">{t("wfResults")}</h3>{reviewSelected && <p className="workflow-note">{t("wfReviewScope")}</p>}
             {visibleOutputs.length ? visibleOutputs.map((output, index) => visibleOutputs.length === 1 ? renderOutput(output) : <details key={output.id} className="workflow-report-disclosure" open={index === visibleOutputs.length - 1}><summary>{output.label}</summary>{renderOutput(output)}</details>) : <p className="workflow-empty-inline">{t("wfNoResults")}</p>}
-            <details className="workflow-disclosure"><summary>{t("wfOriginal")}</summary><pre className="workflow-result-text">{task.input.text}</pre></details>
+            {task.input.text && <details className="workflow-disclosure"><summary>{t("wfOriginal")}</summary><pre className="workflow-result-text">{task.input.text}</pre></details>}
             {!!stageArtifacts.filter(artifact => !artifact.effective).length && <details className="workflow-disclosure"><summary>{t("wfArtifactHistory")}</summary>{stageArtifacts.filter(artifact => !artifact.effective).map(artifact => <section className="workflow-history-artifact" key={artifact.id}>
               <header><strong>{artifact.label}</strong><span className="workflow-muted">{t(artifact.effective ? "wfEffective" : "wfSuperseded")}</span><time dateTime={new Date(artifact.createdAt).toISOString()}>{new Date(artifact.createdAt).toLocaleString(t("dateLocale"))}</time></header>
               {history[artifact.id] ? renderOutput(history[artifact.id]!, !artifact.effective) : <Button variant="outline" size="sm" disabled={disconnected || historyLoading[artifact.id]} onClick={() => void loadArtifact(artifact)}>{t(historyLoading[artifact.id] ? "wfLoadingArtifact" : "wfLoadArtifact")}</Button>}
@@ -194,7 +195,9 @@ export function WorkflowTaskDetail({ task, api, busy, disconnected, command, onU
   const live = !openResults && selectedStage?.kind === "agent" && Boolean(execution?.sessionId && renderExecution)
   return <section className="workflow-page workflow-task-workbench" aria-label={t("wfDetails")}>
     <header className="workflow-page-header">
-      <div className="workflow-heading">{!embedded && <Button variant="ghost" size="icon" onClick={onBack} aria-label={t("wfBack")}><ArrowLeft /></Button>}<div className="workflow-task-title"><TooltipProvider><Tooltip><TooltipTrigger asChild onFocus={event => { if (entering.current) event.preventDefault() }}><h2 ref={heading} tabIndex={0} data-workflow-heading data-modal-autofocus>{task.input.text}</h2></TooltipTrigger><TooltipContent className="workflow-input-tooltip">{task.input.text}</TooltipContent></Tooltip></TooltipProvider><p className="workflow-task-meta">{task.workflowName} · {t("wfVersion")} {task.versionNumber}</p></div><span className="workflow-state" data-state={task.state}>{t(`wfState_${task.state}`)}</span></div>
+      <div className="workflow-heading">{!embedded && <Button variant="ghost" size="icon" onClick={onBack} aria-label={t("wfBack")}><ArrowLeft /></Button>}<div className="workflow-task-title"><TooltipProvider><Tooltip><TooltipTrigger asChild onFocus={event => { if (entering.current) event.preventDefault() }}><h2 ref={heading} tabIndex={0} data-workflow-heading data-modal-autofocus>{taskTitle}</h2></TooltipTrigger><TooltipContent className="workflow-input-tooltip">{taskTitle}</TooltipContent></Tooltip></TooltipProvider><p className="workflow-task-meta">{task.workflowName} · {t("wfVersion")} {task.versionNumber}
+        {task.scheduled && <> · {t("wfSchedule")} · <time dateTime={new Date(task.scheduled.at).toISOString()}>{workflowScheduleTime(task.scheduled.at, task.scheduled.timeZone, t("dateLocale"))}</time> ({task.scheduled.timeZone})</>}
+      </p></div><span className="workflow-state" data-state={task.state}>{t(`wfState_${task.state}`)}</span></div>
       <div className="workflow-actions">
         {resultStageId && <Button size="sm" variant="outline" onClick={() => openStage(resultStageId, true)}>{t("wfViewResult")}</Button>}
         {!reviewing && stopButton}<Button size="icon" variant="ghost" onClick={onCopyTask} aria-label={t("wfCopyTask")}><Copy /></Button>{onDelete && <Button size="icon" variant="ghost" disabled={disabled} aria-label={t("wfDeleteTask")} onClick={onDelete}><Trash2 /></Button>}

@@ -17,6 +17,7 @@ const COMMAND_FIELDS = {
   reconcileTask: ['requestId', 'taskId', 'expectedRevision', 'confirmedStopped'],
   createWorkflow: ['requestId', 'workspaceId', 'name', 'definition'],
   updateWorkflow: ['requestId', 'workflowId', 'expectedRevision', 'name', 'definition'],
+  saveWorkflowSchedule: ['requestId', 'workflowId', 'expectedRevision', 'schedule'],
   deleteWorkflow: ['requestId', 'workflowId', 'expectedRevision'],
 }
 const commandInvalid = () => {
@@ -59,8 +60,30 @@ const commandDefinition = (value) => {
   return current
 }
 
+const commandSchedule = value => {
+  if (value === null) return null
+  const schedule = commandObject(value, ['repeat', 'date', 'time', 'weekdays', 'timeZone', 'text'])
+  const { repeat, date, time, weekdays, timeZone, text } = schedule
+  if (!['once', 'daily', 'weekly'].includes(repeat)
+    || typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) commandInvalid()
+  if (text !== undefined) commandText(text, Infinity)
+  commandText(timeZone, 100)
+  try { new Intl.DateTimeFormat('en', { timeZone }) } catch { commandInvalid() }
+  if (repeat === 'once') {
+    if (typeof date !== 'string' || !/^[1-9]\d{3}-\d\d-\d\d$/.test(date)) commandInvalid()
+    const day = new Date(`${date}T00:00:00Z`)
+    if (!Number.isFinite(day.getTime()) || !day.toISOString().startsWith(date)) commandInvalid()
+  } else if (date !== undefined) commandInvalid()
+  if (repeat === 'weekly') {
+    if (!Array.isArray(weekdays) || weekdays.length < 1 || weekdays.length > 7 || new Set(weekdays).size !== weekdays.length
+      || [...weekdays].some(day => !Number.isInteger(day) || day < 1 || day > 7)) commandInvalid()
+  } else if (weekdays !== undefined) commandInvalid()
+  return { repeat, time, timeZone, ...(text === undefined ? {} : { text }), ...(date === undefined ? {} : { date }),
+    ...(weekdays === undefined ? {} : { weekdays: [...weekdays].sort() }) }
+}
+
 /** Input validation only: it neither grants authority nor makes user-only commands agent-callable. */
-export function validateWorkflowCommand(method, value) {
+export function validateWorkflowCommand(method, value, scheduled = false) {
   if (typeof method !== 'string' || !Object.prototype.hasOwnProperty.call(COMMAND_FIELDS, method)) commandInvalid()
   const request = commandObject(value, COMMAND_FIELDS[method])
   const parsed = {}
@@ -72,7 +95,7 @@ export function validateWorkflowCommand(method, value) {
   }
   if (COMMAND_FIELDS[method].includes('taskId')) parsed.taskId = commandId(request.taskId)
   if (COMMAND_FIELDS[method].includes('expectedRevision')) {
-    if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 1) commandInvalid()
+    if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < (method === 'saveWorkflowSchedule' ? 0 : 1)) commandInvalid()
     parsed.expectedRevision = request.expectedRevision
   }
   if (request.confirmedStopped !== undefined) {
@@ -82,7 +105,7 @@ export function validateWorkflowCommand(method, value) {
   if (method === 'deleteTaskFile') { parsed.path = commandText(request.path, 10000); parsed.expectedVersion = commandText(request.expectedVersion, 300) }
   if (method === 'createTask') {
     if (request.expectedVersionId !== undefined) parsed.expectedVersionId = commandId(request.expectedVersionId)
-    parsed.text = commandText(request.text, Infinity)
+    parsed.text = request.text === '' && scheduled ? '' : commandText(request.text, Infinity)
     parsed.title = request.title === undefined ? parsed.text.trim().slice(0, 200) : commandText(request.title, 200)
     // Accepted for old clients; new tasks resolve models from the workflow stages.
     if (request.modelSelection !== undefined) parsed.modelSelection = commandSelection(request.modelSelection)
@@ -91,6 +114,7 @@ export function validateWorkflowCommand(method, value) {
     parsed.name = commandText(request.name, 200)
     parsed.definition = commandDefinition(request.definition)
   }
+  if (method === 'saveWorkflowSchedule') parsed.schedule = commandSchedule(request.schedule)
   return parsed
 }
 
@@ -261,6 +285,11 @@ export function mountWorkflowReviewApi(ctx, core, protocol) {
     async updateWorkflow(request) {
       const actor = admit(this.ctx, 'updateWorkflow')
       return invokeCore('updateWorkflow', parseCommand('updateWorkflow', request), actor)
+    }
+
+    async saveWorkflowSchedule(request) {
+      const actor = admit(this.ctx, 'saveWorkflowSchedule')
+      return invokeCore('saveWorkflowSchedule', parseCommand('saveWorkflowSchedule', request), actor)
     }
 
 

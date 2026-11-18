@@ -1,6 +1,6 @@
 import { workflowErrorText } from "./lib/workflow-errors"
 import { type ReactNode, Fragment, useCallback, useEffect, useRef, useState } from "react"
-import { ChevronDown, ChevronRight, FileText, MessageSquare, Plus, Trash2, Workflow as WorkflowIcon, Sparkles, X, ArrowUp } from "lucide-react"
+import { ChevronDown, ChevronRight, Clock, FileText, MessageSquare, Plus, Trash2, Workflow as WorkflowIcon, Sparkles, X, ArrowUp } from "lucide-react"
 import { Button } from "./components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter } from "./components/ui/dialog"
 import { Textarea } from "./components/ui/textarea"
@@ -10,7 +10,9 @@ import { WorkflowStageEditor } from "./WorkflowStageEditor"
 import { WorkflowStageModel } from "./WorkflowStageModel"
 import { WorkflowTaskDetail } from "./WorkflowTaskDetail"
 import { WorkflowDiagram } from "./WorkflowDiagram"
+import { WorkflowSchedule, WorkflowScheduleStatus } from "./WorkflowSchedule"
 import { useT } from "./lib/i18n"
+import { workflowScheduleTime } from "./lib/workflow-presentation"
 import type { TaskOverview, TaskSummary, Workflow, WorkflowApi, WorkflowCommand, WorkflowTask, WorkflowStage } from "./lib/workflow-types"
 export type { WorkflowApi } from "./lib/workflow-types"
 
@@ -34,8 +36,10 @@ export function WorkflowPanel({ workspaceId, workspaceTitle, api, onDirtyChange,
   const [creating, setCreating] = useState<string | null>(null), [text, setText] = useState("")
   const [deleting, setDeleting] = useState<{ kind: "flow"; item: Workflow } | { kind: "task"; item: WorkflowTask } | null>(null)
   const [stageDirty, setStageDirty] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleDirty, setScheduleDirty] = useState(false)
   const creationDirty = Boolean(creating && text.trim())
-  const unsaved = dirty || creationDirty || stageDirty
+  const unsaved = dirty || creationDirty || stageDirty || scheduleDirty
   const [deleteError, setDeleteError] = useState<string | Error>(""), [chatBusy, setChatBusy] = useState(false)
   const alive = useRef(true), busyRef = useRef(false), root = useRef<HTMLDivElement>(null), chatAbort = useRef<AbortController | null>(null)
   const requests = useRef(new Map<string, string>()), focusRow = useRef<string | null>(null)
@@ -92,7 +96,7 @@ export function WorkflowPanel({ workspaceId, workspaceTitle, api, onDirtyChange,
   }, [api, t])
   function navigate(next: View, restore?: string) {
     if (busyRef.current || unsaved && !window.confirm(t("wfLeaveConfirm"))) return
-    focusRow.current = restore ?? null; setDirty(false); setError(""); setSelectedStageId("")
+    focusRow.current = restore ?? null; setDirty(false); setError(""); setSelectedStageId(""); setScheduleOpen(false)
     if (next.kind === "task" && next.id !== task?.id) setTask(null)
     setCreating(null); setText(""); setView(next)
     root.current?.closest(".kanban-panel")?.scrollTo({ top: 0 })
@@ -114,6 +118,11 @@ export function WorkflowPanel({ workspaceId, workspaceTitle, api, onDirtyChange,
     } catch (cause) { if (alive.current) setError(cause instanceof Error ? cause : t("wfActionFailed")); throw cause }
   }
   function updateTask(result: WorkflowTask) { setTask(result); setItems(previous => [result, ...previous.filter(item => item.id !== result.id)]); setReload(value => value + 1) }
+  function updateSchedule(result: Workflow) {
+    if (!alive.current) return
+    setFlows(previous => previous.map(item => item.id === result.id ? result : item))
+    setReload(value => value + 1)
+  }
   function startTask(id: string, source?: WorkflowTask) {
     if (creating === id && !source) { inputField.current?.focus(); return }
     if (busyRef.current || unsaved && !window.confirm(t("wfLeaveConfirm"))) return
@@ -159,11 +168,16 @@ export function WorkflowPanel({ workspaceId, workspaceTitle, api, onDirtyChange,
     const attention = tasks.filter(item => ["waiting_review", "needs_attention"].includes(item.state)).length
     return <span className="workflow-tree-activity">{running > 0 && <span data-kind="running">{t("wfFlowRunning").replace("{count}", String(running))}</span>}{attention > 0 && <span data-kind="attention">{t("wfFlowAttention").replace("{count}", String(attention))}</span>}</span>
   }
-  const renderTask = (item: TaskSummary, parent: Workflow) => <tr key={item.id} className="workflow-tree-task" data-nested="true">
-    <td><Tooltip label={() => { const text = item.inputText ?? item.title; return text.length > 200 ? `${text.slice(0, 200)}…` : text }} onlyWhenClipped portal side="top" delayMs={400} maxWidth={420}><button className="workflow-tree-name" data-workflow-row={`task:${item.id}`} onClick={() => navigate({ kind: "task", id: item.id, flowId: item.workflowId })}><FileText aria-hidden="true" /><span>{item.inputText ?? item.title}</span>{Boolean(parent.versionNumber && item.versionNumber !== parent.versionNumber) && <span className="workflow-tree-version">v{item.versionNumber}</span>}</button></Tooltip></td>
+  const renderTask = (item: TaskSummary, parent: Workflow) => {
+    const title = item.inputText || item.title
+    return <tr key={item.id} className="workflow-tree-task" data-nested="true">
+    <td><Tooltip label={() => title.length > 200 ? `${title.slice(0, 200)}…` : title} onlyWhenClipped portal side="top" delayMs={400} maxWidth={420}><button className="workflow-tree-name" data-workflow-row={`task:${item.id}`} onClick={() => navigate({ kind: "task", id: item.id, flowId: item.workflowId })}><FileText aria-hidden="true" /><span>{title}</span>{Boolean(parent.versionNumber && item.versionNumber !== parent.versionNumber) && <span className="workflow-tree-version">v{item.versionNumber}</span>}</button></Tooltip>
+      {item.scheduled && <div className="workflow-tree-scheduled workflow-muted">{t("wfSchedule")} · <time dateTime={new Date(item.scheduled.at).toISOString()}>{workflowScheduleTime(item.scheduled.at, item.scheduled.timeZone, t("dateLocale"))}</time></div>}
+    </td>
     <td><span className="workflow-state" data-state={item.state}>{t(`wfState_${item.state}`)}</span></td><Tooltip label={item.stageTitle} onlyWhenClipped portal side="top" delayMs={400} maxWidth={420}><td className="workflow-tree-stage">{item.stageTitle}</td></Tooltip>
     <td className="workflow-tree-time"><time dateTime={new Date(item.updatedAt).toISOString()}>{new Date(item.updatedAt).toLocaleString(t("dateLocale"))}</time></td>
-  </tr>
+    </tr>
+  }
   const table = <table className="workflow-tree" aria-label={t("wfTree")}>
     <thead><tr><th>{t("wfTreeName")}</th><th>{t("wfStatus")}</th><th className="workflow-tree-stage">{t("wfCurrentStage")}</th><th className="workflow-tree-time">{t("wfUpdated")}</th></tr></thead>
     {flows.map(parent => <Fragment key={parent.id}>
@@ -183,15 +197,37 @@ export function WorkflowPanel({ workspaceId, workspaceTitle, api, onDirtyChange,
     <tfoot><tr className="workflow-create-flow-row"><td colSpan={4}><Button variant="ghost" disabled={!onOpenChat || chatBusy} onClick={() => void talkToAgent()}><Plus />{t("wfNew")}</Button></td></tr></tfoot>
   </table>
   const selectedStage = flow?.definition?.stages.find(stage => stage.id === selectedStageId)
+  const taskTitle = task?.input.text || task?.title
+  const deletionTitle = deleting?.kind === "flow" ? deleting.item.name : deleting?.item.input.text || deleting?.item.title || ""
   return <div ref={root} className="workflow-root" data-view={view.kind} role="region" aria-label={t("wfTitle")} tabIndex={-1}>
     {loadError && <div className="workflow-connection" role="alert"><span>{flows.length ? t("wfConnectionLost") : workflowErrorText(loadError)}</span><Button size="sm" variant="outline" onClick={() => { setLoading(true); setReload(value => value + 1) }}>{t("wfReconnect")}</Button></div>}
     {cleanupPending && <p className="workflow-notice" role="status">{t("wfCleanupPending")}</p>}
-    {view.kind !== "library" && <nav className="workflow-breadcrumb" aria-label={t("wfBreadcrumb")}><button onClick={() => navigate({ kind: "library" }, `flow:${flowId}`)}>Workflow</button><ChevronRight />{view.kind === "task" ? <><button onClick={() => navigate({ kind: "flow", id: view.flowId }, `task:${view.id}`)}>{flow?.name || task?.workflowName}</button><ChevronRight /><span aria-current="page" title={task?.input.text}>{task?.input.text || t("wfLoading")}</span></> : <span aria-current="page">{flow?.name}</span>}</nav>}
+    {view.kind !== "library" && <nav className="workflow-breadcrumb" aria-label={t("wfBreadcrumb")}><button onClick={() => navigate({ kind: "library" }, `flow:${flowId}`)}>Workflow</button><ChevronRight />{view.kind === "task" ? <><button onClick={() => navigate({ kind: "flow", id: view.flowId }, `task:${view.id}`)}>{flow?.name || task?.workflowName}</button><ChevronRight /><span aria-current="page" title={taskTitle}>{taskTitle || t("wfLoading")}</span></> : <span aria-current="page">{flow?.name}</span>}</nav>}
     {error && !creating && !selectedStageId && <p className="workflow-error" role="alert">{workflowErrorText(error)}</p>}
     {view.kind === "task" ? task?.id === view.id ? <>
       <WorkflowTaskDetail renderExecution={renderExecution} onDelete={() => { setDeleteError(""); setDeleting({ kind: "task", item: task }) }} embedded task={task} api={api} busy={busy} disconnected={Boolean(loadError)} command={command} onUpdated={updateTask} onDirtyChange={setDirty} onBack={() => navigate({ kind: "library" }, `task:${task.id}`)} onCopyTask={() => startTask(task.workflowId, task)} onOpenSession={onOpenSession} />
     </> : <p role="status">{t("wfLoading")}</p> : view.kind === "flow" && flow ? <>
-      <header className="workflow-page-header"><div className="workflow-flow-heading"><h2 title={flow.name} tabIndex={-1} data-workflow-heading>{flow.name}{flow.versionNumber && <small>v{flow.versionNumber}</small>}</h2>{flow.description && <p className="workflow-flow-description" title={flow.description}>{flow.description}</p>}</div><div className="workflow-actions"><Button size="sm" variant="ghost" aria-label={t("wfDelete")} disabled={busy || Boolean(loadError)} onClick={() => { setDeleteError(""); setDeleting({ kind: "flow", item: flow }) }}><Trash2 /></Button><Button size="sm" variant="ghost" disabled={chatBusy || !onOpenChat || !flow.taskCount} onClick={() => void talkToAgent(flow, undefined, t("wfChatOptimizePrompt"))}><Sparkles />{t("wfOptimize")}</Button><Button size="sm" variant="outline" disabled={chatBusy || !onOpenChat} onClick={() => void talkToAgent(flow)}><MessageSquare />{t("wfEditWithAgent")}</Button></div></header>
+      <header className="workflow-page-header">
+        <div className="workflow-flow-heading">
+          <h2 title={flow.name} tabIndex={-1} data-workflow-heading>{flow.name}{flow.versionNumber && <small>v{flow.versionNumber}</small>}</h2>
+          {flow.description && <p className="workflow-flow-description" title={flow.description}>{flow.description}</p>}
+          {flow.schedule && <WorkflowScheduleStatus schedule={flow.schedule} />}
+        </div>
+        <div className="workflow-header-actions" role="group" aria-label={t("wfFlowActions")}>
+          {[
+            { label: "wfSchedule", Icon: Clock, disabled: busy || Boolean(loadError), action: () => setScheduleOpen(true) },
+            { label: "wfOptimize", Icon: Sparkles, disabled: chatBusy || !onOpenChat || !flow.taskCount, action: () => void talkToAgent(flow, undefined, t("wfChatOptimizePrompt")) },
+            { label: "wfEditWithAgent", Icon: MessageSquare, disabled: chatBusy || !onOpenChat, action: () => void talkToAgent(flow) },
+            { label: "wfDelete", Icon: Trash2, disabled: busy || Boolean(loadError), action: () => { setDeleteError(""); setDeleting({ kind: "flow", item: flow }) } },
+          ].map(({ label, Icon, disabled, action }) => <Tooltip key={label} label={t(label)} side="bottom" portal delayMs={200}>
+            <span><Button variant="ghost" size="icon" aria-label={t(label)} aria-haspopup={label === "wfSchedule" ? "dialog" : undefined} disabled={disabled} onClick={action}>
+              <Icon aria-hidden="true" />
+            </Button></span>
+          </Tooltip>)}
+        </div>
+      </header>
+      {scheduleOpen && <WorkflowSchedule key={flow.id} flow={flow} command={command} busy={busy} disconnected={Boolean(loadError)}
+        onClose={() => setScheduleOpen(false)} onSaved={updateSchedule} onDirtyChange={setScheduleDirty} />}
       <section className="workflow-flow-overview"><WorkflowDiagram horizontal stages={flow.definition?.stages ?? []} selectedStageId={selectedStageId || undefined} onSelect={stageId => { if (!busyRef.current) setSelectedStageId(previous => previous === stageId ? "" : stageId) }} />
         {selectedStage && <Modal open title={selectedStage.title} closeLabel={t("close")} onClose={() => { if (!busyRef.current && (!stageDirty || window.confirm(t("wfLeaveConfirm")))) { setStageDirty(false); setSelectedStageId("") } }} className="kanban-root workflow-shell workflow-stage-modal workflow-config-modal" contentClassName="workflow-modal-content">
           <div className="workflow-root workflow-config-content">
@@ -205,6 +241,6 @@ export function WorkflowPanel({ workspaceId, workspaceTitle, api, onDirtyChange,
         </Modal>}
       </section>
     </> : <>{loading && !flows.length ? <p role="status">{t("wfLoading")}</p> : table}</>}
-    {deleting && <Dialog open onOpenChange={open => { if (!open && !busyRef.current) setDeleting(null) }}><DialogContent className="kanban-root kanban-dialog-medium"><DialogHeader><DialogTitle>{t(deleting.kind === "flow" ? "wfDelete" : "wfDeleteTask")}</DialogTitle><DialogDescription>{t(deleting.kind === "flow" ? "wfDeleteConfirm" : "wfDeleteTaskConfirm").replace("{name}", deleting.kind === "flow" ? deleting.item.name : deleting.item.input.text.length > 100 ? `${deleting.item.input.text.slice(0, 100)}…` : deleting.item.input.text)}</DialogDescription></DialogHeader>{deleteError && <DialogBody><p className="kanban-error" role="alert">{workflowErrorText(deleteError)}</p></DialogBody>}<DialogFooter><Button variant="outline" disabled={busy} onClick={() => setDeleting(null)}>{t("cancel")}</Button><Button variant="destructive" disabled={busy} onClick={() => void confirmDelete()}>{t("confirmDelete")}</Button></DialogFooter></DialogContent></Dialog>}
+    {deleting && <Dialog open onOpenChange={open => { if (!open && !busyRef.current) setDeleting(null) }}><DialogContent className="kanban-root kanban-dialog-medium"><DialogHeader><DialogTitle>{t(deleting.kind === "flow" ? "wfDelete" : "wfDeleteTask")}</DialogTitle><DialogDescription>{t(deleting.kind === "flow" ? "wfDeleteConfirm" : "wfDeleteTaskConfirm").replace("{name}", deleting.kind === "task" && deletionTitle.length > 100 ? `${deletionTitle.slice(0, 100)}…` : deletionTitle)}</DialogDescription></DialogHeader>{deleteError && <DialogBody><p className="kanban-error" role="alert">{workflowErrorText(deleteError)}</p></DialogBody>}<DialogFooter><Button variant="outline" disabled={busy} onClick={() => setDeleting(null)}>{t("cancel")}</Button><Button variant="destructive" disabled={busy} onClick={() => void confirmDelete()}>{t("confirmDelete")}</Button></DialogFooter></DialogContent></Dialog>}
   </div>
 }

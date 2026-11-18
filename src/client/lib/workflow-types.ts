@@ -9,13 +9,23 @@ export type WorkflowTimestamp = string | number
 export type ModelSelection = { provider: string; model: string; reasoningEffort?: string }
 export type WorkflowStage = { id: string; kind: "agent" | "review"; title: string; prompt?: string; returnStageId?: string; modelSelection?: ModelSelection }
 export type WorkflowDefinition = { description: string; inputLabel: string; inputHint: string; stages: WorkflowStage[] }
+export type WorkflowScheduleConfig = {
+  repeat: "once" | "daily" | "weekly"; date?: string; time: string; weekdays?: number[]; timeZone: string
+}
+export type WorkflowSchedule = WorkflowScheduleConfig & {
+  nextAt: number | null
+  last: { scheduledAt: number; timeZone: string; outcome: "created" | "missed" | "failed"; errorCode: string | null } | null
+}
 export type Workflow = {
   id: string; workspaceId: string; name: string; description: string; revision: number; definition: WorkflowDefinition
   versionId: string | null; versionNumber: number | null; taskCount: number; createdAt: WorkflowTimestamp; updatedAt: WorkflowTimestamp
+  schedule?: WorkflowSchedule
+  scheduleRevision?: number
 }
 export type TaskSummary = {
   id: string; workspaceId: string; workflowId: string; workflowName: string; versionNumber: number
   workflowVersionId?: string; title: string; inputText?: string; state: string; revision: number; stageTitle: string; canRetry?: boolean; updatedAt: WorkflowTimestamp; createdAt: WorkflowTimestamp
+  scheduled?: { at: number; timeZone: string }
 }
 export type TaskOutput = { id: string; stageId?: string; label: string; contentHash: string; byteLength?: number; text?: string; unavailable?: boolean }
 export type TaskArtifact = { id: string; stageId: string; label: string; contentHash: string; byteLength: number; createdAt: WorkflowTimestamp; effective: boolean }
