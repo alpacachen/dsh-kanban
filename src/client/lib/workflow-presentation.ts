@@ -1,4 +1,8 @@
 // Presentation only: persisted replies, evidence and hashes must remain untouched.
+export function workflowScheduleTime(at: number, timeZone: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone }).format(at)
+}
+
 export function workflowReportBody(text: string): string {
   const match = /(?:^|\n)(?:```workflow-handoff[^\n]*\n|[ \t]*<workflow-handoff(?:>|$))/.exec(text)
   return match ? text.slice(0, match.index).trimEnd() : text

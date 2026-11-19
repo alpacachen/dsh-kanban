@@ -8,6 +8,7 @@ import { openWorkflowStore } from './store.js'
 import { ensureTaskDirectory, listTaskFiles, taskFilePath, deleteTaskFile } from './task-files.js'
 import { createDshExecutor, NATIVE_POLICY, readPersistedSession, withStoppedNativeExecution } from './dsh-adapter.js'
 import { createWorkflowRunner, PROJECT_POLICY, readArtifactText } from './runner.js'
+import { createWorkflowScheduler } from './schedule.js'
 import { mountWorkflowReviewApi, validateWorkflowCommand } from './review-api.js'
 import { mountWorkflowManagementTools } from './management-tools.js'
 import { PROCESS_POLICY, readProcessIdentity, confirmStoppedExecution } from './recovery.js'
@@ -25,12 +26,15 @@ const fail = (code, message) => { throw Object.assign(new Error(message), { code
 export function taskSummary(task) {
   return { id: task.id, workspaceId: task.workspaceId, workflowId: task.workflowId, workflowName: task.workflowName,
     versionNumber: task.versionNumber, workflowVersionId: task.workflowVersionId, title: task.title, inputText: task.input.text, state: task.state, canRetry: task.canRetry === true,
-    revision: task.revision, stageTitle: task.currentStage.title, createdAt: task.createdAt, updatedAt: task.updatedAt }
+    revision: task.revision, stageTitle: task.currentStage.title, createdAt: task.createdAt, updatedAt: task.updatedAt,
+    ...(task.scheduled ? { scheduled: task.scheduled } : {}) }
 }
 
 export function publicWorkflow(workflow) {
   const { id, workspaceId, name, description, revision, definition, versionId, versionNumber, taskCount, createdAt, updatedAt } = workflow
-  return { id, workspaceId, name, description, revision, definition, versionId, versionNumber, taskCount, createdAt, updatedAt }
+  return { id, workspaceId, name, description, revision, definition, versionId, versionNumber, taskCount, createdAt, updatedAt,
+    ...(workflow.scheduleRevision ? { scheduleRevision: workflow.scheduleRevision } : {}),
+    ...(workflow.schedule ? { schedule: workflow.schedule } : {}) }
 }
 
 function artifactMetadata(task, artifact) {
@@ -79,8 +83,8 @@ export async function publicTask(task, attachments, { includeOutputText = true, 
 export function createWorkflowCore({ store, runner, attachments, workspaceRegistry, currentModel, profileDir,
   confirmStopped = confirmStoppedExecution,
   reconcileNative,
-  readSessionLog, firstTokenTime, modelInfoFor = async () => null, assertOpen = () => {} }) {
-  const validate = (method, request) => validateWorkflowCommand(method, request)
+  readSessionLog, firstTokenTime, modelInfoFor = async () => null, assertOpen = () => {}, onScheduleChange = () => {} }) {
+  const validate = validateWorkflowCommand
   const workspaceBinding = async workspaceId => {
     const workspace = workspaceRegistry.get(workspaceId)
     if (!workspace || await workspace.status() !== 'ok') fail('WF_WORKSPACE_MISSING', '所选工作区不可用，请检查目录或重新选择。')
@@ -165,10 +169,19 @@ export function createWorkflowCore({ store, runner, attachments, workspaceRegist
       assertOpen()
       return publicWorkflow(store.updateWorkflow(validate('updateWorkflow', input), actor, selection))
     },
+    saveWorkflowSchedule(input, actor) {
+      assertOpen()
+      const request = validate('saveWorkflowSchedule', input)
+      store.saveWorkflowSchedule(request, actor)
+      onScheduleChange()
+      return publicWorkflow(store.getWorkflow(request.workflowId))
+    },
     deleteWorkflow(input, actor) {
       assertOpen()
       if (actor.kind !== 'user') fail('WF_HUMAN_REQUIRED', '请在工作流页面确认删除。')
-      return store.deleteWorkflow(validate('deleteWorkflow', input), actor)
+      const result = store.deleteWorkflow(validate('deleteWorkflow', input), actor)
+      onScheduleChange()
+      return result
     },
     async deleteTask(input, actor) {
       assertOpen()
@@ -177,9 +190,9 @@ export function createWorkflowCore({ store, runner, attachments, workspaceRegist
       const complete = await runner.cleanupDeletedTasks()
       return complete ? result : { ...result, cleanupPending: true }
     },
-    async createTask(input, actor) {
+    async createTask(input, actor, occurrence, signal) {
       assertOpen()
-      const request = validate('createTask', input)
+      const request = validate('createTask', input, Boolean(occurrence))
       const committed = store.getCreateTaskSnapshot(request.requestId)
       const workflowId = request.workflowId ?? committed?.workflowId
       if (!workflowId) fail('WF_WORKFLOW_REQUIRED', '请先选择一个工作流，再创建任务。')
@@ -197,15 +210,17 @@ export function createWorkflowCore({ store, runner, attachments, workspaceRegist
         const fallback = agentStages.some(stage => !stage.modelSelection) ? currentModel() : agentStages[0]?.modelSelection
         const selections = agentStages.map(stage => stage.modelSelection ?? fallback)
         if (selections.some(selection => !selection?.provider || !selection?.model)) fail('WF_MODEL_UNAVAILABLE', '请通过 Agent 为工作流阶段配置模型，或在 DSH 设置默认模型。')
-        for (const selection of new Map(selections.map(selection => [JSON.stringify(selection), selection])).values()) await requireModel(selection)
+        for (const selection of new Map(selections.map(selection => [JSON.stringify(selection), selection])).values()) await requireModel(selection, signal)
         await workspaceBinding(workflow.workspaceId)
         executionConfig = { policy: NATIVE_POLICY, modelSelection: fallback }
       }
       assertOpen()
+      signal?.throwIfAborted()
       const task = store.createTask({ requestId: request.requestId, workflowId,
         title: request.title, input: { text: request.text }, executionConfig,
-        ...(expectedVersionId ? { expectedVersionId } : {}) }, actor)
-      if (!committed) await ensureTaskDirectory(task)
+        ...(expectedVersionId ? { expectedVersionId } : {}) }, actor, occurrence)
+      if (occurrence && committed) store.finishWorkflowSchedule(occurrence, 'created')
+      if (!committed && !occurrence) await ensureTaskDirectory(task)
       void runner.kick()
       return viewTask(task)
     },
@@ -299,13 +314,14 @@ export async function apply(ctx) {
   const protocol = await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/dsh-typert-protocol')).href)
   // Keep the deployed store path; this upgrade must not strand existing Tasks.
   const store = openWorkflowStore(join(ctx.profileContext.dir, 'workflow-poc', 'workflow.sqlite'))
-  let executor, runner, apiFiber, removeTools
+  let executor, runner, scheduler, apiFiber, removeTools
   let closing = false
   const assertOpen = () => { if (closing) fail('WF_STOPPING', '工作流正在停止，请准备就绪后重试。') }
   const cleanup = async () => {
     closing = true
     removeTools?.()
     await apiFiber?.dispose()
+    await scheduler?.dispose()
     if (runner) await runner.dispose()
     else await executor?.dispose()
     store.close()
@@ -321,11 +337,14 @@ export async function apply(ctx) {
       reconcileNative: (attempt, commit, options) => withStoppedNativeExecution(ctx, attempt, commit, options),
       currentModel: () => { try { return ctx.agentDefaultModel.currentSelection() } catch { return null } },
       modelInfoFor: (selection, signal) => ctx.llm.resolveModelInfo(selection.provider, selection.model, signal),
-      profileDir: ctx.profileContext.dir, assertOpen })
+      profileDir: ctx.profileContext.dir, assertOpen, onScheduleChange: () => scheduler.wake() })
+    scheduler = createWorkflowScheduler({ store, createTask: core.createTask,
+      onError: error => console.warn('Workflow schedule:', error?.code ?? 'WF_INTERNAL') })
     await runner.start()
     apiFiber = mountWorkflowReviewApi(ctx, core, protocol)
     await apiFiber
     removeTools = mountWorkflowManagementTools(ctx, core)
+    scheduler.start()
     return cleanup
   } catch (error) {
     await cleanup()

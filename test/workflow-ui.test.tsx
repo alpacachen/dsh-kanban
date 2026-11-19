@@ -19,6 +19,12 @@ function fixture(initialTasks = [task(), task('task-b', 'flow-b', 'Second report
     if (method === 'listTasks') return { tasks, modelSelection: { provider: 'fixture', model: 'fixture', reasoningEffort: 'high' }, modelOptions: { reasoningEfforts: [{ id: 'high', name: 'High' }] }, status: { lastError: null } }
     if (method === 'getTask') return tasks.find(item => item.id === args.taskId)
     const request = args.request
+    if (method === 'saveWorkflowSchedule') {
+      const updated = { ...flows.find(item => item.id === request.workflowId)!, scheduleRevision: request.expectedRevision + 1,
+        schedule: request.schedule ? { ...request.schedule, nextAt: Date.parse('2030-01-04T01:00:00Z'), last: null } : undefined }
+      flows = flows.map(item => item.id === updated.id ? updated : item)
+      return updated
+    }
     if (method === 'createTask') { const created = { ...task('created-task', request.workflowId, request.text), input: { text: request.text }, state: 'queued' }; tasks = [...tasks, created]; return created }
     if (method === 'deleteTask') { tasks = tasks.filter(item => item.id !== request.taskId); return { deleted: true, taskId: request.taskId } }
     if (method === 'deleteWorkflow') { flows = flows.filter(item => item.id !== request.workflowId); return { deleted: true, workflowId: request.workflowId } }
@@ -31,6 +37,38 @@ const openFlow = async () => fireEvent.click(await screen.findByRole('button', {
 const openTask = async () => fireEvent.click(await screen.findByRole('button', { name: 'First research', exact: true }))
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 describe('Workflow file hierarchy and separate detail pages', () => {
+  it('activates a schedule on save and removes it from the workflow detail', async () => {
+    const scheduled = { at: Date.parse('2030-01-03T01:00:00Z'), timeZone: 'Asia/Shanghai' }
+    const { call } = mount(fixture([{ ...task(), scheduled, inputText: '', input: { text: '' } }], [flow()]))
+    expect((await screen.findByText(`${t('wfSchedule')} ·`)).querySelector('time')?.dateTime).toBe(new Date(scheduled.at).toISOString())
+    expect(screen.getByRole('button', { name: 'First research', exact: true })).toBeTruthy()
+    await openFlow()
+    const group = within(screen.getByRole('group', { name: t('wfFlowActions') }))
+    const buttons = group.getAllByRole('button')
+    expect(buttons).toHaveLength(4)
+    expect(buttons.every(button => button.textContent === '')).toBe(true)
+    const trigger = group.getByRole('button', { name: t('wfSchedule'), exact: true })
+    fireEvent.click(trigger)
+    const modal = within(screen.getByRole('dialog', { name: t('wfSchedule') }))
+    expect(modal.queryByLabelText('Source material')).toBeNull()
+    expect(modal.queryByRole('checkbox')).toBeNull()
+    expect(modal.queryByRole('button', { name: t('wfScheduleRemove') })).toBeNull()
+    fireEvent.change(modal.getByLabelText(t('wfScheduleRepeat')), { target: { value: 'weekly' } })
+    fireEvent.click(modal.getByRole('checkbox', { name: t('wfScheduleDayNames').split('|')[4] }))
+    fireEvent.click(modal.getByRole('button', { name: t('save'), exact: true }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: t('wfSchedule') })).toBeNull())
+    expect(call).toHaveBeenCalledWith('saveWorkflowSchedule', { request: expect.objectContaining({ workflowId: 'flow-a', expectedRevision: 0,
+      schedule: { repeat: 'weekly', weekdays: [1, 2, 3, 4], time: '09:00', timeZone: expect.any(String) } }) }, undefined)
+    expect(screen.getByText(new RegExp(t('wfScheduleNext').split('{time}')[0]))).toBeTruthy()
+    fireEvent.click(trigger)
+    expect((screen.getByLabelText(t('wfScheduleRepeat')) as HTMLSelectElement).value).toBe('weekly')
+    fireEvent.click(screen.getByRole('button', { name: t('wfScheduleRemove') }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: t('wfSchedule') })).toBeNull())
+    expect(call).toHaveBeenCalledWith('saveWorkflowSchedule', { request: expect.objectContaining({ workflowId: 'flow-a', expectedRevision: 1, schedule: null }) }, undefined)
+    expect(screen.queryByText(new RegExp(t('wfScheduleNext').split('{time}')[0]))).toBeNull()
+    expect(call.mock.calls.some(([method]) => method === 'createTask')).toBe(false)
+  })
+
   it('automatically recovers polling after a transient request failure', async () => {
     vi.useFakeTimers()
     const f = fixture(), original = f.call.getMockImplementation()!

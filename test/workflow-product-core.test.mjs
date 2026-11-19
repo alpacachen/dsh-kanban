@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { openWorkflowStore } from '../workflow/store.js'
 import { createWorkflowCore } from '../workflow/index.js'
 import { createWorkflowRunner, PROJECT_POLICY } from '../workflow/runner.js'
+import { createWorkflowScheduler } from '../workflow/schedule.js'
 
 // Real Core + SQLite + runner/generator. Native executor, attachment objects and
 // capabilities are isolated fixtures: no model, profile, network or OS sandbox probe.
@@ -139,6 +140,32 @@ function noSecrets(value) {
   if (!value || typeof value !== 'object') return
   for (const [key, child] of Object.entries(value)) { expect(blocked.has(key), key).toBe(false); noSecrets(child) }
 }
+
+it('runs a scheduled task through the normal executor and waits at its review stage', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  vi.setSystemTime(new Date('2030-01-04T00:59:59Z'))
+  const h = boot()
+  const scheduler = createWorkflowScheduler({ store: h.store, createTask: h.core.createTask })
+  try {
+    const flow = await h.publish()
+    h.core.saveWorkflowSchedule({ requestId: randomUUID(), workflowId: flow.id, expectedRevision: 0,
+      schedule: { repeat: 'once', date: '2030-01-04', time: '09:00', timeZone: 'Asia/Shanghai' } }, USER)
+    await h.runner.start()
+    scheduler.start()
+    await vi.advanceTimersByTimeAsync(1000)
+    await h.executor.waitForRun(0)
+    await h.runner.whenIdle()
+    const { tasks } = await h.core.listTasks(flow.workspaceId)
+    expect(h.executor.calls).toHaveLength(1)
+    expect(h.executor.calls[0].prompt).toContain('"scheduledWorkflow":{"name":"Reusable workflow","description":"Inspect and summarize"}')
+    expect(tasks).toMatchObject([{ title: flow.name, inputText: '', state: 'waiting_review', scheduled: { timeZone: 'Asia/Shanghai' } }])
+    expect(await h.core.getTask(tasks[0].id)).toMatchObject({ outputs: [{ label: 'Work' }], review: { id: expect.any(String) } })
+    expect(h.core.getWorkflow(flow.id).schedule).toMatchObject({ nextAt: null, last: { outcome: 'created' } })
+  } finally {
+    await scheduler.dispose()
+    vi.useRealTimers()
+  }
+})
 
 describe('Workflow deletion authority', () => {
   it('requires a human to delete a task and keeps it out of subsequent overviews', async () => {

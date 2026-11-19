@@ -16,6 +16,8 @@ There is no draft, publish or enable step. Saving makes the workflow available t
 
 On the home list, expand a workflow and choose **Create task**. Enter the task input and send, or use ⌘/Ctrl+Enter. The input also serves as the displayed task title; no separate name or task-level model choice is needed.
 
+To create tasks automatically, click the clock icon in the workflow detail. Choose a one-time, daily or weekly schedule and save to activate it. At the scheduled time, Workflow creates a task using the latest saved definition and shows the trigger time in the task list. Choose **Remove schedule** to stop future runs. Occurrences missed while the DSH Host is offline are skipped, with the reason shown in the workflow detail.
+
 Each stage runs in the task's own output directory using the default DSH Agent preset, tools and authorization. The Agent also receives the original project's absolute path for reading materials or making requested project changes. Workflow adds no separate network, file or command permissions, model-turn or tool-call counts, stage-time budget, or output-token budget.
 
 Stages in one task run sequentially. Workflow runs up to two AI stages at once across different project directories. Tasks in the same directory queue, and tasks waiting for human review do not occupy an execution slot. Tool concurrency, compaction and model-request retries follow DSH. A failed workflow stage does not automatically run again: inspect the cause, then retry the current stage when appropriate.

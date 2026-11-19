@@ -36,6 +36,24 @@ body[data-ds-dark-theme] .kanban-root.workflow-shell { --wf-accent:#b69af3; --wf
 .kanban-root .workflow-heading-copy > p { margin-top:7px; color:var(--dsw-alias-label-secondary); font-size:13px; line-height:1.65; }
 .kanban-root .workflow-page-scroll { min-width:0; overflow:visible; padding:0; }
 .kanban-root .workflow-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.kanban-root .workflow-header-actions { display:inline-flex; flex-shrink:0; align-self:flex-start; margin-left:auto; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; }
+.kanban-root .workflow-header-actions > span { display:flex; }
+.kanban-root .workflow-header-actions > span + span { border-left:1px solid var(--dsw-alias-border-l2); }
+.kanban-root .workflow-header-actions .kanban-button { border-radius:0; }
+.kanban-root .workflow-header-actions > span:first-child .kanban-button { border-radius:7px 0 0 7px; }
+.kanban-root .workflow-header-actions > span:last-child .kanban-button { border-radius:0 7px 7px 0; }
+.kanban-root .workflow-schedule-status { margin-top:6px; font-size:13px; overflow-wrap:anywhere; }
+.kanban-root .workflow-schedule-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.kanban-root .workflow-schedule-footer > .workflow-actions { margin-inline-start:auto; }
+.kanban-root .workflow-schedule-form { width:100%; display:grid; gap:14px; padding:0; }
+.kanban-root .workflow-schedule-form p { margin:0; font-size:13px; }
+.kanban-root .workflow-schedule-timing { display:flex; flex-wrap:wrap; gap:10px; }
+.kanban-root .workflow-schedule-timing > label { flex:1 1 8rem; min-width:0; }
+.kanban-root .workflow-schedule-days { display:flex; flex-wrap:wrap; gap:4px 8px; padding:0; margin:0; border:0; }
+.kanban-root .workflow-schedule-days legend { margin-bottom:6px; font-size:13px; }
+.kanban-root .workflow-schedule-days label { flex-direction:row; align-items:center; min-height:28px; gap:4px; }
+.kanban-root .workflow-schedule-form input[type=checkbox] { accent-color:var(--wf-accent); }
+.kanban-root .workflow-tree-scheduled { padding:0 4px 6px 29px; font-size:12px; }
 .kanban-root .workflow-muted, .kanban-root .workflow-note, .kanban-root .workflow-task-meta { color:var(--dsw-alias-label-secondary); }
 .kanban-root .workflow-note { font-size:12px; line-height:1.75; }
 .kanban-root .workflow-note p + p { margin-top:5px; }
@@ -127,6 +145,7 @@ body[data-ds-dark-theme] .kanban-root.workflow-shell { --wf-accent:#b69af3; --wf
   .kanban-root .workflow-tree th:first-child { width:72%; }
   .kanban-root .workflow-tree th:nth-child(2) { width:28%; }
   .kanban-root .workflow-page-header { align-items:flex-start; }
+  .kanban-root .workflow-root[data-view="flow"] > .workflow-page-header .workflow-flow-heading { flex-basis:100%; }
   .kanban-root .workflow-tree td { padding-right:4px; }
   .kanban-root .workflow-tree-task[data-nested="true"] td:first-child { padding-left:33px; }
 }
@@ -167,12 +186,14 @@ body[data-ds-dark-theme] .kanban-root.workflow-shell { --wf-accent:#b69af3; --wf
 .kanban-root .workflow-output { margin:16px 0 24px; }
 .kanban-root.workflow-stage-modal { width:min(1040px,100%); max-height:100%; padding-bottom:0; gap:0; }
 .kanban-root.workflow-config-modal { width:min(760px,100%); }
+.kanban-root.workflow-schedule-modal { width:min(440px,100%); max-height:100%; }
 .kanban-root.workflow-execution-modal { max-height:min(760px,100%); }
 .kanban-root.workflow-live-modal { height:min(760px,100%); }
 .kanban-root .workflow-modal-content { min-height:0; flex:1; }
 .kanban-root .workflow-modal-content > :first-child { flex:none; }
 .kanban-root .workflow-modal-content > :first-child > h2 { min-width:0; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow-wrap:anywhere; font-size:16px; line-height:24px; font-weight:500; }
 .kanban-root .workflow-modal-content > :last-child { display:flex; flex:1; min-height:0; margin-top:0; padding:0 24px 24px; overflow:hidden; }
+.kanban-root.workflow-schedule-modal .workflow-modal-content > :last-child { overflow:auto; }
 .kanban-root .workflow-config-content { min-height:0; overflow:auto; padding:0; gap:20px; }
 
 .kanban-root .workflow-flow-heading { flex:1; min-width:0; }

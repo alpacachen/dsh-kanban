@@ -33,6 +33,7 @@ const expected = [
   "workflow/store.js",
   "workflow/dsh-adapter.js",
   "workflow/runner.js",
+  "workflow/schedule.js",
   "workflow/review-api.js",
   "workflow/management-tools.js",
   "workflow/recovery.js",
