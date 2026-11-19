@@ -4,9 +4,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { openWorkflowStore } from '../workflow/store.js'
-import { createWorkflowRunner, readStageHandoff } from '../workflow/runner.js'
-import { publicTask } from '../workflow/index.js'
+import { openWorkflowStore } from '../workflow/store.ts'
+import { createWorkflowRunner, readStageHandoff } from '../workflow/runner.ts'
+import { publicTask } from '../workflow/index.ts'
 
 const actor = { kind: 'user', id: 'handoff-test' }
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')

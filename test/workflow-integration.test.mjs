@@ -7,10 +7,10 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
-import { openWorkflowStore } from '../workflow/store.js'
-import { createWorkflowRunner, EXECUTOR_POLICY } from '../workflow/runner.js'
-import { mountWorkflowReviewApi, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.js'
-import { publicTask } from '../workflow/index.js'
+import { openWorkflowStore } from '../workflow/store.ts'
+import { createWorkflowRunner, EXECUTOR_POLICY } from '../workflow/runner.ts'
+import { mountWorkflowReviewApi, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.ts'
+import { publicTask } from '../workflow/index.ts'
 
 // Real SQLite, runner, Cordis and public Typert decorator/Service implementation.
 // Executor, attachment bytes and Gateway Peer/Invocation are isolated fixtures:

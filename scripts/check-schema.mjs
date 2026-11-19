@@ -11,7 +11,7 @@
  * - Future versions are unsupported and must not be migrated
  * - Missing migration steps or invalid migration results throw
  */
-import { SCHEMA_VERSION, LEGACY_VERSION, MIGRATIONS, migrateBoard, validateBoard, parseBoardText } from '../index.js'
+import { SCHEMA_VERSION, LEGACY_VERSION, MIGRATIONS, migrateBoard, validateBoard, parseBoardText } from '../index.ts'
 
 let failed = 0
 const check = (name, cond, detail) => {

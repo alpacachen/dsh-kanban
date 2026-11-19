@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { projectStageTrace, stageEventWindow } from '../workflow/stage-trace.js'
+import { projectStageTrace, stageEventWindow } from '../workflow/stage-trace.ts'
 
 const attempt = { id: 'attempt', visitId: 'visit', sessionId: 'session', requestId: 'request', messageId: 'user', turnNumber: 1, state: 'succeeded', createdAt: 0, settledAt: 1000 }
 const task = { id: 'task', workflowId: 'flow', workflowVersionId: 'v1', versionNumber: 1, visits: [{ id: 'visit', stageId: 'work' }] }

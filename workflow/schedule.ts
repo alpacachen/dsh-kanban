@@ -1,14 +1,37 @@
 import { createHash } from 'node:crypto'
+import type { WorkflowSchedule, WorkflowScheduleConfig } from '../src/client/lib/workflow-types.ts'
 
 const DAY = 86_400_000
 const SCHEDULE_ACTOR = Object.freeze({ kind: 'system', id: 'workflow-schedule' })
 
-export function nextScheduleTime({ repeat, date, time, weekdays, timeZone }, after) {
+export type DueWorkflowSchedule = WorkflowScheduleConfig & {
+  workflowId: string
+  workspaceId: string
+  revision: number
+  scheduledAt: number
+  text?: string
+}
+
+export type ScheduledOccurrence = DueWorkflowSchedule & { nextAt: number | null }
+export type ScheduleOutcome = NonNullable<WorkflowSchedule['last']>['outcome']
+
+type SchedulerOptions = {
+  store: {
+    listDueWorkflowSchedules(now: number): DueWorkflowSchedule[]
+    finishWorkflowSchedule(occurrence: ScheduledOccurrence, outcome: ScheduleOutcome, errorCode?: string | null): boolean
+    nextWorkflowScheduleTime(): number | undefined
+  }
+  createTask(input: { requestId: string; workflowId: string; workspaceId: string; text: string },
+    actor: typeof SCHEDULE_ACTOR, occurrence: ScheduledOccurrence, signal: AbortSignal): Promise<unknown>
+  onError?: (error: { code?: string }) => void
+}
+
+export function nextScheduleTime({ repeat, date, time, weekdays, timeZone }: WorkflowScheduleConfig, after: number): number | null {
   const format = new Intl.DateTimeFormat('en', {
     timeZone, calendar: 'iso8601', numberingSystem: 'latn', hourCycle: 'h23',
     year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
   })
-  const wallTime = instant => {
+  const wallTime = (instant: number) => {
     const { year, month, day, hour, minute, second } = Object.fromEntries(format.formatToParts(instant).map(({ type, value }) => [type, Number(value)]))
     return Date.UTC(year, month - 1, day, hour, minute, second)
   }
@@ -17,7 +40,7 @@ export function nextScheduleTime({ repeat, date, time, weekdays, timeZone }, aft
   // Search past a skipped local hour or day. During a clock overlap use the earlier instant.
   for (let offset = 0; offset < (repeat === 'once' ? 1 : 15); offset++) {
     const day = firstDay + offset * DAY
-    if (repeat === 'weekly' && !weekdays.includes((new Date(day).getUTCDay() + 6) % 7 + 1)) continue
+    if (repeat === 'weekly' && !weekdays!.includes((new Date(day).getUTCDay() + 6) % 7 + 1)) continue
     const wall = day + (hour * 60 + minute) * 60_000
     const offsets = [wall - DAY, wall, wall + DAY].map(instant => wallTime(instant) - instant)
     const instant = Math.min(...offsets.map(zoneOffset => wall - zoneOffset).filter(candidate => wallTime(candidate) === wall))
@@ -26,8 +49,8 @@ export function nextScheduleTime({ repeat, date, time, weekdays, timeZone }, aft
   return null
 }
 
-export function createWorkflowScheduler({ store, createTask, onError = () => {} }) {
-  let startedAt, timer, running
+export function createWorkflowScheduler({ store, createTask, onError = () => {} }: SchedulerOptions) {
+  let startedAt: number | undefined, timer: NodeJS.Timeout | undefined, running: Promise<void> | null
   let stopped = false
   const abort = new AbortController()
 
@@ -36,7 +59,7 @@ export function createWorkflowScheduler({ store, createTask, onError = () => {} 
     for (const schedule of store.listDueWorkflowSchedules(now)) {
       if (stopped) break
       const occurrence = { ...schedule, nextAt: nextScheduleTime(schedule, now) }
-      if (schedule.scheduledAt <= startedAt || now - schedule.scheduledAt >= 60_000) {
+      if (schedule.scheduledAt <= startedAt! || now - schedule.scheduledAt >= 60_000) {
         store.finishWorkflowSchedule(occurrence, 'missed')
         continue
       }

@@ -90,9 +90,9 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: pnpm build
 
-      - name: Check tracked client bundle
+      - name: Check tracked plugin bundles
         if: steps.version.outputs.changed == 'true'
-        run: git diff --exit-code -- lib/client.js
+        run: git diff --exit-code -- index.js workflow/index.js lib/client.js
 
       - name: Check client bundle registration
         if: steps.version.outputs.changed == 'true'

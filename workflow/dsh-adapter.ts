@@ -1,11 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
+import type { ModelSelection } from '../src/client/lib/workflow-types.ts'
 
 export const NATIVE_POLICY = 'dsh-native/v1'
 const failure = (code, message) => Object.assign(new Error(message), { code })
 const textInput = value => typeof value === 'string' && value.trim().length > 0
 
 export class DshExecutionError extends Error {
-  constructor(code, message, evidence, cause) {
+  declare code: string
+  declare evidence: Record<string, unknown> & { completed: false }
+
+  constructor(code: string, message: string, evidence: Record<string, unknown>, cause?: unknown) {
     super(message, { cause })
     this.name = 'DshExecutionError'
     this.code = code
@@ -44,7 +48,7 @@ function resultFromLog(header, events, request) {
       outputSha256: createHash('sha256').update(text).digest('hex') } }
 }
 
-export async function readPersistedSession(persistence, sessionId, signal) {
+export async function readPersistedSession(persistence, sessionId: string, signal?: AbortSignal) {
   const handle = await persistence.open(sessionId, 'read', { signal })
   try { return { header: handle.header, events: (await handle.read(0, undefined, { signal })).events } }
   finally { await handle.close() }
@@ -57,7 +61,7 @@ export async function withStoppedNativeExecution(ctx, attempt, commit, { confirm
   const assertNoJobs = () => {
     if (jobs.list(attempt.sessionId).some(job => job.owner === attempt.sessionId && ['running', 'stopping'].includes(job.status))) busy()
   }
-  const settle = async (handle, ownership, signal) => {
+  const settle = async (handle, ownership: 'live-idle' | 'exclusive-session', signal?: AbortSignal) => {
     signal?.throwIfAborted(); assertNoJobs()
     const { events } = await handle.read(0, undefined, { signal })
     if (handle.header.id !== attempt.sessionId || attempt.executorSnapshot.cwd && handle.header.cwd !== attempt.executorSnapshot.cwd
@@ -105,7 +109,10 @@ export async function withStoppedNativeExecution(ctx, attempt, commit, { confirm
   } finally { await handle.close() }
 }
 
-export function createDshExecutor(ownerCtx, { modelSelection, installModelSelection } = {}) {
+export function createDshExecutor(ownerCtx, { modelSelection, installModelSelection }: {
+  modelSelection?: ModelSelection
+  installModelSelection?: (ctx: unknown) => unknown
+} = {}) {
   const required = (name, methods) => {
     const service = ownerCtx.get(name)
     if (!service || methods.some(method => typeof service[method] !== 'function')) {
@@ -121,7 +128,7 @@ export function createDshExecutor(ownerCtx, { modelSelection, installModelSelect
   const active = new Map(), submitted = new Set()
   let closed = false
   const runningJobs = sessionId => jobs.list(sessionId).filter(job => job.owner === sessionId && ['running', 'stopping'].includes(job.status))
-  const readRaw = (sessionId, signal) => readPersistedSession(persistence, sessionId, signal)
+  const readRaw = (sessionId: string, signal?: AbortSignal) => readPersistedSession(persistence, sessionId, signal)
   const cancel = attemptId => {
     const record = active.get(attemptId)
     if (!record) return { requested: false }
@@ -133,10 +140,11 @@ export function createDshExecutor(ownerCtx, { modelSelection, installModelSelect
   async function run({ attemptId, sessionId, requestId, prompt, cwd, modelSelection: taskModelSelection, onBound, onObserved, signal }) {
     if (![attemptId, sessionId, requestId, prompt, cwd].every(textInput)) throw new TypeError('Stage identities, prompt and working directory are required')
     const evidence = { kind: 'dsh-session-log', policy: NATIVE_POLICY, attemptId, sessionId, requestId,
-      messageId: null, turnNumber: null, completed: false, flushConfirmed: false, quiescent: false, ownedJobCount: 0, toolInvocationCount: 0 }
+      messageId: null as string | null, turnNumber: null as number | null, completed: false, flushConfirmed: false, quiescent: false, ownedJobCount: 0, toolInvocationCount: 0 }
     if (closed || submitted.has(attemptId) || submitted.has(sessionId)) throw new DshExecutionError('WORKFLOW_REUSE_FORBIDDEN', 'Stage execution already submitted or executor closed', evidence)
     submitted.add(attemptId); submitted.add(sessionId)
-    const record = { abort: new AbortController(), cancelled: false, handle: null }
+    const record: { abort: AbortController; cancelled: boolean; handle: Awaited<ReturnType<typeof agents.create>>; done?: Promise<void>; finish?: () => void } =
+      { abort: new AbortController(), cancelled: false, handle: null }
     record.done = new Promise(resolve => { record.finish = resolve })
     active.set(attemptId, record)
     const abort = () => cancel(attemptId)
@@ -186,7 +194,7 @@ export function createDshExecutor(ownerCtx, { modelSelection, installModelSelect
       } catch (error) { issue ??= error; evidence.quiescent = false }
       signal?.removeEventListener('abort', abort)
       active.delete(attemptId)
-      record.finish()
+      record.finish!()
     }
     if (record.cancelled) issue = failure('WORKFLOW_CANCELLED', 'Stage cancelled')
     if (issue || !result || !evidence.quiescent) throw new DshExecutionError(issue?.code ?? 'WORKFLOW_EXECUTION_UNKNOWN', issue?.message ?? 'Stage execution is not complete', evidence, issue)

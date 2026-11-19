@@ -20,13 +20,15 @@ Both live under **Kanban · Workflow** in the sidebar. Switch modes beside the w
 | | Kanban · Work you lead | Workflow · Work AI runs |
 | --- | --- | --- |
 | Start with | A task or a plan from a conversation | A reusable process designed with your Agent |
-| Move forward | You or your Agent update cards | AI executes stages in order |
+| Move forward | You or your Agent update cards | Create tasks manually or on a schedule. AI runs the stages in order. |
 | Keep control | Priorities, deadlines and review columns | Human approval, feedback, retry and stop |
 | Keep the context | Descriptions, screenshots, comments and activity | Stage conversations, reports and task-specific files |
 
 ## Get started
 
-Requires **DSH 0.2.2-rc.3**, with desktop and Web support. For Workflow, configure an execution model in DSH first.
+Version **1.13.1** requires **DSH 0.2.2-rc.5** and supports desktop and Web. For Workflow, configure an execution model in DSH first.
+
+> For **DSH 0.2.2-rc.3**, install `@alpacachen/dsh-kanban@1.13.0`.
 
 **Desktop** — Open **Plugins**, add `@alpacachen/dsh-kanban`, and enable it.
 
@@ -36,9 +38,7 @@ Requires **DSH 0.2.2-rc.3**, with desktop and Web support. For Workflow, configu
 dsh plugin --profile web add @alpacachen/dsh-kanban
 ```
 
-Open **Kanban · Workflow** in the sidebar and choose a workspace. Stay in **Kanban** to create your first card, or switch to **Workflow**, choose **Create workflow in chat**, and describe a process.
-
-> Workflow is included in **1.12.0**. Until that release is published, installing from npm gives you the latest published version. To try this branch, [build and install it locally](docs/testing-images.md#local-workflow-build).
+Open **Kanban · Workflow** in the sidebar and choose a workspace. Stay in **Kanban** to create your first card, or switch to **Workflow**, choose **Create in chat**, and describe a process.
 
 ## Kanban — Work you lead
 
@@ -85,6 +85,14 @@ Expand a workflow in the home list and choose **Create task**. Enter what you ne
 - **Keep files separate.** Every task has its own output directory, shared by its stages. Preview files in place, open the directory, or delete deliverables with confirmation.
 - **Resume deliberately.** Retry a failed stage after checking the cause. After a crash, reconcile the old execution before retrying; completed upstream stages are retained.
 
+### Schedule task creation
+
+Open a workflow and click the **Schedule** clock icon in the top right. Each workflow can have one schedule that runs **once, daily, or on selected days of the week**. Saving activates it in the time zone shown in the dialog.
+
+At each scheduled time, the DSH Host creates and queues a regular task using the latest saved workflow definition. The task list shows its scheduled time. The same execution and human review steps apply.
+
+The schedule works with the page closed while the DSH Host is running. Occurrences missed while the host is offline are skipped. Choose **Remove schedule** to stop future triggers. Existing tasks continue as usual.
+
 ### Improve the process from its history
 
 Choose **Optimize from history** to start a conversation with an analysis prompt. The Agent can inspect previous task results, review feedback, stage conversations and recorded timings. Changes apply to future tasks; existing tasks keep their original workflow version.
@@ -106,7 +114,7 @@ If DSH is forcibly killed, previously launched commands can survive on macOS. Ch
 | You want to… | Read |
 | --- | --- |
 | Use cards, search, images and chat handoff | [Kanban guide](docs/guide.md) |
-| Create, run, review and improve workflows | [Workflow guide](docs/workflow-guide.en.md) |
+| Create, schedule, review and improve workflows | [Workflow guide](docs/workflow-guide.en.md) |
 | Understand board tools | [Board tool reference](docs/guide.md#agent-tool-reference) |
 | Back up your data | [Kanban data](docs/guide.md#data-and-backups) · [Workflow data](docs/workflow-guide.en.md#data-and-backups) |
 | Build and validate the plugin | [Development checks](docs/testing-images.md) · [Workflow acceptance record](docs/workflow-validation.md) |

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { validateWorkflowCommand } from './review-api.js'
+import { validateWorkflowCommand } from './review-api.ts'
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }) }
@@ -47,7 +47,7 @@ const sessionSelection = exec => {
 
 /** Register ordinary management actions, never publication, permissions, or review authority. */
 export function mountWorkflowManagementTools(ctx, core) {
-  const disposers = []
+  const disposers: (() => void)[] = []
   const inWorkspace = (value, workspace) => {
     if (!value || value.workspaceId !== workspace.id) fail('WF_WORKSPACE_MISMATCH', 'This item does not belong to the current workspace.')
     return value
@@ -97,7 +97,7 @@ export function mountWorkflowManagementTools(ctx, core) {
       const workflow = inWorkspace(await core.getWorkflow(id(args.workflowId)), workspace)
       const overview = await core.listTasks(workspace.id)
       return { workflowId: workflow.id, currentVersionId: workflow.versionId, currentVersionNumber: workflow.versionNumber,
-        tasks: overview.tasks.filter(task => task.workflowId === workflow.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) }
+        tasks: overview.tasks.filter(task => task.workflowId === workflow.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) }
     })
     register('workflow_create', 'Create a reusable Workflow in the current project. It is immediately available for tasks; creating a workflow does not execute it.', {
       requestId, name: { type: 'string', description: 'Workflow name, at most 200 characters.' },

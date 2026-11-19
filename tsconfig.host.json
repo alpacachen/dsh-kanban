@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
+    // shortcut: unchecked Host service and legacy data shapes, tighten inference as those contracts are typed.
+    "noImplicitAny": false,
+    "useUnknownInCatchVariables": false
+  },
+  "include": ["index.ts", "search.ts", "workflow/*.ts"]
+}

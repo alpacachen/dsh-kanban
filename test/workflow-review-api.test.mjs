@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import { mountWorkflowReviewApi, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.js'
+import { mountWorkflowReviewApi, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.ts'
 
 // Reuse the existing development dependency, without installation or profile access.
 // Peer/Invocation fixtures below simulate Gateway admission; they are not real credentials.

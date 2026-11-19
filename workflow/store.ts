@@ -4,7 +4,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
-import { nextScheduleTime } from './schedule.js'
+import type { WorkflowStage } from '../src/client/lib/workflow-types.ts'
+import { nextScheduleTime, type DueWorkflowSchedule, type ScheduledOccurrence, type ScheduleOutcome } from './schedule.ts'
 
 const APPLICATION_ID = 0x44535746 // DSWF; never adopt another application's DB.
 const SCHEMA_VERSION = 2
@@ -24,11 +25,8 @@ const NATIVE_POLICY = 'dsh-native/v1'
 const PROCESS_STOP_POLICY = 'single-process-journal/v1'
 
 
-function fail(code, message) {
-  const error = new Error(message)
-  error.code = `WF_${code}`
-  error.workflowValidation = true
-  throw error
+function fail(code: string, message: string): never {
+  throw Object.assign(new Error(message), { code: `WF_${code}`, workflowValidation: true })
 }
 function check(condition, code, message) { if (!condition) fail(code, message) }
 function object(value, label) {
@@ -113,7 +111,7 @@ function validateDefinition(input, { legacy = false } = {}) {
 export function validateWorkflowDefinition(definition) { return validateDefinition(definition) }
 
 // Model context is Host-owned and stays outside command fingerprints, so retries reuse the original receipt.
-function inheritStageModels(definition, selection, previous = []) {
+function inheritStageModels(definition, selection, previous: WorkflowStage[] = []) {
   if (!selection) return definition
   return validateWorkflowDefinition({ ...definition, stages: definition.stages.map(stage => {
     if (stage.kind !== 'agent') return stage
@@ -151,7 +149,7 @@ export function openWorkflowStore(path) {
     }
     const stat = lstatSync(target)
     check(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1, 'DB_PATH', 'Database must be a regular, non-symlink, non-hardlinked file')
-    if (process.platform !== 'win32') check((stat.mode & 0o077) === 0 && stat.uid === process.getuid(), 'DB_PERMISSIONS', 'Database must be owned by this user with owner-only permissions')
+    if (process.platform !== 'win32') check((stat.mode & 0o077) === 0 && stat.uid === process.getuid!(), 'DB_PERMISSIONS', 'Database must be owned by this user with owner-only permissions')
     path = realpathSync(target)
   }
   let db
@@ -280,13 +278,13 @@ export function openWorkflowStore(path) {
     const { enabled, ...config } = JSON.parse(schedule.config_json)
     return enabled === false ? null : { ...config, nextAt: schedule.next_at, last: schedule.last_json && JSON.parse(schedule.last_json) }
   }
-  function finishWorkflowSchedule(occurrence, outcome, errorCode = null) {
+  function finishWorkflowSchedule(occurrence: ScheduledOccurrence, outcome: ScheduleOutcome, errorCode: string | null = null) {
     const { workflowId, revision, scheduledAt, nextAt, timeZone } = occurrence
     return run('UPDATE wf_schedules SET next_at=?,last_json=? WHERE id=? AND revision=? AND next_at=?',
       nextAt, json({ scheduledAt, timeZone, outcome, errorCode }), workflowId, revision, scheduledAt).changes === 1
   }
 
-  function retryBlock(task) {
+  function retryBlock(task): [code: string, message: string] | null {
     if (task.state !== 'needs_attention') return ['NOT_NEEDS_ATTENTION', 'Only a task needing attention can retry']
     if (get("SELECT id FROM wf_attempts WHERE task_id=? AND state='unknown'", task.id))
       return ['RETRY_UNKNOWN', 'Unknown execution must be reconciled; stopping alone does not authorize retry']
@@ -299,7 +297,7 @@ export function openWorkflowStore(path) {
       return ['INVALID_STAGE', 'Retry requires the current open agent stage']
     return null
   }
-  function record(taskId, kind, data, actor = SYSTEM, changes, requestId = null) {
+  function record(taskId, kind, data, actor = SYSTEM, changes?, requestId = null) {
     let task = row('wf_tasks', taskId)
     if (changes) {
       check(!TERMINAL.has(task.state), 'TASK_TERMINAL', 'Terminal task cannot change')
@@ -560,7 +558,7 @@ export function openWorkflowStore(path) {
     nextWorkflowScheduleTime() {
       return get('SELECT next_at FROM wf_schedules WHERE next_at IS NOT NULL ORDER BY next_at LIMIT 1')?.next_at
     },
-    listDueWorkflowSchedules(now) {
+    listDueWorkflowSchedules(now: number): DueWorkflowSchedule[] {
       return all(`SELECT s.*, w.workspace_id FROM wf_schedules s JOIN wf_workflows w ON w.id=s.id
         WHERE s.next_at<=? ORDER BY s.next_at,s.id`, now).map(schedule => ({
         ...JSON.parse(schedule.config_json), workflowId: schedule.id, workspaceId: schedule.workspace_id,
@@ -637,7 +635,7 @@ export function openWorkflowStore(path) {
         version: { id: versionId, workflowId: id, versionNumber: 1, definition, definitionHash: hash(definition) } }
       })
     },
-    createTask(payload, actor, occurrence) {
+    createTask(payload, actor, occurrence?: ScheduledOccurrence) {
       exactKeys(payload, ['requestId', 'workflowId', 'expectedVersionId', 'title', 'input', 'executionConfig'], 'createTask')
       return command('createTask', payload, actor, who => {
         exactKeys(payload.input, ['text'], 'input')
@@ -721,7 +719,7 @@ export function openWorkflowStore(path) {
         check(!SETTLED.has(attempt.state), 'ATTEMPT_TERMINAL', 'Settled attempt observations are immutable')
         if (payload.sessionId !== undefined) check(payload.sessionId === attempt.session_id, 'CORRELATION_MISMATCH', 'Session cannot change')
         if (payload.requestId !== undefined) check(payload.requestId === attempt.prompt_request_id, 'CORRELATION_MISMATCH', 'Request cannot change')
-        const changes = {}
+        const changes: Record<string, string | number> = {}
         const fields = { messageId: 'message_id', turnNumber: 'turn_number', lastObservedSeq: 'last_observed_seq', acceptedAt: 'accepted_at', claimedAt: 'claimed_at' }
         for (const [key, column] of Object.entries(fields)) {
           if (payload[key] === undefined) continue
@@ -951,7 +949,7 @@ export function openWorkflowStore(path) {
     recoverInterrupted(ownerInstanceId) {
       text(ownerInstanceId, 'ownerInstanceId', 200)
       return transaction(() => {
-        const recovered = []
+        const recovered: ReturnType<typeof getTask>[] = []
         for (const attempt of all("SELECT * FROM wf_attempts WHERE state IN ('prepared','running')")) {
           if (JSON.parse(attempt.executor_snapshot_json)._workflowOwner.ownerInstanceId === ownerInstanceId) continue
           const task = row('wf_tasks', attempt.task_id)

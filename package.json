@@ -1,10 +1,10 @@
 {
   "name": "@alpacachen/dsh-kanban",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "description": "Human-led Kanban and AI-run workflows for DeepSeek Harness, with native execution, human review and task artifacts.",
   "type": "module",
   "engines": {
-    "dsh": "0.2.2-rc.3"
+    "dsh": "0.2.2-rc.5"
   },
   "main": "index.js",
   "exports": {
@@ -18,8 +18,8 @@
   },
   "files": [
     "index.js",
-    "search.js",
-    "workflow",
+    "workflow/index.js",
+    "workflow/locale/*.json",
     "docs/workflow-model.schema.sql",
     "docs/workflow-validation.md",
     "docs/workflow-guide.md",
@@ -45,7 +45,7 @@
     "check:pipeline": "node scripts/check-pipeline.mjs",
     "test:unit": "vitest run",
     "test": "pnpm test:unit && pnpm check:schema && pnpm check:pipeline",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.host.json"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -68,21 +68,21 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
-    "@deepseek-ai/dsh-api-session-controller": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-api-workspace-controller": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-locale": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-store": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-chat": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-layout": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-model-selection": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-session": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-sidebar": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-workspace": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-api-workspace-controller": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-locale": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-store": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-chat": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-layout": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-model-selection": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-session": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-workspace": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.5",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.5",
     "@types/node": "^26.6.5",
@@ -138,9 +138,9 @@
       ]
     },
     "compatibility": {
-      "dsh": "0.2.2-rc.3",
+      "dsh": "0.2.2-rc.5",
       "dshReleases": {
-        "0.2.2-rc.3": "compatible"
+        "0.2.2-rc.5": "compatible"
       },
       "profiles": [
         "web",

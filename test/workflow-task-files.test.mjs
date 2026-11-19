@@ -4,10 +4,10 @@ import { mkdtemp, readFile, rm, symlink, writeFile, mkdir, lstat } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { ensureTaskDirectory, listTaskFiles, taskFilePath, deleteTaskFile, deleteTaskDirectory, saveStageResult } from '../workflow/task-files.js'
-import { openWorkflowStore } from '../workflow/store.js'
-import { createWorkflowCore } from '../workflow/index.js'
-import { createWorkflowRunner, PROJECT_POLICY } from '../workflow/runner.js'
+import { ensureTaskDirectory, listTaskFiles, taskFilePath, deleteTaskFile, deleteTaskDirectory, saveStageResult } from '../workflow/task-files.ts'
+import { openWorkflowStore } from '../workflow/store.ts'
+import { createWorkflowCore } from '../workflow/index.ts'
+import { createWorkflowRunner, PROJECT_POLICY } from '../workflow/runner.ts'
 
 const roots = [], stores = [], runners = []
 afterEach(async () => { for (const runner of runners.splice(0)) await runner.dispose(); for (const store of stores.splice(0)) store.close(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
@@ -45,14 +45,15 @@ describe('Task artifact directories', () => {
     expect(await readFile(join(b.directory, 'report.txt'), 'utf8')).toBe('two')
     expect(a.files.every(file => file.kind === 'file')).toBe(true)
     expect((await listTaskFiles(store.getTask(first.id), { includeStageResults: true })).files.filter(file => file.kind === 'stage-result')).toHaveLength(2)
-    expect(calls.filter(call => call.cwd === a.directory)).toHaveLength(2)
-    expect(calls[1].prompt).not.toContain('Done one first')
-    expect(calls[1].prompt).toContain('"needsRead":true')
+    const stages = calls.filter(call => call.cwd === a.directory)
+    expect(stages).toHaveLength(2)
+    expect(stages[1].prompt).not.toContain('Done one first')
+    expect(stages[1].prompt).toContain('"needsRead":true')
     const reportPath = `.workflow-results/${store.getTask(first.id).attempts[0].id}.md`
-    expect(calls[1].prompt).toContain(reportPath)
+    expect(stages[1].prompt).toContain(reportPath)
     expect(await readFile(join(a.directory, reportPath), 'utf8')).toBe('Done one first')
-    expect(calls[0].prompt).toContain(a.directory)
-    expect(calls[0].prompt).toContain(root)
+    expect(stages[0].prompt).toContain(a.directory)
+    expect(stages[0].prompt).toContain(root)
     let logReads = 0
     const core = createWorkflowCore({ store, runner, attachments, workspaceRegistry: {}, readSessionLog: async () => { logReads++; throw Error('missing') } })
     await expect(core.getStageTrace({ taskId: first.id, stageId: 'first', attemptId: store.getTask(second.id).attempts[0].id })).rejects.toMatchObject({ code: 'WF_TRACE_NOT_FOUND' })

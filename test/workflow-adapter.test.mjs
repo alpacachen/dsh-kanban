@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { createDshExecutor, NATIVE_POLICY } from '../workflow/dsh-adapter.js'
+import { createDshExecutor, NATIVE_POLICY } from '../workflow/dsh-adapter.ts'
 const input = () => ({ attemptId: randomUUID(), sessionId: randomUUID(), requestId: randomUUID(), prompt: 'Research this project', cwd: '/tmp/workflow-fixture' })
 function harness({ hold = false, endReason = 'completed', endError, failDispose = false, failFlush = false, corrupt = false } = {}) {
   const stored = new Map(), live = new Map(), listeners = new Set()

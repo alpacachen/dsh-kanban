@@ -13,7 +13,7 @@ import { LabelDialog } from "./components/LabelDialog"
 import { KanbanCard } from "./components/SortableCard"
 import { SearchToolbar } from "./components/ui/search-toolbar"
 import { FilterMenu } from "./components/ui/filter-menu"
-import { matchCardSearch } from "../../search.js"
+import { matchCardSearch } from "../../search"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,

@@ -1,4 +1,4 @@
--- Workflow schema v1: canonical bootstrap used by workflow/store.js.
+-- Workflow schema v1: canonical bootstrap used by workflow/store.ts.
 -- Independent of Kanban. Verified with in-memory and persistent SQLite tests.
 -- This is not an upgrade migration; domain transitions require the store command protocol.
 PRAGMA foreign_keys = ON;

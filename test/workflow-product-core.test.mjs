@@ -4,10 +4,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { openWorkflowStore } from '../workflow/store.js'
-import { createWorkflowCore } from '../workflow/index.js'
-import { createWorkflowRunner, PROJECT_POLICY } from '../workflow/runner.js'
-import { createWorkflowScheduler } from '../workflow/schedule.js'
+import { openWorkflowStore } from '../workflow/store.ts'
+import { createWorkflowCore } from '../workflow/index.ts'
+import { createWorkflowRunner, PROJECT_POLICY } from '../workflow/runner.ts'
+import { createWorkflowScheduler } from '../workflow/schedule.ts'
 
 // Real Core + SQLite + runner/generator. Native executor, attachment objects and
 // capabilities are isolated fixtures: no model, profile, network or OS sandbox probe.

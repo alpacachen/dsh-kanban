@@ -1,10 +1,12 @@
+import type { ModelSelection, WorkflowScheduleConfig } from '../src/client/lib/workflow-types.ts'
+
 export const WORKFLOW_REVIEW_NAMESPACE = 'workflowReview'
 
 const USER_ACTOR = Object.freeze({ kind: 'user', id: 'owner', source: 'workflow-review-ui' })
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const HASH = /^(?:sha256:)?[a-f0-9]{64}$/
 const DECISIONS = new Set(['approved', 'returned', 'terminated'])
-const REVIEW_FIELDS = new Set([
+const REVIEW_FIELDS = new Set<PropertyKey>([
   'taskId', 'reviewId', 'subjectHash', 'expectedRevision', 'requestId', 'decision', 'feedback',
 ])
 
@@ -19,8 +21,29 @@ const COMMAND_FIELDS = {
   updateWorkflow: ['requestId', 'workflowId', 'expectedRevision', 'name', 'definition'],
   saveWorkflowSchedule: ['requestId', 'workflowId', 'expectedRevision', 'schedule'],
   deleteWorkflow: ['requestId', 'workflowId', 'expectedRevision'],
+} as const satisfies Record<string, readonly (keyof WorkflowCommandRequest)[]>
+type WorkflowCommandRequest = {
+  requestId: string
+  workspaceId?: string
+  workflowId?: string
+  taskId?: string
+  expectedRevision?: number
+  expectedVersionId?: string
+  confirmedStopped?: boolean
+  path?: string
+  expectedVersion?: string
+  text?: string
+  title?: string
+  modelSelection?: ModelSelection
+  name?: string
+  definition?: Record<string, unknown>
+  schedule?: (WorkflowScheduleConfig & { text?: string }) | null
 }
-const commandInvalid = () => {
+type CommandName = keyof typeof COMMAND_FIELDS
+type ParsedCommand<M extends CommandName> = WorkflowCommandRequest & Required<Pick<WorkflowCommandRequest,
+  Exclude<(typeof COMMAND_FIELDS)[M][number], 'expectedVersionId' | 'modelSelection' | 'confirmedStopped' | (M extends 'createTask' ? 'workflowId' : never)>>>
+
+function commandInvalid(): never {
   throw Object.assign(new Error('Invalid workflow request.'), { code: 'WF_INVALID_INPUT' })
 }
 const commandObject = (value, allowed) => {
@@ -30,24 +53,24 @@ const commandObject = (value, allowed) => {
       || !Object.prototype.hasOwnProperty.call(Object.getOwnPropertyDescriptor(value, key), 'value'))) commandInvalid()
   return value
 }
-const commandId = (value) => {
+const commandId = (value: unknown): string => {
   if (typeof value !== 'string' || !ID.test(value)) commandInvalid()
   return value
 }
-const commandText = (value, max, allowEmpty = false) => {
+const commandText = (value: unknown, max: number, allowEmpty = false): string => {
   if (typeof value !== 'string' || value.length > max || (!allowEmpty && !value.trim())) commandInvalid()
   return value
 }
-const commandSelection = (value) => {
+const commandSelection = (value: unknown): ModelSelection => {
   const selection = commandObject(value, ['provider', 'model', 'reasoningEffort'])
   commandText(selection.provider, 200)
   commandText(selection.model, 200)
   if (selection.reasoningEffort !== undefined) commandText(selection.reasoningEffort, 80, true)
   return { ...selection }
 }
-const commandDefinition = (value) => {
+const commandDefinition = (value: unknown): Record<string, unknown> => {
   const definition = commandObject(value, ['description', 'inputLabel', 'inputHint', 'stages', 'permissions'])
-  for (const [field, max] of [['description', 4000], ['inputLabel', 200], ['inputHint', 4000]]) {
+  for (const [field, max] of [['description', 4000], ['inputLabel', 200], ['inputHint', 4000]] as const) {
     if (definition[field] !== undefined) commandText(definition[field], max, true)
   }
   // The store validates complete stage definitions before saving.
@@ -60,7 +83,7 @@ const commandDefinition = (value) => {
   return current
 }
 
-const commandSchedule = value => {
+const commandSchedule = (value: unknown): WorkflowCommandRequest['schedule'] => {
   if (value === null) return null
   const schedule = commandObject(value, ['repeat', 'date', 'time', 'weekdays', 'timeZone', 'text'])
   const { repeat, date, time, weekdays, timeZone, text } = schedule
@@ -83,18 +106,19 @@ const commandSchedule = value => {
 }
 
 /** Input validation only: it neither grants authority nor makes user-only commands agent-callable. */
-export function validateWorkflowCommand(method, value, scheduled = false) {
+export function validateWorkflowCommand<M extends CommandName>(method: M, value: unknown, scheduled?: boolean): ParsedCommand<M>
+export function validateWorkflowCommand(method: string, value: unknown, scheduled = false): WorkflowCommandRequest {
   if (typeof method !== 'string' || !Object.prototype.hasOwnProperty.call(COMMAND_FIELDS, method)) commandInvalid()
-  const request = commandObject(value, COMMAND_FIELDS[method])
-  const parsed = {}
+  const fields: readonly string[] = COMMAND_FIELDS[method as CommandName]
+  const request = commandObject(value, fields)
   // Generation is a read-only preview, so it may omit an idempotency key.
-  parsed.requestId = commandId(request.requestId)
-  if (COMMAND_FIELDS[method].includes('workspaceId')) parsed.workspaceId = commandId(request.workspaceId)
-  if (COMMAND_FIELDS[method].includes('workflowId') && (method !== 'createTask' || request.workflowId !== undefined)) {
+  const parsed: WorkflowCommandRequest = { requestId: commandId(request.requestId) }
+  if (fields.includes('workspaceId')) parsed.workspaceId = commandId(request.workspaceId)
+  if (fields.includes('workflowId') && (method !== 'createTask' || request.workflowId !== undefined)) {
     parsed.workflowId = commandId(request.workflowId)
   }
-  if (COMMAND_FIELDS[method].includes('taskId')) parsed.taskId = commandId(request.taskId)
-  if (COMMAND_FIELDS[method].includes('expectedRevision')) {
+  if (fields.includes('taskId')) parsed.taskId = commandId(request.taskId)
+  if (fields.includes('expectedRevision')) {
     if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < (method === 'saveWorkflowSchedule' ? 0 : 1)) commandInvalid()
     parsed.expectedRevision = request.expectedRevision
   }
@@ -205,7 +229,7 @@ export function mountWorkflowReviewApi(ctx, core, protocol) {
     try { return validateWorkflowCommand(method, request) } catch { invalid('request') }
   }
 
-  const initializers = []
+  const initializers: ((this: WorkflowReviewApi) => void)[] = []
   class WorkflowReviewApi extends TypertRemoteService {
     static inject = ['connection', 'typertGateway']
 

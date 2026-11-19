@@ -84,6 +84,6 @@ Kanban data is separate; see its [backup guide](guide.md#data-and-backups). Dele
 
 ## Compatibility and validation
 
-This release targets **DSH 0.2.2-rc.3**. Host changes require a plugin reload; refreshing the frontend alone does not replace loaded backend modules. Models, tools and authorization remain DSH-owned.
+This release targets **DSH 0.2.2-rc.5**. Host changes require a plugin reload; refreshing the frontend alone does not replace loaded backend modules. Models, tools and authorization remain DSH-owned.
 
 Chinese and English interface text and dates follow DSH's language. User-authored names, prompts, feedback and saved outputs remain in their original language. See the [acceptance record](workflow-validation.md) for the checks performed and the macOS crash-recovery boundary; Windows and Linux native acceptance are not claimed.

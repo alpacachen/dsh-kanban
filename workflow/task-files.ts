@@ -1,14 +1,23 @@
-import { constants } from 'node:fs'
+import { constants, type Stats } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readdir, realpath, rename, rm, unlink } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
+import type { WorkflowDefinition, WorkflowTaskFile, WorkflowTaskFiles } from '../src/client/lib/workflow-types.ts'
 
-const fail = () => { throw Object.assign(new Error('任务产物目录或文件不可用，请检查目录后重试。'), { code: 'WF_TASK_FILES_UNAVAILABLE' }) }
-const fileVersion = stat => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`
+type TaskDirectory = { id: string; rootPath: string }
+type TaskFileSource = TaskDirectory & {
+  attempts?: readonly { id: string; visitId: string }[]
+  visits?: readonly { id: string; stageId: string }[]
+  definition?: Pick<WorkflowDefinition, 'stages'>
+  effectiveArtifacts?: readonly { attemptId: string }[]
+}
+
+function fail(): never { throw Object.assign(new Error('任务产物目录或文件不可用，请检查目录后重试。'), { code: 'WF_TASK_FILES_UNAVAILABLE' }) }
+const fileVersion = (stat: Stats) => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`
 const safeId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(value)
 
 /** Only clean directories after the durable deletion receipt has stopped and hidden the Task. */
-export async function deleteTaskDirectory(task) {
+export async function deleteTaskDirectory(task: TaskDirectory) {
   if (!safeId(task.id)) fail()
   try {
     if (await realpath(task.rootPath) !== task.rootPath) fail()
@@ -24,7 +33,7 @@ export async function deleteTaskDirectory(task) {
 }
 
 /** Task identities come from the store, never from a caller-supplied filesystem root. */
-export async function ensureTaskDirectory(task) {
+export async function ensureTaskDirectory(task: TaskDirectory): Promise<string> {
   if (!safeId(task.id)) fail()
   try {
     const root = await realpath(task.rootPath)
@@ -41,7 +50,7 @@ export async function ensureTaskDirectory(task) {
 }
 
 /** Do not follow directory links into another Task or out of the project. */
-export async function taskFilePath(task, filePath) {
+export async function taskFilePath(task: TaskDirectory, filePath: string): Promise<{ directory: string; path: string }> {
   const directory = await ensureTaskDirectory(task)
   if (typeof filePath !== 'string' || !filePath || filePath.includes('\\') || filePath.includes('\0')) fail()
   const path = resolve(directory, filePath), local = relative(directory, path)
@@ -57,9 +66,9 @@ export async function taskFilePath(task, filePath) {
   } catch { fail() }
 }
 
-export async function listTaskFiles(task, { includeStageResults = false } = {}) {
-  const directory = await ensureTaskDirectory(task), files = []
-  async function walk(path) {
+export async function listTaskFiles(task: TaskFileSource, { includeStageResults = false } = {}): Promise<WorkflowTaskFiles> {
+  const directory = await ensureTaskDirectory(task), files: WorkflowTaskFile[] = []
+  async function walk(path: string) {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       const child = join(path, entry.name)
       if (!includeStageResults && path === directory && entry.name === '.workflow-results') continue
@@ -76,7 +85,7 @@ export async function listTaskFiles(task, { includeStageResults = false } = {}) 
           const attempt = stageResult && task.attempts?.find(attempt => `${attempt.id}.md` === entry.name)
           const visit = attempt && task.visits?.find(visit => visit.id === attempt.visitId)
           const stage = visit && task.definition?.stages.find(stage => stage.id === visit.stageId)
-          files.push({ path: name, name: entry.name, version: fileVersion(stat), byteLength: stat.size, updatedAt: stat.mtimeMs, kind: stageResult ? 'stage-result' : 'file', ...(stage ? { stageTitle: stage.title, effective: task.effectiveArtifacts?.some(artifact => artifact.attemptId === attempt.id) ?? false } : {}) })
+          files.push({ path: name, name: entry.name, version: fileVersion(stat), byteLength: stat.size, updatedAt: stat.mtimeMs, kind: stageResult ? 'stage-result' : 'file', ...(stage ? { stageTitle: stage.title, effective: task.effectiveArtifacts?.some(artifact => artifact.attemptId === attempt!.id) ?? false } : {}) })
         } catch (error) { if (error.code !== 'ENOENT') throw error }
       }
     }
@@ -86,7 +95,7 @@ export async function listTaskFiles(task, { includeStageResults = false } = {}) 
 }
 
 /** The attachment is immutable; this reserved copy can be repaired from verified bytes. */
-export async function saveStageResult(task, attemptId, text) {
+export async function saveStageResult(task: TaskDirectory, attemptId: string, text: string) {
   if (!safeId(attemptId)) fail()
   const directory = await ensureTaskDirectory(task), results = join(directory, '.workflow-results')
   try {
@@ -117,7 +126,7 @@ export async function saveStageResult(task, attemptId, text) {
 
 
 /** Conditional deletion of a single regular file; canonical history attachments stay intact. */
-export async function deleteTaskFile(task, filePath, expectedVersion) {
+export async function deleteTaskFile(task: TaskDirectory, filePath: string, expectedVersion: string) {
   if (typeof filePath === 'string' && filePath.split('/')[0] === '.workflow-results') {
     throw Object.assign(new Error('阶段执行报告是只读历史，请在阶段详情中查看。'), { code: 'WF_FILE_READ_ONLY' })
   }
