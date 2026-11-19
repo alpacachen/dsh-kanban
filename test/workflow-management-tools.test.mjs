@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { mountWorkflowManagementTools } from '../workflow/management-tools.js'
+import { mountWorkflowManagementTools } from '../workflow/management-tools.ts'
 
 const names = ['workflow_list', 'workflow_list_tasks', 'workflow_create', 'workflow_update', 'workflow_create_task', 'workflow_get_task', 'workflow_get_stage_trace']
 const definition = { stages: [] }
@@ -290,7 +290,7 @@ describe('Workflow agent management tools', () => {
         })().catch(error => { console.error(error); process.exitCode = 1; });
       `
       const child = spawnSync(process.env.DSH_NODE_EXECUTABLE, ['-e', script,
-        fileURLToPath(new URL('../workflow/management-tools.js', import.meta.url))], {
+        fileURLToPath(new URL('../workflow/management-tools.ts', import.meta.url))], {
         env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 15000,
       })
       expect(child.error).toBeUndefined()

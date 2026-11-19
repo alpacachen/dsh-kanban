@@ -4,9 +4,9 @@ import { chmodSync, mkdtempSync, realpathSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { openWorkflowStore } from '../workflow/store.js'
-import { createWorkflowCore } from '../workflow/index.js'
-import { createWorkflowScheduler, nextScheduleTime } from '../workflow/schedule.js'
+import { openWorkflowStore } from '../workflow/store.ts'
+import { createWorkflowCore } from '../workflow/index.ts'
+import { createWorkflowScheduler, nextScheduleTime } from '../workflow/schedule.ts'
 
 const USER = { kind: 'user', id: 'fixture-owner' }
 const config = { repeat: 'weekly', weekdays: [1, 2, 3, 4, 5], timeZone: 'Asia/Shanghai', time: '09:00' }

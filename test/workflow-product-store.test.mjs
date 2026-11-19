@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { openWorkflowStore, validateWorkflowDefinition } from '../workflow/store.js'
+import { openWorkflowStore, validateWorkflowDefinition } from '../workflow/store.ts'
 
 const USER = { kind: 'user', id: 'isolated-product-test' }
 const AGENT = { kind: 'agent', id: 'chat-agent' }

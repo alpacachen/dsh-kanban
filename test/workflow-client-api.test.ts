@@ -110,7 +110,7 @@ describe("Workflow shared Gateway transport", () => {
     await expect(pending).rejects.toMatchObject({ name: "AbortError" })
   })
 
-  // Runs the real installed 0.2.2-rc.3 Connection + Gateway in a fresh Cordis root.
+  // Runs the real installed 0.2.2-rc.5 Connection + Gateway in a fresh Cordis root.
   // Only auth admission is a synthetic boolean fixture: no credentials/profile,
   // HTTP listener, live browser, or live workflow state is used or accessed.
   it.skipIf(!process.env.DSH_INSTALL_DIR || !process.env.DSH_NODE_EXECUTABLE)(
@@ -178,7 +178,7 @@ describe("Workflow shared Gateway transport", () => {
       `
       vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
         const child = spawnSync(process.env.DSH_NODE_EXECUTABLE!, ["-e", script, String(init.body), url,
-          fileURLToPath(new URL("../workflow/review-api.js", import.meta.url))], {
+          fileURLToPath(new URL("../workflow/review-api.ts", import.meta.url))], {
           env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, encoding: "utf8", timeout: 15000,
         })
         expect(child.error).toBeUndefined()

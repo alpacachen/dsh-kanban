@@ -5,10 +5,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, realpath, rename, rm, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { openWorkflowStore } from '../workflow/store.js'
-import { createWorkflowRunner } from '../workflow/runner.js'
-import { createWorkflowCore } from '../workflow/index.js'
-import { ensureTaskDirectory, listTaskFiles, deleteTaskFile, saveStageResult } from '../workflow/task-files.js'
+import { openWorkflowStore } from '../workflow/store.ts'
+import { createWorkflowRunner } from '../workflow/runner.ts'
+import { createWorkflowCore } from '../workflow/index.ts'
+import { ensureTaskDirectory, listTaskFiles, deleteTaskFile, saveStageResult } from '../workflow/task-files.ts'
 const USER = { kind: 'user', id: 'regression-owner' }, MODEL = { provider: 'fixture', model: 'fixture' }
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const hosts = []

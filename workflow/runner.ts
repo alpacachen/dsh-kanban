@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
-import { NATIVE_POLICY } from './dsh-adapter.js'
-import { deleteTaskDirectory, ensureTaskDirectory, listTaskFiles, saveStageResult } from './task-files.js'
+import { NATIVE_POLICY } from './dsh-adapter.ts'
+import { deleteTaskDirectory, ensureTaskDirectory, listTaskFiles, saveStageResult } from './task-files.ts'
 
 export const EXECUTOR_POLICY = 'workflow-poc/no-tools-v1'
 export const PROJECT_POLICY = 'workflow-project/v1'
@@ -37,7 +37,7 @@ export async function readArtifactText(attachments, artifact) {
   if (ref?.attachmentId !== `sha256:${artifact.contentHash}` || ref.bytes !== artifact.byteLength || typeof ref.name !== 'string') {
     throw failure('WF_ARTIFACT_INVALID', 'The artifact reference does not match its manifest.')
   }
-  const chunks = []
+  const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of attachments.readFileStream(ref)) {
     size += chunk.byteLength
@@ -92,15 +92,16 @@ export function makeStagePrompt(task, previousStages, outputDirectory, artifacts
 const MAX_CONCURRENT_STAGES = 2
 
 /** Host-owned scheduler. It never lives in a request or browser component. */
-export function createWorkflowRunner({ store, executor, attachments, workspaceRegistry, runtimeSnapshot = {}, onError = () => {}, onChange = () => {}, ownerInstanceId = randomUUID() }) {
+export function createWorkflowRunner({ store, executor, attachments, workspaceRegistry, runtimeSnapshot = {}, onError = (_error: unknown) => {}, onChange = () => {}, ownerInstanceId = randomUUID() }) {
   let stopped = false
   const active = new Map()
-  let pumping = null
+  let pumping: Promise<void> | null = null
   let pumpAgain = false
   let lastError = null
   let started = false
   const settlements = new Map()
-  let retryTimer, cleaning = null, flushing = null, cleanupPending = 0
+  let retryTimer: NodeJS.Timeout | undefined
+  let cleaning: Promise<boolean> | null = null, flushing: Promise<void> | null = null, cleanupPending = 0
   const report = (error) => {
     lastError = error?.code ?? 'WF_RUNNER_ERROR'
     try { onError(error) } catch { /* Observation must not change committed state. */ }
@@ -108,7 +109,7 @@ export function createWorkflowRunner({ store, executor, attachments, workspaceRe
   const notify = () => { try { onChange() } catch (error) { report(error) } }
   function retryLater() {
     if (stopped || retryTimer) return
-    retryTimer = setTimeout(() => { retryTimer = null; void kick() }, 1000)
+    retryTimer = setTimeout(() => { retryTimer = undefined; void kick() }, 1000)
     retryTimer.unref?.()
   }
   function flushSettlements() {
@@ -280,7 +281,7 @@ export function createWorkflowRunner({ store, executor, attachments, workspaceRe
         continue
       }
       const controller = new AbortController()
-      const execution = { attemptId: attempt.id, controller, done: null }
+      const execution = { attemptId: attempt.id, controller, done: null as Promise<void> | null }
       active.set(task.id, execution)
       execution.done = execute(attempt, task, controller.signal)
       notify()

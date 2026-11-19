@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { mkdir } from "node:fs/promises"
+import { mkdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
@@ -28,17 +28,7 @@ const expected = [
   "docs/readme/board-en.png",
   "docs/readme/board-zh.png",
   "index.js",
-  "search.js",
   "workflow/index.js",
-  "workflow/store.js",
-  "workflow/dsh-adapter.js",
-  "workflow/runner.js",
-  "workflow/schedule.js",
-  "workflow/review-api.js",
-  "workflow/management-tools.js",
-  "workflow/recovery.js",
-  "workflow/task-files.js",
-  "workflow/stage-trace.js",
   "workflow/locale/en.json",
   "workflow/locale/zh.json",
   "docs/workflow-model.schema.sql",
@@ -56,5 +46,9 @@ const expected = [
 assert.deepEqual(files, expected, "npm package contents changed; update the allowlist deliberately")
 assert.equal(result[0].entryCount, expected.length, "npm package entry count must match the allowlist")
 assert.ok(result[0].size > 0, "npm package must contain bytes")
+
+const workflowHost = await readFile(new URL("../workflow/index.js", import.meta.url), "utf8")
+assert.match(workflowHost, /async listWorkflows\(workspaceId\)/, "Workflow bundle must preserve the workspaceId RPC argument")
+assert.match(workflowHost, /async saveWorkflowSchedule\(request\)/, "Workflow bundle must preserve the request RPC argument")
 
 console.log(`npm package contents are valid (${files.length} files, ${result[0].size} bytes)`)

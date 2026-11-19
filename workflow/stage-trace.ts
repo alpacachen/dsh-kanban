@@ -1,7 +1,17 @@
 const elapsed = (start, end) => Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : null
-const time = value => Number.isFinite(value) ? value : null
+const time = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null
 const stepKey = data => `${data.turn}:${data.step}`
 const callKey = (data, id) => `${stepKey(data)}:${id}`
+
+type ToolTrace = {
+  callId: string; name: string; turn: number; step: number
+  startedAt: number | null; finishedAt: number | null; elapsedMs: number | null; isError: boolean | null
+}
+type ModelResponseTrace = {
+  seq: number; turn: number; step: number; stepStartedAt: number | null; firstTokenAt: number | null; settledAt: number | null
+  stepToResponseMs: number | null; firstOutputWaitMs: number | null; usage: unknown; interrupted: boolean; hasMessage: boolean
+}
+type TraceEntry = { seq: number; time: number | null; type: string } & Record<string, unknown>
 
 /** A stage Session may later be reopened for chat; only return this Attempt's own turn. */
 export function stageEventWindow(events, attempt) {
@@ -18,8 +28,9 @@ export function stageEventWindow(events, attempt) {
 }
 
 /** Read-only, task-owned projections. Transport headers/configuration are never returned. */
-export function projectStageTrace(task, attempt, events, { fromSeq = 0, limit = 50, firstTokenTime = () => undefined } = {}) {
-  const starts = new Map(), calls = new Map(), tools = [], modelResponses = [], entries = []
+export function projectStageTrace(task, attempt, events, { fromSeq = 0, limit = 50, firstTokenTime = (_event: unknown): number | undefined => undefined } = {}) {
+  const starts = new Map<string, number | null>(), calls = new Map<string, ToolTrace>()
+  const tools: ToolTrace[] = [], modelResponses: ModelResponseTrace[] = [], entries: TraceEntry[] = []
   for (const event of events) {
     const data = event.data ?? {}, key = stepKey(data), at = time(event.time)
     if (event.type === 'step/start') starts.set(key, at)
@@ -32,7 +43,7 @@ export function projectStageTrace(task, attempt, events, { fromSeq = 0, limit = 
       if (tool) { tool.finishedAt = at; tool.elapsedMs = elapsed(tool.startedAt, at); tool.isError = data.message?.isError === true }
     }
     if (event.type === 'assistant/message' || event.type === 'assistant/attempt') {
-      let first = null
+      let first: number | null = null
       try { first = time(firstTokenTime(data.stream ?? [])) } catch { /* Old logs may lack compatible stream timing. */ }
       const startedAt = starts.get(key) ?? null
       modelResponses.push({ seq: event.seq, turn: data.turn, step: data.step, stepStartedAt: startedAt, firstTokenAt: first, settledAt: at,
@@ -49,7 +60,7 @@ export function projectStageTrace(task, attempt, events, { fromSeq = 0, limit = 
     else if (/^(approval\/|compaction\/|llm\/retry$)/.test(event.type)) detail = Object.fromEntries(Object.entries(data).filter(([name, value]) => ['id', 'requestId', 'callId', 'toolCallId', 'decision', 'status', 'turn', 'step', 'delayMs', 'attempt', 'code'].includes(name) && (value === null || ['string', 'number', 'boolean'].includes(typeof value))))
     if (detail) entries.push({ seq: event.seq, time: at, type: event.type, ...Object.fromEntries(Object.entries(detail).filter(([, value]) => value !== undefined)) })
   }
-  const intervals = tools.filter(tool => tool.elapsedMs !== null).map(tool => [tool.startedAt, tool.finishedAt]).sort((a, b) => a[0] - b[0])
+  const intervals = tools.filter(tool => tool.elapsedMs !== null).map(tool => [tool.startedAt!, tool.finishedAt!]).sort((a, b) => a[0] - b[0])
   let toolWallMs = 0, end = -Infinity
   for (const [start, finish] of intervals) { toolWallMs += Math.max(0, finish - Math.max(start, end)); end = Math.max(end, finish) }
   const selected = entries.filter(entry => entry.seq >= fromSeq), page = selected.slice(0, limit)
@@ -61,5 +72,5 @@ export function projectStageTrace(task, attempt, events, { fromSeq = 0, limit = 
       observedToolWallMs: tools.length && !intervals.length ? null : toolWallMs, retryCount: events.filter(event => event.type === 'llm/retry').length,
       compactionCount: events.filter(event => event.type === 'compaction/start').length, approvalRequestCount: events.filter(event => event.type === 'approval/requested').length },
     timingNotes: 'Times come from persisted DSH wall-clock events. Tool call-to-result includes any queue/authorization waiting; observedToolWallMs merges overlapping intervals. stepToResponseMs and firstOutputWaitMs begin at step/start, so they may include preparation and retry backoff. Missing measurements are null. Model-server internal queue time and tool-internal substeps are not measured here. Live persistence can lag.',
-    tools, modelResponses, entries: page, nextFromSeq: selected.length > page.length ? page.at(-1).seq + 1 : null }
+    tools, modelResponses, entries: page, nextFromSeq: selected.length > page.length ? page.at(-1)!.seq + 1 : null }
 }

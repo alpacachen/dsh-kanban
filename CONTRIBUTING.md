@@ -10,7 +10,7 @@ Thanks for taking the time to contribute. Bug reports, feature ideas, documentat
 
 ## Local development
 
-You need Node.js 22 or later and pnpm.
+Use Node.js 26 and pnpm 11.8.0.
 
 ```sh
 pnpm install
@@ -18,7 +18,7 @@ pnpm typecheck
 pnpm build
 ```
 
-The browser client source lives in `src/client/`. The generated `lib/client.js` is ignored by Git; CI builds and validates it, and the release workflow includes it in the npm package. Do not add the generated bundle to pull requests.
+The browser source lives in `src/client/`. The DSH Host entries are `index.ts` and `workflow/index.ts`. Run `pnpm build` after changing these sources. Commit the generated `index.js`, `workflow/index.js`, and `lib/client.js` so DSH can install from GitHub as well as npm.
 
 For an unminified debugging build:
 

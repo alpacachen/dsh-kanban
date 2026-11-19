@@ -3,7 +3,7 @@
  *
  * Run: node scripts/check-pipeline.mjs
  *
- * Use temporary directories and a minimal fs service to call index.js apply(ctx).
+ * Use temporary directories and a minimal fs service to call the Kanban Host entry.
  * Invoke the registered kanban_get tool to exercise the boardOf pipeline:
  * - v0: migrate, write the current schema version, create .bak-v0, and return warnings
  * - the current schema: pass unchanged, without writing, backups or warnings
@@ -18,7 +18,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply, SCHEMA_VERSION } from '../index.js'
+import { apply, SCHEMA_VERSION } from '../index.ts'
 
 let failed = 0
 const check = (name, cond, detail) => {

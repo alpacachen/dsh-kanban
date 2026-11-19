@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { mountWorkflowReviewApi, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.js'
+import { mountWorkflowReviewApi, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.ts'
 
 const installDir = process.env.DSH_INSTALL_DIR
 assert.ok(typeof installDir === 'string' && isAbsolute(installDir), 'Set DSH_INSTALL_DIR to the absolute installed DSH package directory.')
@@ -14,7 +14,7 @@ const anchor = join(installDir, 'package.json')
 const runtimeRequire = createRequire(anchor)
 const manifest = runtimeRequire(anchor)
 assert.equal(manifest.name, '@deepseek-ai/dsh')
-assert.equal(manifest.version, '0.2.2-rc.3', 'Review the installed contracts before widening this version check.')
+assert.equal(manifest.version, '0.2.2-rc.5', 'Review the installed contracts before widening this version check.')
 const load = name => import(pathToFileURL(runtimeRequire.resolve(name)).href)
 const protocolPath = runtimeRequire.resolve('@deepseek-ai/dsh-typert-protocol')
 const gatewayRequire = createRequire(runtimeRequire.resolve('@deepseek-ai/dsh-api-gateway'))

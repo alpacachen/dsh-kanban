@@ -9,7 +9,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import * as kanban from '../index.js'
+import * as kanban from '../index.ts'
 
 assert.ok(process.env.DSH_RUNTIME_ROOT, 'Set DSH_RUNTIME_ROOT to the installed DSH node_modules directory')
 const runtimeRequire = createRequire(join(resolve(process.env.DSH_RUNTIME_ROOT), '@deepseek-ai/dsh/package.json'))

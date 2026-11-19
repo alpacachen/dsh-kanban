@@ -24,7 +24,7 @@ DSH distributes plugins as npm **bundle packages**. `package.json` declares a co
 }
 ```
 
-The project supports both npm and GitHub source installation. Commit the prebuilt Web client `lib/client.js` so GitHub installation, used by the marketplace, can load it directly. Release CI builds and checks the artifact, then packages it with `index.js` and `cordis.patch.yml`:
+The project supports both npm and GitHub source installation. Commit the generated Host entries `index.js` and `workflow/index.js` and the Web client `lib/client.js` so the marketplace can install from GitHub. Release CI rebuilds these files and packages them with `cordis.patch.yml`:
 
 ```sh
 dsh plugin --profile web add @alpacachen/dsh-kanban
@@ -58,6 +58,7 @@ npm pack --dry-run
 The package must include at least:
 
 - `index.js`
+- `workflow/index.js` and its locale and SQL files
 - `lib/client.js`
 - `cordis.patch.yml`
 - `package.json`
@@ -89,7 +90,7 @@ npm does not allow overwriting an existing version. Any changes after a successf
 
 ## 3. GitHub Release
 
-Keep the tag, npm version and GitHub Release title aligned. The tagged commit must include the latest `lib/client.js` for source installation. Release notes should explain user-visible changes, installation commands and compatibility or migration requirements.
+Keep the tag, npm version and GitHub Release title aligned. The tagged commit must include the generated Host and client entries for source installation. Release notes should explain user-visible changes, installation commands and compatibility or migration requirements.
 
 ## 4. The dsh-market submission route
 

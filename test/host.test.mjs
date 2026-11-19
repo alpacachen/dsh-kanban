@@ -2,12 +2,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync, symlinkSync } from "node:fs"
 import { createHash } from "node:crypto"
-import { matchCardSearch } from "../search.js"
+import { matchCardSearch } from "../search.ts"
 import { tmpdir } from "node:os"
 import { join, resolve, relative, isAbsolute } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
 import { assertSupportedJsonSchema } from "@deepseek-ai/dsh-tools"
-import * as plugin from "../index.js"
+import * as plugin from "../index.ts"
 const { apply, parseBoardText, SCHEMA_VERSION, NOTE_LIMIT, TITLE_LIMIT, LABEL_LIMIT, COLUMN_TITLE_LIMIT } = plugin
 
 const workspaces = []

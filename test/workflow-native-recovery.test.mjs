@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { withStoppedNativeExecution } from '../workflow/dsh-adapter.js'
+import { withStoppedNativeExecution } from '../workflow/dsh-adapter.ts'
 
 function boot({ live = true, phase = 'idle', end = true, jobs = [], missing = false, bound = true } = {}) {
   const attempt = { id: 'attempt', sessionId: 'session', requestId: 'request', messageId: bound ? 'message' : null,

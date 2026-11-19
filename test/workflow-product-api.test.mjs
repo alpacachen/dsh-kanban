@@ -4,8 +4,8 @@ import { createRequire } from 'node:module'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
-import { mountWorkflowReviewApi, validateWorkflowCommand, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.js'
-import { mountWorkflowManagementTools } from '../workflow/management-tools.js'
+import { mountWorkflowReviewApi, validateWorkflowCommand, WORKFLOW_REVIEW_NAMESPACE as namespace } from '../workflow/review-api.ts'
+import { mountWorkflowManagementTools } from '../workflow/management-tools.ts'
 
 const require = createRequire(import.meta.url)
 const toolsRequire = createRequire(require.resolve('@deepseek-ai/dsh-tools'))
@@ -299,7 +299,7 @@ describe('Workflow product browser API', () => {
         getArtifact: { taskId: 'task-1', artifactId: 'artifact-1' },
         listTasks: { workspaceId: 'workspace-1' }, getTask: { taskId: 'task-1' } }
       const child = spawnSync(process.env.DSH_NODE_EXECUTABLE, ['-e', script,
-        fileURLToPath(new URL('../workflow/review-api.js', import.meta.url)), JSON.stringify(wire)], {
+        fileURLToPath(new URL('../workflow/review-api.ts', import.meta.url)), JSON.stringify(wire)], {
         env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 15000,
       })
       expect(child.error).toBeUndefined()

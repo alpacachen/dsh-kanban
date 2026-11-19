@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { PROCESS_POLICY, readProcessIdentity, confirmStoppedExecution } from '../workflow/recovery.js'
+import { PROCESS_POLICY, readProcessIdentity, confirmStoppedExecution } from '../workflow/recovery.ts'
 
 const attempt = () => ({ id: randomUUID(), sessionId: randomUUID(), requestId: randomUUID(),
   executorSnapshot: { stopPolicy: PROCESS_POLICY, hostProcess: { pid: 2147483647, startedAt: 'previous-host' } } })

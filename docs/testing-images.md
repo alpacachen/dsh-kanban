@@ -1,6 +1,6 @@
 # Validation
 
-Use Node.js 26 and pnpm 11.8.0. The committed `lib/client.js` is the distributable client bundle.
+Use Node.js 26 and pnpm 11.8.0. The build generates the DSH Host entries `index.js` and `workflow/index.js` and the client entry `lib/client.js` from TypeScript. GitHub source installs use these committed files.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -9,7 +9,7 @@ pnpm test
 pnpm build
 pnpm check:client-bundle
 pnpm check:package
-git diff --exit-code -- lib/client.js
+git diff --exit-code -- index.js workflow/index.js lib/client.js
 ```
 
 `pnpm test` covers unit/component contracts, schema migration and the persistence pipeline. Component tests substitute the Host UI boundary; they do not establish native desktop behavior. `pnpm build` must reproduce the committed bundle after source changes have been built and committed.
@@ -37,7 +37,7 @@ Verify the actual installed plugin: search and the three adjacent filters, Setti
 
 ## Local Workflow build
 
-The 1.12.0 source includes both Kanban and Workflow. Before the npm release is available, build this checkout with the commands above, then install it into your intended profile using DSH's normal local-plugin flow. For example, for a separate Web profile:
+To use this checkout with the DSH version declared in `package.json`, build it with the commands above and install it into your intended profile. For example, use a separate Web profile:
 
 ```sh
 dsh plugin --profile web add file:/absolute/path/to/dsh-kanban

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
-import { openWorkflowStore } from '../workflow/store.js'
+import { openWorkflowStore } from '../workflow/store.ts'
 
 const USER = { kind: 'user', id: 'isolated-test-owner' }
 const stores = []
@@ -387,7 +387,7 @@ describe('PoC database ownership and restart safety', () => {
     const first = open(path)
     expect(lstatSync(path).mode & 0o077).toBe(0)
     rejects('WF_DB_BUSY', () => openWorkflowStore(path))
-    const modulePath = fileURLToPath(new URL('../workflow/store.js', import.meta.url))
+    const modulePath = fileURLToPath(new URL('../workflow/store.ts', import.meta.url))
     const child = spawnSync(process.execPath, ['--input-type=module', '-e', `import {openWorkflowStore} from ${JSON.stringify(modulePath)}; try {const s=openWorkflowStore(${JSON.stringify(path)});s.close();process.exit(9)} catch(e) {if(e.code!=='WF_DB_BUSY')throw e;console.log(e.code)}`],
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 10000 })
     expect(child.status, child.stderr).toBe(0)
@@ -398,7 +398,7 @@ describe('PoC database ownership and restart safety', () => {
 
   it('OS ownership locks survive while live and release on a real process crash', async () => {
     const root = temp(), path = join(root, 'crashed.sqlite')
-    const modulePath = fileURLToPath(new URL('../workflow/store.js', import.meta.url))
+    const modulePath = fileURLToPath(new URL('../workflow/store.ts', import.meta.url))
     const code = `
       import {openWorkflowStore} from ${JSON.stringify(modulePath)};
       const s=openWorkflowStore(${JSON.stringify(path)});

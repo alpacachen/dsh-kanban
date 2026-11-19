@@ -18,7 +18,7 @@ const invalidResponse = () => new WorkflowApiError(
 )
 
 /**
- * DSH 0.2.2-rc.3: client-connection/src/client/rpc.ts owns this unary envelope;
+ * DSH 0.2.2-rc.5: client-connection/src/client/rpc.ts owns this unary envelope;
  * rpc-host.ts admits browser cookies as the exact shared browserPeer. Do not
  * substitute an API owner, credentials, or the legacy /api/kanban custom route.
  * This text-only API deliberately rejects binary/non-JSON responses.
