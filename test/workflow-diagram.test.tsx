@@ -149,8 +149,8 @@ describe("React Flow workflow canvas", () => {
     const { container } = render(<WorkflowDiagram horizontal stages={stages} onSelect={vi.fn()} />)
     const research = container.querySelector<HTMLElement>('.react-flow__node[data-id="research"]')!
     const review = container.querySelector<HTMLElement>('.react-flow__node[data-id="review"]')!
-    expect(research.style.transform).toContain("0px,0px")
-    expect(review.style.transform).toContain("264px,0px")
+    expect(research.style.transform).toMatch(/^translate\(0px(?:,\s*0px)?\)$/)
+    expect(review.style.transform).toMatch(/^translate\(264px(?:,\s*0px)?\)$/)
     expect(container.querySelector(".wf-diagram-plane,.wf-diagram-scaled")).toBeNull()
   })
 
